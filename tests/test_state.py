@@ -75,3 +75,26 @@ def test_raw_escape_hatch_preserves_everything():
     # unmodelled fields still reachable via raw
     assert st.raw["noviceUser"]["warToken"] == 0
     assert st.source == "novice"
+
+
+def test_from_entry_rst_live_shape():
+    from nta_agent.state import from_entry_rst
+    rst = {
+        "sid": 1001989, "mapSize": {"x": 600, "y": 600},
+        "player": {
+            "uid": "57696053",
+            "cereal": {"value": 701, "opHour": 116},
+            "timber": {"value": 702, "opHour": 120},
+            "stone": {"value": 700, "opHour": 120},
+            "stamina": 97, "landCount": 3,
+            "heroSlots": [{"lv": 1}, {"lv": 10}, {"lv": 15}],
+        },
+        "world": {"mapId": 5, "season": 2},
+    }
+    st = from_entry_rst(rst)
+    assert st.source == "api"
+    assert st.user.uid == "57696053"
+    assert (st.resources.cereal, st.resources.timber, st.resources.stone) == (701, 702, 700)
+    assert st.resources.stamina == 97
+    assert [h.lv for h in st.heroes] == [1, 10, 15]
+    assert st.raw["mapSize"] == {"x": 600, "y": 600}

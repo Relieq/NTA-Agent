@@ -107,6 +107,44 @@ def from_novice_data(nd: dict[str, Any], user: dict[str, Any] | None = None) -> 
     return state
 
 
+def _res_value(v: Any) -> int:
+    """Resources are flat ints in novice mode but {value, opHour} in a live match."""
+    if isinstance(v, dict):
+        return int(v.get("value", 0))
+    if isinstance(v, (int, float)):
+        return int(v)
+    return 0
+
+
+def from_entry_rst(rst: dict[str, Any], user: dict[str, Any] | None = None) -> GameState:
+    """Build GameState from GAME_HD_ENTRY_S2C.rst (authoritative live match state)."""
+    player = rst.get("player") or {}
+    res = Resources(
+        cereal=_res_value(player.get("cereal")),
+        timber=_res_value(player.get("timber")),
+        stone=_res_value(player.get("stone")),
+        iron=_res_value(player.get("iron")),
+        gold=_res_value(player.get("gold")),
+        stamina=int(player.get("stamina", 0) or 0),
+    )
+    heroes = [
+        Hero(lv=int(h.get("lv", 0)), avatar_army_uid=str(h.get("avatarArmyUID", "")), raw=h)
+        for h in player.get("heroSlots", [])
+    ]
+    state = GameState(
+        resources=res,
+        heroes=heroes,
+        land_score=int(player.get("landCount", 0) or 0),
+        source="api",
+        raw=rst,
+    )
+    if user:
+        apply_user(state, user)
+    elif player.get("uid"):
+        state.user = User(uid=str(player["uid"]), raw=player)
+    return state
+
+
 def apply_user(state: GameState, user: dict[str, Any]) -> GameState:
     """Populate the User block from a LOBBY_HD_TRYLOGIN_S2C ``user`` object."""
     state.user = User(
