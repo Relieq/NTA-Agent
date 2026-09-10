@@ -3,14 +3,22 @@
 Kết quả mổ schema từ `proto/msg.jsc` (giải mã bằng key XXTEA, xem [RE_FINDINGS](RE_FINDINGS.md)).
 Đây là bản đồ để `nta_agent/io/api/` đọc/gửi message thật.
 
-## Transport
-- Server: **`nine-hk.twomiles.cn` (43.134.159.76)**, **MQTT over TLS 1.2**, port **3653**.
-  Cùng host có port 8080 & 443 (hot-update/CDN).
-- Body message = **Protocol Buffers** (protobuf.js static), bọc trong envelope MQTT dạng
-  `{type, messageIdentifier, version, payloadMessage:{payloadHex}}` (thấy trong localStorage
-  `jsb.sqlite`). `payloadHex` = protobuf đã encode của message tương ứng.
-- **Routing chưa chốt**: schema không chứa opcode số ⇒ nhiều khả năng topic MQTT = tên operation.
-  Cần đọc `index.jsc`/`core/@api/*` hoặc bắt live (SSL-unpin) để xác nhận envelope + topic.
+## Transport & wire format (đã xác nhận từ index.jsc — code game)
+- Client **Paho MQTT v3 over WebSocket** path `/mqtt`, **TLS** (`useSSL`), keepAlive 30s,
+  cleanSession. Framework server: **mqant** (Go). Server: `nine-hk.twomiles.cn:3653`.
+- **GỬI (request)** — hàm `net.send(route, params, cb, wait)`:
+  1. `route` dạng `"module/HD_Action"` (vd `"game/HD_UpAreaBuild"`).
+  2. Tên message = `route.replace("/","_").toUpperCase() + "_C2S"` → tra trong `proto` (schema).
+  3. `reqId += 1`; lưu `reqMap[reqId] = {cb, msgName}`.
+  4. **Publish** tới topic **`module/HD_Action/reqId`**, payload = `MSG_C2S.encode(params).finish()`, **QoS 1**.
+- **NHẬN (response)** — `recvMessage` (`onMessageArrived`):
+  1. Tách topic `module/action/reqId` → lấy `reqId`, tra `reqMap`.
+  2. Envelope ngoài: **`S2C_RESULT { data: bytes(#1), error: string(#2) }`** = `proto.S2C_RESULT.decode(payload)`.
+  3. Nếu `error` rỗng: body = `proto[msgName + "_S2C"].decode(result.data).toJSON()` → gọi `cb({err, data})`.
+- **Notify/push** (server chủ động, không có reqId): xử lý qua handler `On<Event>` (vd
+  `OnUpdateAllianceMembers`) — cần map riêng khi làm state store.
+- **CÒN THIẾU (bootstrap)**: cách lấy `host/port/clientId/credentials` để connect (khả năng qua
+  HTTP gate 8080/443 + login flow `LOGIN_HD_*` → trả về MQTT endpoint). Lấy bằng bắt live hoặc đọc login module.
 
 ## Bề mặt API: 323 request (_C2S) / 322 response (_S2C)
 Quy ước tên: `MODULE_HD_ACTION_C2S` (client→server) và `_S2C` (server→client). Struct lồng dùng
