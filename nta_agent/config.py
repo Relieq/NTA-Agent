@@ -13,9 +13,16 @@ import shutil
 from dataclasses import dataclass
 from pathlib import Path
 
-# Default install locations on this machine (verified 2026-09-01).
-_DEFAULT_ADB = Path(r"C:\Program Files\BlueStacks_nxt\HD-Adb.exe")
+# Known emulator adb binaries, in preference order. LDPlayer is the primary
+# target (one-click root); BlueStacks is kept as a fallback. Override with NTA_ADB_PATH.
+_ADB_CANDIDATES = [
+    Path(r"D:\LDPlayer\LDPlayer9\adb.exe"),
+    Path(r"C:\LDPlayer\LDPlayer9\adb.exe"),
+    Path(r"C:\Program Files\BlueStacks_nxt\HD-Adb.exe"),
+]
 _BLUESTACKS_CONF = Path(r"C:\ProgramData\BlueStacks_nxt\bluestacks.conf")
+# LDPlayer's default adb serial for instance 0.
+_DEFAULT_SERIAL = "emulator-5554"
 
 # The emulator renders the game at this resolution; combat/coordinate math assumes it.
 DEFAULT_SCREEN_W = 1600
@@ -23,17 +30,18 @@ DEFAULT_SCREEN_H = 900
 
 
 def _find_adb() -> str:
-    """Locate an adb binary: NTA_ADB_PATH → bundled HD-Adb.exe → adb on PATH."""
+    """Locate an adb binary: NTA_ADB_PATH → LDPlayer/BlueStacks → adb on PATH."""
     override = os.environ.get("NTA_ADB_PATH")
     if override:
         return override
-    if _DEFAULT_ADB.exists():
-        return str(_DEFAULT_ADB)
+    for cand in _ADB_CANDIDATES:
+        if cand.exists():
+            return str(cand)
     on_path = shutil.which("adb")
     if on_path:
         return on_path
-    # Fall back to the bundled path even if missing, so errors point somewhere concrete.
-    return str(_DEFAULT_ADB)
+    # Fall back to the first known path even if missing, so errors point somewhere concrete.
+    return str(_ADB_CANDIDATES[0])
 
 
 def _detect_adb_port(conf: Path = _BLUESTACKS_CONF) -> int | None:
@@ -59,11 +67,12 @@ class Settings:
     game_package: str = "twgame.global.acers"
 
     @classmethod
-    def detect(cls) -> "Settings":
+    def detect(cls) -> Settings:
         serial = os.environ.get("NTA_ADB_SERIAL")
         if not serial:
             port = _detect_adb_port()
-            serial = f"127.0.0.1:{port}" if port else None
+            # Prefer the LDPlayer-style serial; fall back to the BlueStacks TCP endpoint.
+            serial = _DEFAULT_SERIAL if not port else f"127.0.0.1:{port}"
         return cls(adb_path=_find_adb(), serial=serial)
 
 

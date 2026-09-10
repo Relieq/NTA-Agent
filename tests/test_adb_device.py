@@ -11,9 +11,11 @@ def dm() -> DeviceManager:
 
 
 @pytest.mark.device
-def test_screencap_matches_configured_resolution(dm: DeviceManager):
+def test_screencap_matches_current_display(dm: DeviceManager):
+    # screencap follows the live rotation (the game may lock portrait), while the
+    # configured resolution is orientation-agnostic — assert it's one orientation.
     img = dm.screencap()
-    assert img.size == (dm.settings.screen_w, dm.settings.screen_h)
+    assert set(img.size) == {dm.settings.screen_w, dm.settings.screen_h}
 
 
 @pytest.mark.device

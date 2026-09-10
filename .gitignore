@@ -232,3 +232,6 @@ tools/re/*.dec
 tools/re/decrypted/
 *.enc.bin
 *.dec.bin
+
+# Derived protocol schema (game API surface) — regenerate with tools/re/parse_schema.py
+nta_agent/io/api/schema.json

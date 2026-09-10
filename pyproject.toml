@@ -18,6 +18,10 @@ re = [
     "frida-tools>=13",
     "mitmproxy>=11",
 ]
+# API adapter (Phase 2/3): MQTT client for the game protocol
+api = [
+    "paho-mqtt>=2.0",
+]
 # LLM strategy brain (Phase 5)
 brain = [
     "anthropic>=0.40",

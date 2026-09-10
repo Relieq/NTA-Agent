@@ -33,7 +33,7 @@ class DeviceManager:
     # ---- lifecycle -----------------------------------------------------------------
 
     @classmethod
-    def connect(cls, settings: Settings | None = None) -> "DeviceManager":
+    def connect(cls, settings: Settings | None = None) -> DeviceManager:
         settings = settings or load_settings()
         dm = cls(settings=settings)
         dm._ensure_connected()
