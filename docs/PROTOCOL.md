@@ -17,8 +17,17 @@ Kết quả mổ schema từ `proto/msg.jsc` (giải mã bằng key XXTEA, xem [
   3. Nếu `error` rỗng: body = `proto[msgName + "_S2C"].decode(result.data).toJSON()` → gọi `cb({err, data})`.
 - **Notify/push** (server chủ động, không có reqId): xử lý qua handler `On<Event>` (vd
   `OnUpdateAllianceMembers`) — cần map riêng khi làm state store.
-- **CÒN THIẾU (bootstrap)**: cách lấy `host/port/clientId/credentials` để connect (khả năng qua
-  HTTP gate 8080/443 + login flow `LOGIN_HD_*` → trả về MQTT endpoint). Lấy bằng bắt live hoặc đọc login module.
+- **Bootstrap kết nối (đã xác định):**
+  1. **HTTP gate** `https://<domain>:8080` (release) — endpoint: `/getServerInfo` (danh sách/thông tin
+     server), `/getHotUpdateInfo` (hot-update), `/getNotice`, `/feedback`, `/getMaintainInfo`.
+  2. **Domain**: `getServerDomain(env)` → `serverDomains[serverArea]` (data-driven config). Giá trị
+     thực tế của tài khoản này: area `hk` → **`nine-hk.twomiles.cn`** (từ localStorage + pcap).
+  3. **MQTT connect**: `{host: domain, port: release?3653:4653, useSSL:true}`, `clientId="t"+UUIDv4()`,
+     mqttVersion 3, cleanSession, keepAlive 30. Không username/password ⇒ auth qua message login.
+  4. **Login**: lần đầu `login/HD_GuestLogin{guestId, nickname, distinctId, os, lang, inviteUid}`
+     → nhận accountToken (lưu `slg_account_token`). Reconnect: `lobby/HD_TryLogin{accountToken, distinctId,
+     os, lang, platform}`. (Có cả google/facebook/apple/taptap/wx login.)
+- **Analytics riêng** (bỏ qua): thinkingdata `ulog.dhgames.com:8180`.
 
 ## Bề mặt API: 323 request (_C2S) / 322 response (_S2C)
 Quy ước tên: `MODULE_HD_ACTION_C2S` (client→server) và `_S2C` (server→client). Struct lồng dùng
