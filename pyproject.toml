@@ -1,0 +1,46 @@
+[project]
+name = "nta-agent"
+version = "0.0.1"
+description = "Autonomous agent for Ninety Thousand Acres (BlueStacks) — hybrid API + vision, LLM strategy brain"
+requires-python = ">=3.12"
+dependencies = [
+    "numpy>=2.0",
+    "pillow>=10.0",
+]
+
+[project.optional-dependencies]
+# Vision fallback stack (Phase 1)
+vision = [
+    "opencv-python>=4.10",
+]
+# Reverse-engineering / API capture lab (Phase 2+)
+re = [
+    "frida-tools>=13",
+    "mitmproxy>=11",
+]
+# LLM strategy brain (Phase 5)
+brain = [
+    "anthropic>=0.40",
+]
+dev = [
+    "pytest>=8",
+    "ruff>=0.6",
+]
+
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[tool.hatch.build.targets.wheel]
+packages = ["nta_agent"]
+
+[tool.ruff]
+line-length = 100
+target-version = "py312"
+
+[tool.pytest.ini_options]
+# The default system temp dir can be ACL-locked on Windows; keep tmp inside the project.
+addopts = "--basetemp=build/pytest-tmp"
+markers = [
+    "device: integration test that needs a live BlueStacks/ADB device",
+]

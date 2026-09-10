@@ -216,3 +216,19 @@ __marimo__/
 
 # Streamlit
 .streamlit/secrets.toml
+
+# --- NTA-Agent local artifacts ---
+.venv/
+build/
+.pytest_tmp/
+screen*.png
+debug_img/
+data/captures/
+*.apk
+
+# --- Sensitive RE artifacts (keys, decrypted game code) — never commit ---
+tools/re/KEY.txt
+tools/re/*.dec
+tools/re/decrypted/
+*.enc.bin
+*.dec.bin
