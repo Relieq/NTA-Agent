@@ -1,0 +1,120 @@
+"""Build and update :class:`GameState` from the game's own data shapes.
+
+Two entry points today:
+
+* :func:`from_novice_data` — the tutorial ``slg_novice_data_<uid>`` snapshot
+  (a full client-side game state), used to bootstrap and to test the model.
+* :func:`apply_user` — the ``user`` object from ``LOBBY_HD_TRYLOGIN_S2C``.
+
+Both the novice snapshot and live S2C messages share field names, so the same
+mapping serves API updates as we wire more routes (``apply_s2c`` later).
+"""
+from __future__ import annotations
+
+import time
+from typing import Any
+
+from nta_agent.state.schema import (
+    Area,
+    Building,
+    GameState,
+    Hero,
+    March,
+    Resources,
+    Slot,
+    User,
+)
+
+
+def _slots(d: dict[str, Any] | None) -> list[Slot]:
+    out: list[Slot] = []
+    for k, v in (d or {}).items():
+        try:
+            out.append(Slot(slot=int(k), lv=int(v.get("lv", 0)), id=int(v.get("id", 0))))
+        except (ValueError, AttributeError):
+            continue
+    return sorted(out, key=lambda s: s.slot)
+
+
+def _building(b: dict[str, Any]) -> Building:
+    p = b.get("point") or {}
+    return Building(
+        index=int(b.get("index", 0)),
+        id=int(b.get("id", 0)),
+        lv=int(b.get("lv", 0)),
+        uid=str(b.get("uid", "")),
+        point=(int(p.get("x", 0)), int(p.get("y", 0))),
+    )
+
+
+def _hp(v: Any) -> tuple[int, int]:
+    """Area hp is [current, max] in the game; tolerate int or missing."""
+    if isinstance(v, (list, tuple)) and len(v) >= 2:
+        return (int(v[0]), int(v[1]))
+    if isinstance(v, (int, float)):
+        return (int(v), int(v))
+    return (0, 0)
+
+
+def _area(raw: dict[str, Any]) -> Area:
+    return Area(
+        index=int(raw.get("index", 0)),
+        owner=str(raw.get("owner", "")),
+        city_id=int(raw.get("cityId", 0)),
+        land_id=int(raw.get("landId", 0)),
+        hp=_hp(raw.get("hp")),
+        buildings=[_building(b) for b in raw.get("builds", [])],
+        raw=raw,
+    )
+
+
+def from_novice_data(nd: dict[str, Any], user: dict[str, Any] | None = None) -> GameState:
+    """Construct a GameState from a tutorial novice_data snapshot."""
+    novice_user = nd.get("noviceUser") or {}
+    res = Resources(
+        cereal=int(nd.get("cereal", 0)),
+        timber=int(nd.get("timber", 0)),
+        stone=int(nd.get("stone", 0)),
+        iron=int(nd.get("iron", 0)),
+        gold=int(novice_user.get("gold", 0)),
+        stamina=int(nd.get("stamina", 0)),
+        exp_book=int(nd.get("expBook", 0)),
+        up_scroll=int(nd.get("upScroll", 0)),
+        fixator=int(nd.get("fixator", 0)),
+    )
+    areas = {int(k): _area(v) for k, v in (nd.get("areas") or {}).items()}
+    heroes = [
+        Hero(lv=int(h.get("lv", 0)), avatar_army_uid=str(h.get("avatarArmyUID", "")), raw=h)
+        for h in nd.get("heroSlots", [])
+    ]
+    marches = [March(uid=str(m.get("uid", "")), raw=m) for m in nd.get("marchs", [])]
+
+    state = GameState(
+        resources=res,
+        areas=areas,
+        marches=marches,
+        pawn_slots=_slots(nd.get("pawnSlots")),
+        policy_slots=_slots(nd.get("policySlots")),
+        equip_slots=_slots(nd.get("equipSlots")),
+        heroes=heroes,
+        chapter=int(nd.get("chapter", 0)),
+        land_score=int(nd.get("landScore", 0)),
+        source="novice",
+        raw=nd,
+    )
+    if user:
+        apply_user(state, user)
+    return state
+
+
+def apply_user(state: GameState, user: dict[str, Any]) -> GameState:
+    """Populate the User block from a LOBBY_HD_TRYLOGIN_S2C ``user`` object."""
+    state.user = User(
+        uid=str(user.get("uid", "")),
+        nickname=str(user.get("nickname", "")),
+        login_type=str(user.get("loginType", "")),
+        session_id=str(user.get("sessionId", "")),
+        raw=user,
+    )
+    state.updated_at = time.time()
+    return state
