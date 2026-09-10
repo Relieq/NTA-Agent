@@ -29,7 +29,8 @@ SCALAR = {"int32", "uint32", "sint32", "int64", "uint64", "sint64", "bool",
           "sfixed32", "sfixed64"}
 
 MSG_RE = re.compile(r"i\.([A-Za-z_]\w*) = function\(\)")
-DECODE_RE = re.compile(r"i\.decode = function\(e, n\) \{(.*?)\n\};", re.DOTALL)
+# The inner class var varies per message (i/r/u/...), so match any "<var>.decode".
+DECODE_RE = re.compile(r"\w+\.decode = function\(e, n\) \{(.*?)\n\};", re.DOTALL)
 CASE_RE = re.compile(r"case (\d+):(.*?)(?=case \d+:|default:|\Z)", re.DOTALL)
 
 
@@ -94,8 +95,9 @@ def main():
             if f["type"] == "unknown":
                 unknown += 1
             fields.append(f)
-        if fields:
-            out[name] = {"fields": fields}
+        # Keep every message that has a decode function, including empty ones
+        # (e.g. parameterless requests like GAME_HD_GETMARCHS_C2S).
+        out[name] = {"fields": fields}
     dst = Path(sys.argv[2]) if len(sys.argv) > 2 else Path("schema.json")
     dst.write_text(json.dumps(out, ensure_ascii=False, indent=0), encoding="utf-8")
     print("[+] %d messages -> %s  (%d unknown fields)" % (len(out), dst, unknown))

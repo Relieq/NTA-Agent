@@ -76,3 +76,11 @@ def test_negative_int32_roundtrip(codec: Codec):
     body = codec.encode("LOBBY_HD_TRYLOGIN_S2C", {"banAccountType": -5})
     back = codec.decode("LOBBY_HD_TRYLOGIN_S2C", body)
     assert back["banAccountType"] == -5
+
+
+def test_empty_message_roundtrips(codec: Codec):
+    # Parameterless requests (e.g. GAME_HD_GETMARCHS_C2S) must exist and encode
+    # to zero bytes — regression for the parser dropping empty messages.
+    assert codec.has("GAME_HD_GETMARCHS_C2S")
+    assert codec.encode("GAME_HD_GETMARCHS_C2S", {}) == b""
+    assert codec.decode("GAME_HD_GETMARCHS_C2S", b"") == {}
