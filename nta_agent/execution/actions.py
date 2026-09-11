@@ -61,3 +61,22 @@ class Actions:
 
     def get_marches(self) -> dict:
         return self.session.request("game/HD_GetMarchs", {})
+
+    def get_select_armys(self, index: int, type_: int = 0) -> dict:
+        return self.session.request("game/HD_GetSelectArmys", {"index": int(index), "type": type_})
+
+    # ---- prediction ------------------------------------------------------ #
+    def predict_occupy(self, cell_index: int, my_pawns: list[dict], predictor=None):
+        """Predict occupying ``cell_index`` with ``my_pawns`` (pure-API heuristic).
+
+        Fetches the target area, extracts its hostile pawns, and runs the battle
+        predictor. Returns a BattlePrediction.
+        """
+        from nta_agent.execution.predictors.battle import (
+            BattlePredictor,
+            enemy_pawns_of_area,
+        )
+        predictor = predictor or BattlePredictor()
+        area = self.get_area(cell_index).get("data", {})
+        enemy = enemy_pawns_of_area(area, my_uid=self._state.user.uid)
+        return predictor.predict(my_pawns, enemy)
