@@ -57,6 +57,12 @@ class BattlePredictor:
     pawn_power: Callable[[dict], float] = default_pawn_power
     win_margin: float = 1.0  # need my_power >= enemy_power * win_margin to expect a win
 
+    @classmethod
+    def from_config(cls, config=None, weights=None, win_margin: float = 1.0) -> BattlePredictor:
+        """A predictor whose power is the config-driven army value (calculateArmysValue)."""
+        from nta_agent.execution.predictors.army_value import config_pawn_power
+        return cls(pawn_power=config_pawn_power(config, weights), win_margin=win_margin)
+
     def army_power(self, pawns: list[dict]) -> float:
         return sum(self.pawn_power(p) for p in pawns or [])
 

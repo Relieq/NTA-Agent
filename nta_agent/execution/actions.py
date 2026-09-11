@@ -93,7 +93,12 @@ class Actions:
             BattlePredictor,
             enemy_pawns_of_area,
         )
-        predictor = predictor or BattlePredictor()
+        if predictor is None:
+            # Prefer the config-driven army-value model; fall back to the hp/lv proxy.
+            try:
+                predictor = BattlePredictor.from_config()
+            except FileNotFoundError:
+                predictor = BattlePredictor()
         area = self.get_area(cell_index).get("data", {})
         enemy = enemy_pawns_of_area(area, my_uid=self._state.user.uid)
         return predictor.predict(my_pawns, enemy)

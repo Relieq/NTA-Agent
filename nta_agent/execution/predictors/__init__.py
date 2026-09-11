@@ -1,5 +1,6 @@
-"""Predictors: turn GameState into decision inputs (economy + battle heuristic)."""
+"""Predictors: turn GameState into decision inputs (economy + battle)."""
 
+from nta_agent.execution.predictors.army_value import PawnValuer, config_pawn_power
 from nta_agent.execution.predictors.battle import (
     BattlePrediction,
     BattlePredictor,
@@ -11,6 +12,8 @@ __all__ = [
     "BattlePrediction",
     "BattlePredictor",
     "EconomyPredictor",
+    "PawnValuer",
     "ResourceForecast",
+    "config_pawn_power",
     "enemy_pawns_of_area",
 ]
