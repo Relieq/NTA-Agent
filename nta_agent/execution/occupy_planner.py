@@ -21,6 +21,7 @@ class Candidate:
     index: int
     defenders: list[dict]      # enemy pawns guarding the cell
     hp: tuple[int, int]        # cell durability (proxy for difficulty)
+    land_id: int = 0           # land type (for the sim's config-based enemy gen)
 
 
 def discover_targets(
@@ -53,7 +54,8 @@ def discover_targets(
             if pawns:
                 hp = area.get("hp") or [0, 0]
                 occupiable.append(Candidate(index=idx, defenders=pawns,
-                                            hp=(int(hp[0]), int(hp[-1]))))
+                                            hp=(int(hp[0]), int(hp[-1])),
+                                            land_id=int(area.get("landId", 0) or 0)))
 
     def adjoins_owned(idx: int) -> bool:
         # The server allows attacking only orthogonally-adjoining cells (verified live).

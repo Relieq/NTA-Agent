@@ -128,6 +128,9 @@ class OccupyCell:
     discover_every: int = 8   # ticks between discovery sweeps
     fail_cooldown: int = 8
     predictor: object = None
+    use_sim: bool = False      # prefer the headless engine sim for the win verdict
+    sim: object = None
+    _sim_off: bool = False     # sidecar checked and unavailable -> stop retrying
     _pending: object = None    # (army_dict, target_index)
     _cooldown: int = 0
 
@@ -139,6 +142,23 @@ class OccupyCell:
             except FileNotFoundError:
                 self.predictor = BattlePredictor()
         return self.predictor
+
+    def _sim_pred(self):
+        """The headless-sim predictor if enabled and the sidecar is reachable."""
+        if not self.use_sim or self._sim_off:
+            return None
+        if self.sim is None:
+            from nta_agent.execution.predictors.sim_bridge import get_bridge
+            from nta_agent.execution.predictors.sim_predictor import SimBattlePredictor
+            if not get_bridge().available():
+                self._sim_off = True
+                return None
+            self.sim = SimBattlePredictor()
+        return self.sim
+
+    @staticmethod
+    def _dist(a: int, b: int, width: int = 600) -> int:
+        return abs(a % width - b % width) + abs(a // width - b // width)
 
     @staticmethod
     def _best_army(armies: list[dict], pawn_power) -> dict | None:
@@ -161,7 +181,9 @@ class OccupyCell:
             state.main_city_index, self.radius, state.user.uid,
         )
         self._cooldown = self.discover_every  # throttle regardless of outcome
-        predictor = self._pred()
+        predictor = self._pred()      # stats: army selection + fallback verdict
+        sim = self._sim_pred()        # engine: authoritative win verdict when available
+        from nta_agent.execution.predictors.sim_bridge import SimUnavailable
         # For each candidate, ask the server which of our armies can reach it, then
         # keep the winnable ones. Pick the safest (lowest predicted loss).
         viable = []
@@ -169,7 +191,17 @@ class OccupyCell:
             army = self._best_army(actions.select_armies(c.index), predictor.pawn_power)
             if not army:
                 continue
-            pred = predictor.predict(army["pawns"], c.defenders)
+            pred = None
+            if sim is not None:
+                try:
+                    pred = sim.predict_target(
+                        state, army, target_index=c.index,
+                        land_id=c.land_id, distance=self._dist(state.main_city_index, c.index),
+                    )
+                except SimUnavailable:
+                    pred = None  # degrade this candidate to the stats predictor
+            if pred is None:
+                pred = predictor.predict(army["pawns"], c.defenders)
             if pred.win:
                 viable.append((pred.loss_percent, c.index, army))
         if not viable:
@@ -286,4 +318,4 @@ class RuleEngine:
 
     @classmethod
     def default(cls) -> RuleEngine:
-        return cls(rules=[CollectCityOutput(), BuildOrder(), Recruit(), OccupyCell()])
+        return cls(rules=[CollectCityOutput(), BuildOrder(), Recruit(), OccupyCell(use_sim=True)])

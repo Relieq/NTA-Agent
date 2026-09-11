@@ -4,7 +4,8 @@ from dataclasses import dataclass, field
 
 from nta_agent.execution.heuristics import OccupyCell
 from nta_agent.execution.occupy_planner import discover_targets
-from nta_agent.execution.predictors.battle import BattlePredictor
+from nta_agent.execution.predictors.battle import BattlePrediction, BattlePredictor
+from nta_agent.execution.predictors.sim_bridge import SimUnavailable
 from nta_agent.state.schema import GameState
 
 W = 600
@@ -72,3 +73,49 @@ def test_occupy_rule_skips_when_no_stamina():
     st.resources.stamina = 0
     rule = OccupyCell()
     assert rule.applies(st, FakeActions(areas={}, armies=[])) is False
+
+
+# ---- sim integration (fake sim; no Node) --------------------------------- #
+class FakeSim:
+    """Stands in for SimBattlePredictor. win=None -> raise SimUnavailable."""
+    def __init__(self, win):
+        self._win = win
+
+    def predict_target(self, state, army, *, target_index, land_id, distance, **kw):
+        if self._win is None:
+            raise SimUnavailable("sidecar down")
+        return BattlePrediction(
+            win=self._win, my_power=1.0, enemy_power=1.0, ratio=1.0,
+            loss_percent=0.0 if self._win else 100.0, loss_lv=0 if self._win else 4,
+        )
+
+
+def _occupy_setup():
+    center = 182 * W + 526
+    st = GameState(source="api"); st.user.uid = "me"; st.main_city_index = center
+    st.resources.stamina = 10
+    areas = {
+        center: _cell(owner="me", city=1001),        # owned -> enables adjoin
+        center - 1: _cell(owner="", pawns=[50]),      # weak: stats would WIN
+    }
+    my_army = [{"index": center, "uid": "A", "pawns": [{"hp": 500}], "state": None}]
+    return st, FakeActions(areas=areas, armies=my_army), center
+
+
+def test_occupy_uses_sim_verdict_over_stats():
+    # Stats would win the weak cell, but the sim says lose -> no occupy.
+    st, act, _center = _occupy_setup()
+    rule = OccupyCell(radius=1, use_sim=True, sim=FakeSim(win=False),
+                      predictor=BattlePredictor())
+    assert rule.applies(st, act) is False
+    assert act.calls == []
+
+
+def test_occupy_falls_back_to_stats_when_sim_unavailable():
+    # Sim raises -> per-candidate fallback to the stats predictor -> occupies.
+    st, act, center = _occupy_setup()
+    rule = OccupyCell(radius=1, use_sim=True, sim=FakeSim(win=None),
+                      predictor=BattlePredictor())
+    assert rule.applies(st, act) is True
+    rule.act(act)
+    assert act.calls and act.calls[0][1] == center - 1

@@ -139,22 +139,38 @@ class Actions:
         return reply
 
     # ---- prediction ------------------------------------------------------ #
-    def predict_occupy(self, cell_index: int, my_pawns: list[dict], predictor=None):
-        """Predict occupying ``cell_index`` with ``my_pawns`` (pure-API heuristic).
+    def predict_occupy(self, cell_index: int, my_pawns: list[dict], predictor=None, *, use_sim=True):
+        """Predict occupying ``cell_index`` with ``my_pawns``.
 
-        Fetches the target area, extracts its hostile pawns, and runs the battle
-        predictor. Returns a BattlePrediction.
+        Prefers the headless engine sim (authoritative, matches the in-game
+        forecast) when the sidecar is reachable; otherwise runs the stats
+        heuristic. Returns a BattlePrediction.
         """
         from nta_agent.execution.predictors.battle import (
             BattlePredictor,
             enemy_pawns_of_area,
         )
+        area = self.get_area(cell_index).get("data", {})
+        if predictor is None and use_sim:
+            # Try the real engine first; fall back to stats on any unavailability.
+            from nta_agent.execution.predictors.sim_bridge import SimUnavailable, get_bridge
+            if get_bridge().available():
+                from nta_agent.execution.predictors.sim_predictor import SimBattlePredictor
+                army = {"index": self.main_city_index(), "uid": "", "name": "D1", "pawns": my_pawns}
+                dist = abs(self.main_city_index() % 600 - cell_index % 600) + abs(
+                    self.main_city_index() // 600 - cell_index // 600)
+                try:
+                    return SimBattlePredictor().predict_target(
+                        self._state, army, target_index=cell_index,
+                        land_id=int(area.get("landId", 0) or 0), distance=dist,
+                    )
+                except SimUnavailable:
+                    pass
         if predictor is None:
             # Prefer the config-driven army-value model; fall back to the hp/lv proxy.
             try:
                 predictor = BattlePredictor.from_stats()
             except FileNotFoundError:
                 predictor = BattlePredictor()
-        area = self.get_area(cell_index).get("data", {})
         enemy = enemy_pawns_of_area(area, my_uid=self._state.user.uid)
         return predictor.predict(my_pawns, enemy)
