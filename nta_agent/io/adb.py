@@ -91,6 +91,20 @@ class DeviceManager:
         """Run a shell command on the device, returning decoded stdout."""
         return self._adb(["shell", command], timeout=timeout).decode("utf-8", "ignore")
 
+    def su(self, command: str, timeout: float = 30) -> str:
+        """Run a command as root (needs a rooted emulator, e.g. LDPlayer).
+
+        The whole ``su -c '<command>'`` is passed as one arg so the device shell
+        hands the full (possibly compound) command to su, not just its first token.
+        """
+        wrapped = "su -c '%s'" % command.replace("'", "'\\''")
+        return self._adb(["shell", wrapped], timeout=timeout).decode("utf-8", "ignore")
+
+    def pull(self, remote: str, local: str, timeout: float = 60) -> str:
+        """Pull a file off the device to a local path."""
+        self._adb(["pull", remote, local], timeout=timeout)
+        return local
+
     # ---- "see" ---------------------------------------------------------------------
 
     def screencap(self, retries: int = 2) -> Image.Image:
