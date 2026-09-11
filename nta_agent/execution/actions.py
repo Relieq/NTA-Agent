@@ -152,7 +152,7 @@ class Actions:
         if predictor is None:
             # Prefer the config-driven army-value model; fall back to the hp/lv proxy.
             try:
-                predictor = BattlePredictor.from_config()
+                predictor = BattlePredictor.from_stats()
             except FileNotFoundError:
                 predictor = BattlePredictor()
         area = self.get_area(cell_index).get("data", {})

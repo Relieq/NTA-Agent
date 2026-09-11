@@ -6,6 +6,7 @@ from nta_agent.execution.predictors.battle import (
     BattlePredictor,
     enemy_pawns_of_area,
 )
+from nta_agent.execution.predictors.combat import StatValuer, stat_pawn_power
 from nta_agent.execution.predictors.economy import EconomyPredictor, ResourceForecast
 
 __all__ = [
@@ -14,6 +15,8 @@ __all__ = [
     "EconomyPredictor",
     "PawnValuer",
     "ResourceForecast",
+    "StatValuer",
     "config_pawn_power",
     "enemy_pawns_of_area",
+    "stat_pawn_power",
 ]

@@ -135,7 +135,7 @@ class OccupyCell:
         if self.predictor is None:
             from nta_agent.execution.predictors.battle import BattlePredictor
             try:
-                self.predictor = BattlePredictor.from_config()
+                self.predictor = BattlePredictor.from_stats()
             except FileNotFoundError:
                 self.predictor = BattlePredictor()
         return self.predictor

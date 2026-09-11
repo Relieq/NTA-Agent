@@ -63,6 +63,16 @@ class BattlePredictor:
         from nta_agent.execution.predictors.army_value import config_pawn_power
         return cls(pawn_power=config_pawn_power(config, weights), win_margin=win_margin)
 
+    @classmethod
+    def from_stats(cls, config=None, win_margin: float = 1.5, use_speed: bool = False) -> BattlePredictor:
+        """A predictor whose power is combat stats (hp*attack) — more accurate than value.
+
+        Defaults to a 1.5x margin: predictions are approximate, so only attack when
+        clearly stronger.
+        """
+        from nta_agent.execution.predictors.combat import stat_pawn_power
+        return cls(pawn_power=stat_pawn_power(config, use_speed), win_margin=win_margin)
+
     def army_power(self, pawns: list[dict]) -> float:
         return sum(self.pawn_power(p) for p in pawns or [])
 
