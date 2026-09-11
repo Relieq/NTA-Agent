@@ -82,6 +82,32 @@ class Actions:
     def get_select_armys(self, index: int, type_: int = 0) -> dict:
         return self.session.request("game/HD_GetSelectArmys", {"index": int(index), "type": type_})
 
+    def select_armies(self, cell_index: int, type_: int = 0) -> list[dict]:
+        """The armies (AreaArmyInfo) available to send at ``cell_index``."""
+        return self.get_select_armys(cell_index, type_).get("list", []) or []
+
+    # ---- combat ---------------------------------------------------------- #
+    def occupy_cell(
+        self,
+        target: int,
+        armies: list[dict],
+        *,
+        auto_back_type: int = 0,
+        same_speed: bool = False,
+    ) -> dict:
+        """March ``armies`` to occupy/attack cell ``target`` (GAME_HD_OCCUPYCELL).
+
+        ``armies`` are AreaArmyInfo dicts (need ``index`` and ``uid``).
+        """
+        indexs = [int(a["index"]) for a in armies]
+        uids = [str(a["uid"]) for a in armies]
+        reply = self.session.request("game/HD_OccupyCell", {
+            "indexs": indexs, "uids": uids, "target": int(target),
+            "autoBackType": int(auto_back_type), "isSameSpeed": bool(same_speed),
+        })
+        self._apply_result(reply)
+        return reply
+
     # ---- prediction ------------------------------------------------------ #
     def predict_occupy(self, cell_index: int, my_pawns: list[dict], predictor=None):
         """Predict occupying ``cell_index`` with ``my_pawns`` (pure-API heuristic).
