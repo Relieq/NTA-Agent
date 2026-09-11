@@ -64,9 +64,33 @@ weaknesses to fix: rigid scripting, unreliable OCR, no accurate state, no API ac
 
 ## Build/lint/test
 
-No toolchain is committed yet. When scaffolding Phase 0, standardize on Python 3.12 with a venv,
-`pyproject.toml`/`requirements.txt`, `ruff` for lint, and `pytest` for tests, then replace this
-section with the real commands (including how to run a single test).
+Python 3.12 in a venv at `.venv`. Use the venv interpreter explicitly (Windows):
+
+```bash
+.venv/Scripts/python.exe -m pytest -q                 # full suite
+.venv/Scripts/python.exe -m pytest tests/test_occupy_rule.py::test_occupy_rule_skips_when_no_stamina -q  # single test
+.venv/Scripts/python.exe -m ruff check nta_agent tests # lint
+```
+
+### Battle simulator sidecar (Node)
+
+`tools/battlesim/` reuses the game's own battle engine headlessly to predict
+occupy/attack outcomes (see `docs/superpowers/specs/2026-09-11-battle-simulator-design.md`).
+It requires **Node.js ≥ 18** and reads the (gitignored) decrypted engine + config **by path**:
+
+- `NTA_ENGINE_JS` (default `tools/re/decrypted/index.js`) — decrypted game bundle.
+- `NTA_CONFIG_DIR` (default `nta_agent/data/config`) — extracted config tables.
+
+```bash
+node tools/battlesim/run-once.js                       # smoke: one known forecast
+node --test tools/battlesim/test/golden.test.js        # JS golden/determinism
+node --test tools/battlesim/test/server.test.js        # sidecar JSON-RPC
+```
+
+Python reaches it through `SimBattlePredictor` (`nta_agent/execution/predictors/`),
+which spawns the sidecar via `SimBridge`. If Node or the engine is absent, occupy
+falls back to the stats predictor — the loop never dies. The Python↔engine
+integration test is skipped unless Node + the engine are present.
 
 ## Workflow notes
 
