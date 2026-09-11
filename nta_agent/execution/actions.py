@@ -86,6 +86,36 @@ class Actions:
         """The armies (AreaArmyInfo) available to send at ``cell_index``."""
         return self.get_select_armys(cell_index, type_).get("list", []) or []
 
+    # ---- recruiting ------------------------------------------------------ #
+    def drill_pawn(
+        self,
+        build_uid: str,
+        pawn_id: int,
+        *,
+        index: int | None = None,
+        army_uid: str = "",
+        army_name: str = "",
+    ) -> dict:
+        """Recruit a pawn at a spawn building (GAME_HD_DRILLPAWN).
+
+        ``army_uid`` empty + ``army_name`` set creates a new army; otherwise the
+        pawn joins the given army. Defaults to the main city.
+        """
+        idx = index if index is not None else self.main_city_index()
+        reply = self.session.request("game/HD_DrillPawn", {
+            "index": int(idx), "buildUid": str(build_uid), "id": int(pawn_id),
+            "armyUid": str(army_uid), "armyName": str(army_name),
+        })
+        self._apply_result(reply)
+        return reply
+
+    def building_uid(self, build_id: int) -> str:
+        """The uid of the player's building with ``build_id`` (0/'' if none)."""
+        for b in self._state.builds:
+            if b.id == build_id:
+                return b.uid
+        return ""
+
     # ---- combat ---------------------------------------------------------- #
     def occupy_cell(
         self,

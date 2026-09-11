@@ -52,3 +52,19 @@ def test_occupy_cell_builds_index_uid_arrays():
     assert params["indexs"] == [109726, 109726]
     assert params["uids"] == ["a1", "a2"]
     assert params["target"] == 870 and params["autoBackType"] == 1 and params["isSameSpeed"] is True
+
+
+def test_drill_pawn_and_building_uid():
+    from nta_agent.state.schema import Building
+    st = GameState(source="api")
+    st.main_city_index = 109726
+    st.builds = [Building(index=109726, id=2004, lv=1, uid="barracks1")]
+    s = FakeSession(state=st)
+    a = Actions(s)
+    assert a.building_uid(2004) == "barracks1"
+    assert a.building_uid(9999) == ""
+    a.drill_pawn("barracks1", 3101, army_name="A")
+    route, params = s.calls[0]
+    assert route == "game/HD_DrillPawn"
+    assert params == {"index": 109726, "buildUid": "barracks1", "id": 3101,
+                      "armyUid": "", "armyName": "A"}
