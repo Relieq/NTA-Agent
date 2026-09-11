@@ -21,6 +21,8 @@ __all__ = [
     "Resources",
     "Slot",
     "User",
+    "apply_notify",
     "apply_user",
+    "from_entry_rst",
     "from_novice_data",
 ]

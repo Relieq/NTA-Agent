@@ -15,6 +15,7 @@ from __future__ import annotations
 import threading
 import time
 from dataclasses import dataclass, field
+from pathlib import Path
 from typing import Any
 
 from nta_agent.io.api.client import GameClient, ServerConfig
@@ -34,6 +35,7 @@ class PushRecord:
 @dataclass
 class GameSession:
     server: ServerConfig
+    token_path: Path | None = None  # when set, login reads/writes the rotating token here
     client: GameClient = field(init=False)
     state: GameState = field(default_factory=GameState)
     pushes: list[PushRecord] = field(default_factory=list)
@@ -52,7 +54,7 @@ class GameSession:
 
     def login(
         self,
-        account_token: str,
+        account_token: str | None = None,
         distinct_id: str = "",
         *,
         lang: str = "vi",
@@ -61,7 +63,17 @@ class GameSession:
         version: str = "4.4.4",
         timeout: float = 15,
     ) -> dict:
-        """lobby/HD_TryLogin; populates state.user and returns the raw reply."""
+        """lobby/HD_TryLogin; populates state.user and returns the raw reply.
+
+        The accountToken is single-use: the server rotates it and returns the next
+        one. If ``token_path`` is set, the token is read from there when not given
+        and the rotated token is written back, so the chain self-maintains and the
+        agent never needs the app again after the first bootstrap.
+        """
+        if account_token is None:
+            if not self.token_path or not self.token_path.exists():
+                raise ValueError("no account_token given and token_path is empty")
+            account_token = self.token_path.read_text().strip()
         reply = self.client.request(
             "lobby/HD_TryLogin",
             {
@@ -74,6 +86,10 @@ class GameSession:
             },
             timeout=timeout,
         )
+        new_token = reply.get("accountToken")
+        if new_token and self.token_path:
+            self.token_path.parent.mkdir(parents=True, exist_ok=True)
+            self.token_path.write_text(new_token)
         user = reply.get("user")
         if isinstance(user, dict):
             apply_user(self.state, user)
