@@ -68,7 +68,7 @@ def main():
         member = f"{a.res_base}/import/{uuid[:2]}/{uuid}.json"
         try:
             imp = json.loads(z.read(member))
-            asset_name, rows = unwrap_jsonasset(imp)
+            _, rows = unwrap_jsonasset(imp)
             (out_dir / f"{name}.json").write_text(
                 json.dumps(rows, ensure_ascii=False), encoding="utf-8"
             )
