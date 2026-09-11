@@ -191,6 +191,83 @@ class OccupyCell:
 
 
 @dataclass
+class Recruit:
+    """Recruit an already-unlocked pawn into an army at the main city.
+
+    A pawn must be *unlocked* (present in player.pawnSlots) before it can be
+    drilled — drilling a locked pawn returns ecode.500017. We recruit into a city
+    army that has room (<9 pawns), or create a new one while under the army cap.
+    Unlocking new pawn types (StudySelect) is a separate concern left to strategy.
+    """
+    name: str = "recruit"
+    barracks_id: int = 2004
+    max_army_pawns: int = 9
+    max_armies: int = 4
+    fail_cooldown: int = 10
+    config: object = None
+    _pending: object = None   # (build_uid, pawn_id, army_uid, army_name)
+    _cooldown: int = 0
+
+    def _cfg(self):
+        if self.config is None:
+            from nta_agent.data.config import GameConfig
+            try:
+                self.config = GameConfig.load()
+            except FileNotFoundError:
+                self.config = False
+        return self.config or None
+
+    def _unlocked_pawns(self, state: GameState) -> list[int]:
+        slots = (state.raw or {}).get("player", {}).get("pawnSlots") or {}
+        return [int(v["id"]) for v in slots.values() if isinstance(v, dict) and v.get("id")]
+
+    def _affordable(self, state: GameState, pawn_id: int) -> bool:
+        cfg = self._cfg()
+        if not cfg:
+            return True  # can't check -> let the server decide
+        cost = cfg.pawn_recruit_cost(pawn_id)
+        r = state.resources
+        have = {"cereal": r.cereal, "timber": r.timber, "stone": r.stone, "iron": r.iron}
+        return all(have.get(k, 0) >= v for k, v in cost.items())
+
+    def applies(self, state: GameState, actions: Actions) -> bool:
+        if self._cooldown > 0:
+            self._cooldown -= 1
+            return False
+        bu = actions.building_uid(self.barracks_id)
+        if not bu or not state.main_city_index:
+            return False
+        unlocked = self._unlocked_pawns(state)
+        if not unlocked:
+            return False  # nothing to recruit (needs StudySelect first)
+        pawn = next((p for p in unlocked if self._affordable(state, p)), None)
+        if pawn is None:
+            return False
+        armys = actions.get_area(state.main_city_index).get("data", {}).get("armys", []) or []
+        # recruit into a non-marching city army that still has room
+        room = next((a for a in armys
+                     if not a.get("state") and len(a.get("pawns", [])) < self.max_army_pawns), None)
+        if room:
+            self._pending = (bu, pawn, str(room["uid"]), "")
+        elif len(armys) < self.max_armies:
+            self._pending = (bu, pawn, "", f"D{len(armys) + 1}")
+        else:
+            return False
+        return True
+
+    def act(self, actions: Actions) -> None:
+        if not self._pending:
+            return
+        bu, pawn, au, name = self._pending
+        self._pending = None
+        try:
+            actions.drill_pawn(bu, pawn, army_uid=au, army_name=name)
+        except Exception:
+            self._cooldown = self.fail_cooldown
+            raise
+
+
+@dataclass
 class RuleEngine:
     rules: list[Rule]
 
@@ -209,4 +286,4 @@ class RuleEngine:
 
     @classmethod
     def default(cls) -> RuleEngine:
-        return cls(rules=[CollectCityOutput(), BuildOrder(), OccupyCell()])
+        return cls(rules=[CollectCityOutput(), BuildOrder(), Recruit(), OccupyCell()])
