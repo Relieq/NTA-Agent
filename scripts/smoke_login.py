@@ -4,7 +4,10 @@ Prints the decoded LOBBY_HD_TRYLOGIN_S2C (real server user state). May kick an
 active game session on the same account.
 """
 from __future__ import annotations
-import argparse, json
+
+import argparse
+import json
+
 from nta_agent.io.api.client import ApiError, GameClient, ServerConfig
 
 

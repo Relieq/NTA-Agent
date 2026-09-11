@@ -1,9 +1,12 @@
 """Log in, enter the newbie match, and print the resulting GameState (via API)."""
 from __future__ import annotations
-import argparse, time
+
+import argparse
+import time
 from pathlib import Path
-from nta_agent.io.api.session import GameSession
+
 from nta_agent.io.api.client import ServerConfig
+from nta_agent.io.api.session import GameSession
 
 TOKEN_FILE = Path(__file__).resolve().parent.parent / "build" / "nta_token.txt"
 DISTINCT = "9b6bd157-ce26-481b-bcfd-1dc0829d7df8"

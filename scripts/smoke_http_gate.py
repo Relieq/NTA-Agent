@@ -1,5 +1,6 @@
 """Verify the read-only HTTP bootstrap endpoints."""
 import json
+
 from nta_agent.io.api.http_gate import HttpGate
 
 g = HttpGate("nine-hk.twomiles.cn")

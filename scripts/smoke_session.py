@@ -1,8 +1,12 @@
 """Login via GameSession, observe server pushes, and read current game info."""
 from __future__ import annotations
-import argparse, json, time
+
+import argparse
+import json
+import time
+
+from nta_agent.io.api.client import ApiError, ServerConfig
 from nta_agent.io.api.session import GameSession
-from nta_agent.io.api.client import ServerConfig, ApiError
 
 
 def dump(label, obj):
@@ -19,7 +23,7 @@ def main():
 
     s = GameSession(server=ServerConfig(host=a.host))
     s.connect(timeout=15)
-    reply = s.login(a.token, a.distinct_id)
+    s.login(a.token, a.distinct_id)
     u = s.state.user
     print(f"LOGIN OK  uid={u.uid} nickname={u.nickname}")
 

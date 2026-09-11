@@ -22,6 +22,7 @@ from __future__ import annotations
 import json
 import re
 import sys
+from itertools import pairwise
 from pathlib import Path
 
 SCALAR = {"int32", "uint32", "sint32", "int64", "uint64", "sint64", "bool",
@@ -79,7 +80,7 @@ def main():
     marks = [(m.start(), m.group(1)) for m in MSG_RE.finditer(src)]
     marks.append((len(src), None))
     unknown = 0
-    for (start, name), (end, _) in zip(marks, marks[1:]):
+    for (start, name), (end, _) in pairwise(marks):
         if name is None:
             continue
         seg = src[start:end]

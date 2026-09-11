@@ -1,10 +1,13 @@
 """Enter the match and perform a first safe write action: collect city output."""
 from __future__ import annotations
-import json, time
+
+import json
+import time
 from pathlib import Path
-from nta_agent.io.api.session import GameSession
-from nta_agent.io.api.client import ServerConfig, ApiError
+
 from nta_agent.execution import Actions
+from nta_agent.io.api.client import ApiError, ServerConfig
+from nta_agent.io.api.session import GameSession
 
 TF = Path(__file__).resolve().parent.parent / "build" / "nta_token.txt"
 DISTINCT = "9b6bd157-ce26-481b-bcfd-1dc0829d7df8"

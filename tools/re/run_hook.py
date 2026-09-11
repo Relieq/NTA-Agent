@@ -12,7 +12,8 @@ PKG = "twgame.global.acers"
 def main():
     script_path = sys.argv[1]
     wait_s = int(sys.argv[2]) if len(sys.argv) > 2 else 15
-    src = open(script_path, encoding="utf-8").read()
+    with open(script_path, encoding="utf-8") as _f:
+        src = _f.read()
 
     dev = frida.get_usb_device(timeout=10)
     print(f"[*] device: {dev.name}")

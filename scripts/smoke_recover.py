@@ -1,8 +1,10 @@
 """Prove session recovery: connect, enter, force a drop, recover, verify state."""
 from __future__ import annotations
+
 from pathlib import Path
-from nta_agent.io.api.session import GameSession
+
 from nta_agent.io.api.client import ServerConfig
+from nta_agent.io.api.session import GameSession
 
 TF = Path(__file__).resolve().parent.parent / "build" / "nta_token.txt"
 DISTINCT = "9b6bd157-ce26-481b-bcfd-1dc0829d7df8"
