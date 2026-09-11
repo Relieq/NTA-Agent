@@ -80,5 +80,5 @@ def test_skips_build_already_queued():
         (2004, 2): _bu(2004, 2, {"timber": 1}),
         (2001, 6): _bu(2001, 6, {"timber": 1}),
     })
-    b, up = next_upgrade(st, cfg, sequence=[2004, 2001])
+    b, _up = next_upgrade(st, cfg, sequence=[2004, 2001])
     assert b.id == 2001  # barracks skipped (queued), main hall chosen

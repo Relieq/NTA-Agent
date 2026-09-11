@@ -34,17 +34,17 @@ def _state(cereal, granary, warehouse, main_city=109726):
 
 def test_collect_rule_applies_when_below_cap():
     rule = CollectCityOutput()
-    assert rule.applies(_state(cereal=500, granary=1000, warehouse=1000)) is True
+    assert rule.applies(_state(cereal=500, granary=1000, warehouse=1000), None) is True
 
 
 def test_collect_rule_skips_when_at_cap():
     rule = CollectCityOutput()
-    assert rule.applies(_state(cereal=1000, granary=1000, warehouse=1000)) is False
+    assert rule.applies(_state(cereal=1000, granary=1000, warehouse=1000), None) is False
 
 
 def test_collect_rule_skips_when_caps_unknown():
     st = GameState(source="api")  # no player caps
-    assert CollectCityOutput().applies(st) is False
+    assert CollectCityOutput().applies(st, None) is False
 
 
 def test_engine_fires_and_acts():
