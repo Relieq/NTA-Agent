@@ -235,3 +235,4 @@ tools/re/decrypted/
 
 # Derived protocol schema (game API surface) — regenerate with tools/re/parse_schema.py
 nta_agent/io/api/schema.json
+nta_agent/data/config/
