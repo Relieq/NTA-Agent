@@ -131,10 +131,22 @@ def from_entry_rst(rst: dict[str, Any], user: dict[str, Any] | None = None) -> G
         Hero(lv=int(h.get("lv", 0)), avatar_army_uid=str(h.get("avatarArmyUID", "")), raw=h)
         for h in player.get("heroSlots", [])
     ]
+
+    def _op(v):  # OutPutInfo {value, opHour} -> opHour
+        return int(v.get("opHour", 0)) if isinstance(v, dict) else 0
+
+    production = {
+        name: _op(player.get(name))
+        for name in ("cereal", "timber", "stone")
+        if isinstance(player.get(name), dict)
+    }
     state = GameState(
         resources=res,
         heroes=heroes,
         land_score=int(player.get("landCount", 0) or 0),
+        production=production,
+        granary_cap=int(player.get("granaryCap", 0) or 0),
+        warehouse_cap=int(player.get("warehouseCap", 0) or 0),
         source="api",
         raw=rst,
     )

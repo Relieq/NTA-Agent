@@ -38,6 +38,8 @@ class CollectCityOutput:
     name: str = "collect_city_output"
 
     def applies(self, state: GameState) -> bool:
+        # Collect only when storage has room; at cap the server rejects it and the
+        # gathered output would overflow anyway.
         granary, warehouse = _caps(state)
         if not (granary or warehouse):
             return False  # caps unknown -> don't guess

@@ -95,6 +95,11 @@ class GameState:
     chapter: int = 0
     land_score: int = 0
 
+    # economy: production rate per resource (per hour) and storage caps
+    production: dict[str, int] = field(default_factory=dict)
+    granary_cap: int = 0    # cereal storage
+    warehouse_cap: int = 0  # timber/stone storage
+
     # provenance
     source: str = ""          # "novice" | "api" | "vision"
     updated_at: float = field(default_factory=time.time)
