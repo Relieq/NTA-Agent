@@ -300,6 +300,67 @@ class Recruit:
 
 
 @dataclass
+class ClaimTasks:
+    """Claim completed task rewards (guide / other / today) — server-authoritative.
+
+    Task ``progress`` isn't always maintained server-side (some conditions are
+    verified only on claim), so instead of predicting completion we *attempt* the
+    claim and let the server decide. A rejected id is backed off until the task
+    lists change (progress advanced), then retried. Guide tasks in particular
+    carry the early-game gameplay guidance + worthwhile rewards.
+    """
+    name: str = "claim_tasks"
+    sweep_every: int = 20     # ticks between claim attempts (claiming isn't urgent)
+    _seen: set = field(default_factory=set)   # (kind,id) already attempted this cycle
+    _sig: tuple = ()          # task-list signature; changes reset _seen (retry as play advances)
+    _cooldown: int = 0
+    _pending: object = None    # (kind, id)
+
+    _KINDS = (("guideTasks", "guide"), ("otherTasks", "other"), ("todayTasks", "today"))
+
+    @staticmethod
+    def _tasks(state: GameState, key: str) -> list[dict]:
+        return (state.raw or {}).get("player", {}).get(key) or []
+
+    def applies(self, state: GameState, actions: Actions) -> bool:
+        if self._cooldown > 0:
+            self._cooldown -= 1
+            return False
+        # When the task lists move (ids/progress changed, e.g. after a claim or as
+        # play advances), forget what we tried so completed tasks get another go.
+        sig = tuple(
+            (kind, t.get("id"), t.get("progress"))
+            for key, kind in self._KINDS for t in self._tasks(state, key)
+        )
+        if sig != self._sig:
+            self._sig = sig
+            self._seen.clear()
+        for key, kind in self._KINDS:
+            for t in self._tasks(state, key):
+                tid = t.get("id")
+                if tid is None or (kind, tid) in self._seen:
+                    continue
+                self._pending = (kind, tid)
+                return True
+        return False
+
+    def act(self, actions: Actions) -> None:
+        if not self._pending:
+            return
+        kind, tid = self._pending
+        self._pending = None
+        self._seen.add((kind, tid))  # attempted once per cycle, win or lose
+        claim = {"guide": actions.claim_task,
+                 "other": actions.claim_other_task,
+                 "today": actions.claim_today_task}[kind]
+        self._cooldown = self.sweep_every  # one claim per sweep
+        try:
+            claim(tid)
+        except Exception:  # "not complete" is the expected case — stay quiet, retry next cycle
+            return
+
+
+@dataclass
 class RuleEngine:
     rules: list[Rule]
 
@@ -318,4 +379,5 @@ class RuleEngine:
 
     @classmethod
     def default(cls) -> RuleEngine:
-        return cls(rules=[CollectCityOutput(), BuildOrder(), Recruit(), OccupyCell(use_sim=True)])
+        return cls(rules=[CollectCityOutput(), BuildOrder(), Recruit(),
+                          OccupyCell(use_sim=True), ClaimTasks()])

@@ -116,6 +116,42 @@ class Actions:
                 return b.uid
         return ""
 
+    # ---- task rewards ---------------------------------------------------- #
+    def _apply_task_reply(self, reply: dict, list_updates: dict[str, str]) -> dict:
+        """Apply a claim reply: credit ``rewards`` and refresh player task lists.
+
+        ``list_updates`` maps a reply key (e.g. ``"tasks"``) to the player key it
+        replaces (e.g. ``"guideTasks"``).
+        """
+        rewards = reply.get("rewards", {})
+        if isinstance(rewards, dict):
+            from nta_agent.state.store import apply_update_output
+            apply_update_output(self._state, rewards)
+        player = (self._state.raw or {}).setdefault("player", {})
+        for reply_key, player_key in list_updates.items():
+            if isinstance(reply.get(reply_key), list):
+                player[player_key] = reply[reply_key]
+        return rewards
+
+    def claim_task(self, task_id: int) -> dict:
+        """Claim a completed guide/chapter task (GAME_HD_CLAIMTASKREWARD)."""
+        reply = self.session.request("game/HD_ClaimTaskReward", {"id": int(task_id)})
+        return self._apply_task_reply(reply, {"tasks": "guideTasks", "todayTasks": "todayTasks"})
+
+    def claim_other_task(self, task_id: int, treasure_index: int = 0, select_index: int = 0) -> dict:
+        """Claim a completed 'other' task (GAME_HD_CLAIMOTHERTASKREWARD)."""
+        reply = self.session.request("game/HD_ClaimOtherTaskReward", {
+            "id": int(task_id), "treasureIndex": int(treasure_index), "selectIndex": int(select_index),
+        })
+        return self._apply_task_reply(reply, {"otherTasks": "otherTasks"})
+
+    def claim_today_task(self, task_id: int, treasure_index: int = 0, select_index: int = 0) -> dict:
+        """Claim a completed today/daily task (GAME_HD_CLAIMTODAYTASKREWARD)."""
+        reply = self.session.request("game/HD_ClaimTodayTaskReward", {
+            "id": int(task_id), "treasureIndex": int(treasure_index), "selectIndex": int(select_index),
+        })
+        return self._apply_task_reply(reply, {"todayTasks": "todayTasks"})
+
     # ---- combat ---------------------------------------------------------- #
     def occupy_cell(
         self,
