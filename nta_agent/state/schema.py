@@ -87,6 +87,7 @@ class GameState:
     user: User = field(default_factory=User)
     resources: Resources = field(default_factory=Resources)
     areas: dict[int, Area] = field(default_factory=dict)
+    builds: list[Building] = field(default_factory=list)  # the player's own buildings (live)
     marches: list[March] = field(default_factory=list)
     pawn_slots: list[Slot] = field(default_factory=list)
     policy_slots: list[Slot] = field(default_factory=list)
@@ -94,6 +95,9 @@ class GameState:
     heroes: list[Hero] = field(default_factory=list)
     chapter: int = 0
     land_score: int = 0
+    main_city_index: int = 0  # area index of the main city (target for its builds)
+    build_queue: list[dict] = field(default_factory=list)  # in-progress upgrades (btQueues)
+    build_queue_slots: int = 1  # how many concurrent builds are allowed
 
     # economy: production rate per resource (per hour) and storage caps
     production: dict[str, int] = field(default_factory=dict)

@@ -140,10 +140,24 @@ def from_entry_rst(rst: dict[str, Any], user: dict[str, Any] | None = None) -> G
         for name in ("cereal", "timber", "stone")
         if isinstance(player.get(name), dict)
     }
+    # Entry builds are {uid,id,lv} with no area index — they sit in the main city,
+    # so their area index is mainCityIndex (the target for HD_UpAreaBuild).
+    main_city_index = int(player.get("mainCityIndex", 0) or 0)
+    builds = []
+    for b in player.get("builds", []):
+        if isinstance(b, dict):
+            bld = _building(b)
+            if not bld.index:
+                bld.index = main_city_index
+            builds.append(bld)
     state = GameState(
         resources=res,
         heroes=heroes,
+        builds=builds,
         land_score=int(player.get("landCount", 0) or 0),
+        main_city_index=main_city_index,
+        build_queue=list(player.get("btQueues") or []),
+        build_queue_slots=1 + int(player.get("extraBTQueueCount", 0) or 0),
         production=production,
         granary_cap=int(player.get("granaryCap", 0) or 0),
         warehouse_cap=int(player.get("warehouseCap", 0) or 0),

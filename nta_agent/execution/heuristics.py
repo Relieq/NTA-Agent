@@ -8,7 +8,7 @@ housekeeping that keeps the account ticking over.
 """
 from __future__ import annotations
 
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from typing import Protocol
 
 from nta_agent.execution.actions import Actions
@@ -36,8 +36,13 @@ class CollectCityOutput:
     reject it anyway) to avoid pointless requests.
     """
     name: str = "collect_city_output"
+    fail_cooldown: int = 20  # ticks to wait after a rejection before retrying
+    _cooldown: int = 0
 
     def applies(self, state: GameState) -> bool:
+        if self._cooldown > 0:
+            self._cooldown -= 1
+            return False
         # Collect only when storage has room; at cap the server rejects it and the
         # gathered output would overflow anyway.
         granary, warehouse = _caps(state)
@@ -51,7 +56,62 @@ class CollectCityOutput:
         )
 
     def act(self, actions: Actions) -> None:
-        actions.collect_city_output()
+        try:
+            actions.collect_city_output()
+        except Exception:
+            self._cooldown = self.fail_cooldown  # back off, then surface the error
+            raise
+
+
+@dataclass
+class BuildOrder:
+    """Upgrade buildings along a priority order, respecting prereqs and cost.
+
+    ``sequence`` is a list of build ids in priority order (like the old fixed
+    build order); when None, all owned buildings are considered lowest-id first.
+    Needs the config tables; if they're absent the rule simply never applies.
+    """
+    name: str = "build_order"
+    sequence: list[int] | None = None
+    config: object | None = None
+    _pending: object = None  # (Building, BuildUpgrade) chosen in applies()
+    _blocked: set = field(default_factory=set)  # (uid, target_lv) the server rejected
+    _sig: tuple = ()  # last builds signature; changing it clears blocks (retry)
+
+    def _cfg(self):
+        if self.config is None:
+            from nta_agent.data.config import GameConfig
+            try:
+                self.config = GameConfig.load()
+            except FileNotFoundError:
+                self.config = False  # sentinel: unavailable
+        return self.config or None
+
+    def applies(self, state: GameState) -> bool:
+        cfg = self._cfg()
+        if not cfg:
+            return False
+        # When any building level changes, retry previously-blocked steps.
+        sig = tuple(sorted((b.uid, b.lv) for b in state.builds))
+        if sig != self._sig:
+            self._sig = sig
+            self._blocked.clear()
+        from nta_agent.execution.build_planner import next_upgrade
+        self._pending = next_upgrade(state, cfg, self.sequence, self._blocked)
+        return self._pending is not None
+
+    def act(self, actions: Actions) -> None:
+        if not self._pending:
+            return
+        build, up = self._pending
+        self._pending = None
+        try:
+            actions.upgrade_build(build.index, uid=build.uid)
+        except Exception:
+            # Server rejected (a condition we can't verify locally) — back off this
+            # exact step until the situation changes, and surface the error.
+            self._blocked.add((build.uid, up.level))
+            raise
 
 
 @dataclass
@@ -67,9 +127,10 @@ class RuleEngine:
                     rule.act(actions)
                     fired.append(rule.name)
             except Exception as e:  # a failing rule must not kill the loop
-                fired.append(f"{rule.name}!ERR:{type(e).__name__}")
+                detail = str(e).split(":")[-1].strip() or type(e).__name__
+                fired.append(f"{rule.name}!ERR:{detail}")
         return fired
 
     @classmethod
     def default(cls) -> RuleEngine:
-        return cls(rules=[CollectCityOutput()])
+        return cls(rules=[CollectCityOutput(), BuildOrder()])

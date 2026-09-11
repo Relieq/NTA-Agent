@@ -26,6 +26,8 @@ class Actions:
 
     def main_city_index(self) -> int:
         """The player's main city index (from the live Entry rst)."""
+        if self._state.main_city_index:
+            return self._state.main_city_index
         idx = self._player().get("mainCityIndex")
         if idx:
             return int(idx)
@@ -33,6 +35,15 @@ class Actions:
         return mc.index if mc else 0
 
     # ---- resource economy ------------------------------------------------ #
+    def _apply_result(self, reply: dict) -> None:
+        """Keep GameState current from an action reply (output + build queue)."""
+        from nta_agent.state.store import apply_update_output
+        out = reply.get("output")
+        if isinstance(out, dict):
+            apply_update_output(self._state, out)
+        if "queues" in reply and isinstance(reply["queues"], list):
+            self._state.build_queue = reply["queues"]
+
     def collect_city_output(self, index: int | None = None) -> dict:
         """Claim accumulated output from a city (default: the main city).
 
@@ -43,7 +54,11 @@ class Actions:
         if not idx:
             raise ValueError("no city index to collect from")
         reply = self.session.request("game/HD_ClaimCityOutput", {"index": int(idx)})
-        return reply.get("rewards", {})
+        rewards = reply.get("rewards", {})
+        if isinstance(rewards, dict):
+            from nta_agent.state.store import apply_update_output
+            apply_update_output(self._state, rewards)
+        return rewards
 
     # ---- construction ---------------------------------------------------- #
     def upgrade_build(self, index: int, uid: str = "") -> dict:
@@ -51,7 +66,9 @@ class Actions:
         params = {"index": int(index)}
         if uid:
             params["uid"] = uid
-        return self.session.request("game/HD_UpAreaBuild", params)
+        reply = self.session.request("game/HD_UpAreaBuild", params)
+        self._apply_result(reply)
+        return reply
 
     # ---- reads ----------------------------------------------------------- #
     def get_area(self, index: int, no_record: bool = True) -> dict:
