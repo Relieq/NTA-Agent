@@ -8,8 +8,12 @@ zlib/gzip-compressing the plaintext. This standalone decryptor needs no engine.
 Key defaults to the one recovered via tools/re/hook_xxtea.js (see tools/re/KEY.txt).
 """
 from __future__ import annotations
-import argparse, struct, zlib
+
+import argparse
+import struct
+import zlib
 from pathlib import Path
+
 
 def _load_key() -> bytes:
     """Key comes from env NTA_XXTEA_KEY or the gitignored tools/re/KEY.txt — never hardcoded."""

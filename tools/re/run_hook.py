@@ -2,7 +2,10 @@
 
 Usage: python tools/re/run_hook.py tools/re/hook_xxtea.js [seconds]
 """
-import sys, time, frida
+import sys
+import time
+
+import frida
 
 PKG = "twgame.global.acers"
 

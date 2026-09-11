@@ -46,7 +46,7 @@ target-version = "py312"
 # Intentional patterns: broad excepts keep the agent loop/decoders resilient;
 # %-format is used deliberately; adb.py checks returncode itself; subprocess
 # args are static. Keep these from adding noise.
-ignore = ["BLE001", "UP031", "PLW1510", "S603", "S607", "S110", "TRY003", "EM101", "EM102"]
+ignore = ["BLE001", "UP031", "PLW1510", "S603", "S607", "S110", "C408", "TRY003", "EM101", "EM102"]
 
 [tool.pytest.ini_options]
 # The default system temp dir can be ACL-locked on Windows; keep tmp inside the project.
