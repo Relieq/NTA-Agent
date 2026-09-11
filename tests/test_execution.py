@@ -65,3 +65,49 @@ def test_engine_isolates_rule_errors():
 
     fired = RuleEngine(rules=[Boom()]).tick(GameState(), Actions(FakeSession(GameState())))
     assert fired and fired[0].startswith("boom!ERR:")
+
+
+def test_agent_recovers_from_transient_drop():
+    from nta_agent.execution import Agent
+    from nta_agent.io.api.client import NotConnected
+
+    @dataclass
+    class FlakySession:
+        state: GameState
+        fail_syncs: int = 1
+        recovered: int = 0
+        def sync(self):
+            if self.fail_syncs > 0:
+                self.fail_syncs -= 1
+                raise NotConnected("down")
+            return self.state
+        def recover(self, timeout=15):
+            self.recovered += 1
+            return True
+
+    s = FlakySession(state=GameState())
+    agent = Agent(session=s)
+    ticks_seen = []
+    agent.run(ticks=1, interval=0, on_tick=lambda i, f, st: ticks_seen.append(i))
+    assert s.recovered == 1
+    assert ticks_seen == [0]  # tick completed after recovery
+
+
+def test_agent_run_raises_on_broken_token_chain():
+    from nta_agent.execution import Agent
+    from nta_agent.io.api.client import NotConnected
+    from nta_agent.io.api.session import TokenChainBroken
+
+    @dataclass
+    class DeadSession:
+        state: GameState
+        def sync(self):
+            raise NotConnected("down")
+        def recover(self, timeout=15):
+            raise TokenChainBroken("spent")
+
+    try:
+        Agent(session=DeadSession(state=GameState())).run(ticks=1, interval=0)
+        assert False, "expected TokenChainBroken"
+    except TokenChainBroken:
+        pass

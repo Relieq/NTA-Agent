@@ -14,13 +14,25 @@ from __future__ import annotations
 
 import threading
 import time
+from collections.abc import Callable
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any
 
-from nta_agent.io.api.client import GameClient, ServerConfig
+from nta_agent.io.api.client import ApiError, GameClient, ServerConfig
 from nta_agent.state.schema import GameState
 from nta_agent.state.store import apply_user
+
+# The server rotates the single-use accountToken; reusing a spent one fails here.
+TOKEN_INVALID = "ecode.500002"
+
+
+class TokenChainBroken(RuntimeError):
+    """Login failed because the stored accountToken is spent/invalid.
+
+    Recovery needs a fresh token from the app's OAuth flow (see io bootstrap),
+    which the agent can drive over ADB.
+    """
 
 
 @dataclass
@@ -39,7 +51,15 @@ class GameSession:
     client: GameClient = field(init=False)
     state: GameState = field(default_factory=GameState)
     pushes: list[PushRecord] = field(default_factory=list)
+    # called with no args when the token chain is broken; should refresh token_path
+    # (e.g. re-auth via the app over ADB) and return True on success.
+    token_refresher: Callable[[], bool] | None = None
     _lock: threading.Lock = field(default_factory=threading.Lock)
+    _distinct_id: str = ""
+    _sid: int | None = None
+    _in_game: bool = False
+    _login_opts: dict = field(default_factory=lambda: {
+        "lang": "vi", "os": "Android 9", "platform": "google", "version": "4.4.4"})
 
     def __post_init__(self):
         self.client = GameClient(server=self.server)
@@ -70,19 +90,33 @@ class GameSession:
         and the rotated token is written back, so the chain self-maintains and the
         agent never needs the app again after the first bootstrap.
         """
+        self._distinct_id = distinct_id or self._distinct_id
+        self._login_opts = {"lang": lang, "os": os, "platform": platform, "version": version}
+        try:
+            return self._try_login(account_token, timeout=timeout)
+        except ApiError as e:
+            if TOKEN_INVALID not in str(e):
+                raise
+            # spent/invalid token: try to refresh (e.g. app OAuth over ADB) once
+            if self.token_refresher and self.token_refresher():
+                return self._try_login(None, timeout=timeout)
+            raise TokenChainBroken(str(e)) from e
+
+    def _try_login(self, account_token: str | None, *, timeout: float = 15) -> dict:
         if account_token is None:
             if not self.token_path or not self.token_path.exists():
                 raise ValueError("no account_token given and token_path is empty")
             account_token = self.token_path.read_text().strip()
+        opts = self._login_opts
         reply = self.client.request(
             "lobby/HD_TryLogin",
             {
                 "accountToken": account_token,
-                "distinctId": distinct_id,
-                "os": os,
-                "lang": lang,
-                "platform": platform,
-                "version": version,
+                "distinctId": self._distinct_id,
+                "os": opts["os"],
+                "lang": opts["lang"],
+                "platform": opts["platform"],
+                "version": opts["version"],
             },
             timeout=timeout,
         )
@@ -110,6 +144,8 @@ class GameSession:
         The Entry ``rst`` is authoritative, so it replaces self.state (preserving user).
         Returns the raw Entry reply.
         """
+        distinct_id = distinct_id or self._distinct_id
+        is_reconnect = self._in_game and sid is not None
         if sid is None:
             rooms = self.client.request("lobby/HD_GetRoomStateInfos", {})
             sid = rooms.get("playSid") or rooms.get("allotPlaySid") or 0
@@ -118,7 +154,7 @@ class GameSession:
 
         self.client.request("lobby/HD_SelectGameServer", {"sid": int(sid)})
         entry = self.client.request("game/HD_Entry", {
-            "sid": int(sid), "version": version, "isReconnect": False,
+            "sid": int(sid), "version": version, "isReconnect": is_reconnect,
             "distinctId": distinct_id, "lang": lang, "os": "Android 9",
             "platform": "google", "pos": 0,
         })
@@ -129,7 +165,21 @@ class GameSession:
             self.state = from_entry_rst(rst, user=user.raw or None)
             if not self.state.user.uid:
                 self.state.user = user
+        self._sid = int(sid)
+        self._in_game = True
         return entry
+
+    def recover(self, timeout: float = 15) -> bool:
+        """Rebuild a dropped session: reconnect -> re-login -> re-enter the game.
+
+        Replays the remembered distinct_id/sid. Raises TokenChainBroken (via login)
+        if the token is spent and no refresher fixes it. Returns True on success.
+        """
+        self.client.reconnect(timeout=timeout)
+        self.login(distinct_id=self._distinct_id, timeout=timeout)
+        if self._sid is not None:
+            self.enter_game(sid=self._sid, distinct_id=self._distinct_id)
+        return True
 
     # ---- convenience passthrough ---------------------------------------- #
     def request(self, route: str, params: dict | None = None, timeout: float = 15) -> dict:

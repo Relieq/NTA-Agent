@@ -39,6 +39,10 @@ class ApiError(RuntimeError):
     """A request returned a non-empty S2C_RESULT.error."""
 
 
+class NotConnected(RuntimeError):
+    """A request was attempted while the MQTT connection was down."""
+
+
 @dataclass
 class GameClient:
     server: ServerConfig
@@ -81,6 +85,18 @@ class GameClient:
         if self._mqtt:
             self._mqtt.loop_stop()
             self._mqtt.disconnect()
+        self._connected.clear()
+
+    def reconnect(self, timeout: float = 15) -> None:
+        """Tear down the old MQTT client and open a fresh connection."""
+        self.close()
+        # Abandon any in-flight requests; the caller re-issues after re-login.
+        with self._lock:
+            for pending in self._pending.values():
+                pending.error = "reconnect"
+                pending.event.set()
+            self._pending.clear()
+        self.connect(timeout=timeout)
 
     @property
     def connected(self) -> bool:
@@ -94,6 +110,8 @@ class GameClient:
         c2s, s2c = msg_name + "_C2S", msg_name + "_S2C"
         if not self.codec.has(c2s):
             raise KeyError("unknown route %s (no %s in schema)" % (route, c2s))
+        if not self._connected.is_set():
+            raise NotConnected("not connected — call connect()/reconnect() first")
 
         with self._lock:
             self._req_id += 1
