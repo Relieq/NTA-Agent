@@ -145,6 +145,39 @@ def from_entry_rst(rst: dict[str, Any], user: dict[str, Any] | None = None) -> G
     return state
 
 
+def apply_update_output(state: GameState, out: dict[str, Any]) -> None:
+    """Apply an UpdateOutPut block (from ClaimCityOutput or a resource notify)."""
+    r = state.resources
+    for name in ("cereal", "timber", "stone"):
+        if name in out:  # OutPutInfo {value, opHour}
+            setattr(r, name, _res_value(out[name]))
+    for name, attr in (("iron", "iron"), ("gold", "gold"), ("stamina", "stamina"),
+                       ("expBook", "exp_book"), ("upScroll", "up_scroll"), ("fixator", "fixator")):
+        if name in out and isinstance(out[name], (int, float)):
+            setattr(r, attr, int(out[name]))
+
+
+def apply_player_update(state: GameState, item: dict[str, Any]) -> None:
+    """Apply one OnUpdatePlayerInfoNotify item (a tagged union keyed by ``type``).
+
+    Only resource updates (data_1/data_41 = UpdateOutPut) are promoted so far;
+    everything else is left for later handlers.
+    """
+    for key in ("data_1", "data_41"):
+        block = item.get(key)
+        if isinstance(block, dict):
+            apply_update_output(state, block)
+
+
+def apply_notify(state: GameState, notify: dict[str, Any]) -> GameState:
+    """Apply an On*UpdateInfo notify ({list: [OnUpdatePlayerInfoNotify, ...]})."""
+    for item in notify.get("list", []):
+        if isinstance(item, dict):
+            apply_player_update(state, item)
+    state.updated_at = time.time()
+    return state
+
+
 def apply_user(state: GameState, user: dict[str, Any]) -> GameState:
     """Populate the User block from a LOBBY_HD_TRYLOGIN_S2C ``user`` object."""
     state.user = User(

@@ -10,7 +10,7 @@ from nta_agent.state.schema import (
     Slot,
     User,
 )
-from nta_agent.state.store import apply_user, from_entry_rst, from_novice_data
+from nta_agent.state.store import apply_notify, apply_user, from_entry_rst, from_novice_data
 
 __all__ = [
     "Area",

@@ -149,3 +149,11 @@ class GameSession:
             out = list(self.pushes)
             self.pushes.clear()
         return out
+
+    def sync(self) -> GameState:
+        """Apply pending player/user update pushes into state, keeping it current."""
+        from nta_agent.state.store import apply_notify
+        for p in self.drain_pushes():
+            if isinstance(p.data, dict) and "list" in p.data:
+                apply_notify(self.state, p.data)
+        return self.state

@@ -98,3 +98,21 @@ def test_from_entry_rst_live_shape():
     assert st.resources.stamina == 97
     assert [h.lv for h in st.heroes] == [1, 10, 15]
     assert st.raw["mapSize"] == {"x": 600, "y": 600}
+
+
+def test_apply_notify_updates_resources():
+    from nta_agent.state import apply_notify, from_entry_rst
+    st = from_entry_rst({"player": {"uid": "1", "cereal": {"value": 100}, "iron": 0}})
+    # a resource notify (type 1 -> data_1 = UpdateOutPut)
+    notify = {"list": [
+        {"type": 1, "data_1": {
+            "cereal": {"value": 250, "opHour": 116},
+            "timber": {"value": 300},
+            "iron": 5, "gold": 42,
+        }},
+    ]}
+    apply_notify(st, notify)
+    assert st.resources.cereal == 250
+    assert st.resources.timber == 300
+    assert st.resources.iron == 5
+    assert st.resources.gold == 42
