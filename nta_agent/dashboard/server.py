@@ -59,6 +59,8 @@ class Handler(BaseHTTPRequestHandler):
             self._json(200, read_json_array(cfg.decisions_path))
         elif parsed.path == "/api/equipment":
             self._json(200, read_json_array(cfg.equipment_path))
+        elif parsed.path == "/api/armies":
+            self._json(200, read_json_array(cfg.armies_path))
         else:
             self._json(404, {"error": "not found"})
 

@@ -18,26 +18,40 @@ INDEX_HTML = """<!doctype html>
  ul{list-style:none;margin:0;padding:0}li{padding:3px 0;border-bottom:1px solid #21262d}
  .feed{max-height:320px;overflow:auto;font-family:ui-monospace,Consolas,monospace;font-size:12px}
  .muted{color:#8b949e}
+ .card h2{color:#58a6ff}
+ .card{transition:border-color .15s}.card:hover{border-color:#3a4450}
+ button{background:#21262d;color:#e6e6e6;border:1px solid #3a4450;border-radius:6px;padding:4px 10px;margin:2px;cursor:pointer}
+ button:hover:not(:disabled){border-color:#58a6ff}button:disabled{opacity:.5;cursor:default}
 </style></head><body>
 <header><h1>NTA Agent</h1><div id="status"><span class="dot"></span><span id="statusText">…</span></div></header>
 <main>
  <div class="card"><h2>Tài nguyên</h2><div id="res" class="kv"></div></div>
  <div class="card"><h2>Thành chính &amp; công trình</h2><div id="city"></div></div>
  <div class="card"><h2>Quân &amp; nhiệm vụ</h2><div id="misc"></div></div>
+ <div class="card full"><h2>Đội quân</h2><div id="armies"><span class="muted">—</span></div></div>
  <div class="card full"><h2>Quyết định đang chờ</h2><div id="decisions"><span class="muted">—</span></div></div>
  <div class="card full"><h2>Trang bị lính</h2><div id="equipment"><span class="muted">—</span></div></div>
  <div class="card full"><h2>Sự kiện gần đây</h2><ul id="feed" class="feed"></ul></div>
 </main>
 <script>
-const RES=[["cereal","Lương"],["timber","Gỗ"],["stone","Đá"],["iron","Sắt"],["gold","Vàng"],["stamina","Thể lực"]];
+const RES=[["cereal","L.Thực"],["timber","Gỗ"],["stone","Đá"],["iron","Sắt"],["gold","Vàng"],["exp_book","Sách EXP"],["up_scroll","Quyển Trục"],["fixator","Máy Cố Định"]];
 function ago(ts){if(!ts)return"";const s=Math.max(0,Math.round(Date.now()/1000-ts));return s+"s trước";}
 function hms(ts){const d=new Date((ts||0)*1000);return d.toLocaleTimeString();}
 async function j(u){try{const r=await fetch(u);return await r.json();}catch(e){return null;}}
 async function post(cmd){try{await fetch("/api/command",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify(cmd)});}catch(e){}}
 function decCard(d){
- const opts=(d.options||[]).map(o=>`<button data-a=select data-t="${d.track}" data-lv="${d.lv}" data-id="${o.ceri_id}">${o.name}</button>`).join(" ");
+ const opts=(d.options||[]).map(o=>`<button data-a=select data-t="${d.track}" data-lv="${d.lv}" data-id="${o.ceri_id}">${o.name}</button>${o.desc?` <span class=muted>${o.desc}</span>`:""}`).join("<br>");
  const reroll=`<button data-a=reroll data-t="${d.track}" data-lv="${d.lv}">Làm mới${d.reset_count?(" ("+d.reset_count+")"):" (free)"}</button>`;
- return `<div style="margin:6px 0"><span class=muted>${d.track} · Lv${d.lv}</span><br>${opts} ${reroll}</div>`;
+ return `<div style="margin:6px 0"><span class=muted>${d.track} · Lv${d.lv}</span><br>${opts}<br>${reroll}</div>`;
+}
+function armyCard(a){
+ const ps=(a.pawns||[]).map((p,i)=>`<li>${i+1}. ${p.name} <b>Lv${p.lv}</b> · tốc ${p.attack_speed} · ${p.equip_name||"—"}</li>`).join("");
+ return `<div style="margin:8px 0"><b>${a.name||a.uid}</b> <span class=muted>· ${a.state_label} · tốc hành quân ${a.march_speed}</span><ul>${ps||"<li class=muted>trống</li>"}</ul></div>`;
+}
+async function renderArmies(){
+ const as=await j("/api/armies")||[];
+ const box=document.getElementById("armies");
+ box.innerHTML=as.length?as.map(armyCard).join(""):"<span class=muted>—</span>";
 }
 async function renderDecisions(){
  const ds=await j("/api/decisions")||[];
@@ -83,6 +97,7 @@ async function refresh(){
  document.getElementById("feed").innerHTML=ev.slice().reverse().map(e=>{
    const extra=e.kind==="tick"?("tick "+e.i+" · "+((e.fired||[]).join(", ")||"—")):(e.kind+(e.detail?(" · "+e.detail):""));
    return `<li><span class=muted>${hms(e.ts)}</span> ${extra}</li>`;}).join("")||"<li class=muted>—</li>";
+ renderArmies();
  renderDecisions();
  renderEquipment();
 }
