@@ -12,6 +12,7 @@ import time
 from dataclasses import dataclass, field
 
 from nta_agent.execution.actions import Actions
+from nta_agent.execution.captcha import CaptchaRequired
 from nta_agent.execution.heuristics import RuleEngine
 from nta_agent.io.api.client import ApiError, NotConnected
 from nta_agent.io.api.session import GameSession, TokenChainBroken
@@ -27,6 +28,7 @@ class Agent:
     actions: Actions = field(init=False)
     max_backoff: float = 60.0
     on_event: callable | None = None  # on_event(kind, detail) for logging
+    captcha: object = None  # a CaptchaSolver (or None): solves ANTI_CHEAT challenges
 
     def __post_init__(self):
         self.actions = Actions(self.session)
@@ -38,7 +40,15 @@ class Agent:
     def tick(self) -> list[str]:
         """One observe->decide->act cycle. Returns the rules that fired."""
         self.session.sync()  # apply pending pushes into state
-        return self.engine.tick(self.session.state, self.actions)
+        try:
+            return self.engine.tick(self.session.state, self.actions)
+        except CaptchaRequired as e:
+            if self.captcha is not None:
+                res = self.captcha.solve()
+                self._emit("captcha_solved" if res.get("rst") else "captcha_failed", res)
+                return ["captcha_solved"]
+            self._emit("captcha_detected", str(e))
+            return ["captcha_detected"]
 
     def _recover(self) -> None:
         """Reconnect with exponential backoff until the session is live again."""

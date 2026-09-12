@@ -171,6 +171,15 @@ class Actions:
         """Reroll the ceri options for a track/level (GAME_HD_CeriResetSelect)."""
         return self.session.request("game/HD_CeriResetSelect", {"lv": int(lv), "tp": int(tp)})
 
+    # ---- captcha (anti-cheat) ------------------------------------------- #
+    def get_anticheat_question(self) -> dict:
+        """Fetch the current anti-cheat captcha (GAME_HD_GetAntiCheatQuestion)."""
+        return self.session.request("game/HD_GetAntiCheatQuestion", {})
+
+    def answer_anticheat(self, answer: int) -> dict:
+        """Submit a captcha answer (GAME_HD_AntiCheatAnswer)."""
+        return self.session.request("game/HD_AntiCheatAnswer", {"answer": int(answer)})
+
     # ---- combat ---------------------------------------------------------- #
     def occupy_cell(
         self,

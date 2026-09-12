@@ -12,6 +12,7 @@ from dataclasses import dataclass, field
 from typing import Protocol
 
 from nta_agent.execution.actions import Actions
+from nta_agent.execution.captcha import ANTI_CHEAT_ECODE, CaptchaRequired
 from nta_agent.state.schema import GameState
 
 
@@ -372,7 +373,11 @@ class RuleEngine:
                 if rule.applies(state, actions):
                     rule.act(actions)
                     fired.append(rule.name)
+            except CaptchaRequired:
+                raise
             except Exception as e:  # a failing rule must not kill the loop
+                if ANTI_CHEAT_ECODE in str(e):
+                    raise CaptchaRequired(str(e)) from e
                 detail = str(e).split(":")[-1].strip() or type(e).__name__
                 fired.append(f"{rule.name}!ERR:{detail}")
         return fired
