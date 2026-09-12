@@ -30,3 +30,10 @@ def test_from_env_overrides():
 def test_missing_distinct_id_raises():
     with pytest.raises(ConfigError):
         RuntimeConfig.from_env({})
+
+
+def test_decision_queue_paths():
+    cfg = RuntimeConfig.from_env({"NTA_DISTINCT_ID": "x", "NTA_LOG_DIR": "/l"})
+    assert cfg.decisions_path == Path("/l/decisions.json")
+    assert cfg.commands_path == Path("/l/commands.jsonl")
+    assert cfg.commands_done_path == Path("/l/commands.done")

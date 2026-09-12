@@ -28,6 +28,18 @@ class RuntimeConfig:
     def event_log_path(self) -> Path:
         return self.log_dir / "events.jsonl"
 
+    @property
+    def decisions_path(self) -> Path:
+        return self.log_dir / "decisions.json"
+
+    @property
+    def commands_path(self) -> Path:
+        return self.log_dir / "commands.jsonl"
+
+    @property
+    def commands_done_path(self) -> Path:
+        return self.log_dir / "commands.done"
+
     @classmethod
     def from_env(cls, env: Mapping[str, str] | None = None) -> RuntimeConfig:
         env = os.environ if env is None else env
