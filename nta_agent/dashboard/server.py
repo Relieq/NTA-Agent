@@ -5,10 +5,13 @@ import json
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from urllib.parse import parse_qs, urlparse
 
-from nta_agent.dashboard.data import read_state, tail_events
+from nta_agent.dashboard.data import read_json_array, read_state, tail_events
 from nta_agent.dashboard.names import build_label, load_build_names
 from nta_agent.dashboard.page import INDEX_HTML
+from nta_agent.runtime.commands import append_command
 from nta_agent.runtime.config import RuntimeConfig
+
+_VALID_TRACK = {"pawn", "policy", "equip"}
 
 
 class DashboardServer(ThreadingHTTPServer):
@@ -52,8 +55,35 @@ class Handler(BaseHTTPRequestHandler):
                 n = 50
             n = max(1, min(n, 500))
             self._json(200, tail_events(cfg.event_log_path, n))
+        elif parsed.path == "/api/decisions":
+            self._json(200, read_json_array(cfg.decisions_path))
         else:
             self._json(404, {"error": "not found"})
+
+    def do_POST(self):
+        parsed = urlparse(self.path)
+        cfg = self.server.cfg
+        if parsed.path != "/api/command":
+            self._json(404, {"ok": False, "error": "not found"})
+            return
+        try:
+            length = int(self.headers.get("Content-Length", "0"))
+            body = json.loads(self.rfile.read(length) or b"{}")
+        except (ValueError, TypeError):
+            self._json(400, {"ok": False, "error": "bad json"})
+            return
+        action, track = body.get("action"), body.get("track")
+        if action not in ("select", "reroll") or track not in _VALID_TRACK:
+            self._json(400, {"ok": False, "error": "bad action/track"})
+            return
+        if action == "select" and "ceri_id" not in body:
+            self._json(400, {"ok": False, "error": "select needs ceri_id"})
+            return
+        cmd = {"action": action, "track": track, "lv": int(body.get("lv", 0) or 0)}
+        if action == "select":
+            cmd["ceri_id"] = int(body["ceri_id"])
+        cid = append_command(cfg.commands_path, cmd)
+        self._json(200, {"ok": True, "id": cid})
 
 
 def serve(cfg: RuntimeConfig, port: int, *, host: str = "127.0.0.1") -> DashboardServer:
