@@ -189,6 +189,12 @@ class Actions:
             "skinId": int(skin_id), "attackSpeed": int(attack_speed),
         })
 
+    # ---- army reads ----------------------------------------------------- #
+    def get_player_armys(self) -> list[dict]:
+        """All of the player's armies with their pawns (GAME_HD_GetPlayerArmys)."""
+        reply = self.session.request("game/HD_GetPlayerArmys", {})
+        return reply.get("list", []) or []
+
     # ---- combat ---------------------------------------------------------- #
     def occupy_cell(
         self,
