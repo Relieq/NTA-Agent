@@ -25,6 +25,7 @@ INDEX_HTML = """<!doctype html>
  <div class="card"><h2>Thành chính &amp; công trình</h2><div id="city"></div></div>
  <div class="card"><h2>Quân &amp; nhiệm vụ</h2><div id="misc"></div></div>
  <div class="card full"><h2>Quyết định đang chờ</h2><div id="decisions"><span class="muted">—</span></div></div>
+ <div class="card full"><h2>Trang bị lính</h2><div id="equipment"><span class="muted">—</span></div></div>
  <div class="card full"><h2>Sự kiện gần đây</h2><ul id="feed" class="feed"></ul></div>
 </main>
 <script>
@@ -45,6 +46,20 @@ async function renderDecisions(){
  box.querySelectorAll("button").forEach(b=>b.onclick=async()=>{
    const cmd={action:b.dataset.a,track:b.dataset.t,lv:Number(b.dataset.lv)};
    if(b.dataset.a==="select")cmd.ceri_id=Number(b.dataset.id);
+   b.disabled=true;b.textContent="đã gửi…";await post(cmd);
+ });
+}
+function equipRow(p){
+ const opts=(p.options||[]).map(o=>`<button data-p="${p.pawn_id}" data-u="${o.uid}" data-sk="${p.skin_id}" data-as="${p.attack_speed}"${o.uid===p.current_equip_uid?" disabled":""}>${o.name}</button>`).join(" ");
+ return `<div style="margin:6px 0"><span class=muted>${p.pawn_name}</span> — hiện: <b>${p.current_equip_name||"—"}</b><br>${opts||"<span class=muted>không có trang bị phù hợp</span>"}</div>`;
+}
+async function renderEquipment(){
+ const ps=await j("/api/equipment")||[];
+ const box=document.getElementById("equipment");
+ box.innerHTML=ps.length?ps.map(equipRow).join(""):"<span class=muted>—</span>";
+ box.querySelectorAll("button").forEach(b=>b.onclick=async()=>{
+   const cmd={action:"equip",pawn_id:Number(b.dataset.p),equip_uid:b.dataset.u,
+              skin_id:Number(b.dataset.sk),attack_speed:Number(b.dataset.as)};
    b.disabled=true;b.textContent="đã gửi…";await post(cmd);
  });
 }
@@ -69,6 +84,7 @@ async function refresh(){
    const extra=e.kind==="tick"?("tick "+e.i+" · "+((e.fired||[]).join(", ")||"—")):(e.kind+(e.detail?(" · "+e.detail):""));
    return `<li><span class=muted>${hms(e.ts)}</span> ${extra}</li>`;}).join("")||"<li class=muted>—</li>";
  renderDecisions();
+ renderEquipment();
 }
 refresh();setInterval(refresh,2000);
 </script></body></html>"""

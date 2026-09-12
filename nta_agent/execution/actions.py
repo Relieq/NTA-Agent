@@ -180,6 +180,15 @@ class Actions:
         """Submit a captcha answer (GAME_HD_AntiCheatAnswer)."""
         return self.session.request("game/HD_AntiCheatAnswer", {"answer": int(answer)})
 
+    # ---- equipment (gear assignment) ------------------------------------ #
+    def change_pawn_equip(self, pawn_id: int, equip_uid: str,
+                          skin_id: int = 0, attack_speed: int = 0) -> dict:
+        """Assign an owned equip to a pawn config (GAME_HD_ChangeConfigPawnEquip)."""
+        return self.session.request("game/HD_ChangeConfigPawnEquip", {
+            "id": int(pawn_id), "equipUid": str(equip_uid),
+            "skinId": int(skin_id), "attackSpeed": int(attack_speed),
+        })
+
     # ---- combat ---------------------------------------------------------- #
     def occupy_cell(
         self,
