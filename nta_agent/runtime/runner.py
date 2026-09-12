@@ -45,6 +45,10 @@ def run(cfg: RuntimeConfig, *, ticks: int = 0, session=None, engine=None) -> Non
     if config is not None:
         service = DecisionService(agent.actions, config, cfg, on_event=log.append)
         agent.captcha = CaptchaSolver(agent.actions, config)
+    # Surface the occupy planner's reasoning (chosen army + predicted loss) to the log.
+    for rule in getattr(agent.engine, "rules", []):
+        if getattr(rule, "name", "") == "occupy_cell":
+            rule.on_event = log.append
 
     def _safe(fn, *a):
         try:
