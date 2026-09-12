@@ -73,11 +73,23 @@ class GameConfig:
             )
         return gc
 
-    def table(self, name: str) -> dict[int, dict]:
-        """Return {id: row} for a config table, loaded and cached on first use."""
+    @staticmethod
+    def _key(raw):
+        # Numeric tables key by int id; text tables (e.g. "name_3101") keep the str.
+        try:
+            return int(raw)
+        except (ValueError, TypeError):
+            return raw
+
+    def table(self, name: str) -> dict:
+        """Return {id: row} for a config table, loaded and cached on first use.
+
+        Ids are int for numeric tables and left as-is for text tables whose id is
+        a string key like ``"name_3101"``.
+        """
         if name not in self._tables:
             rows = json.loads((self.config_dir / f"{name}.json").read_text(encoding="utf-8"))
-            self._tables[name] = {int(r["id"]): r for r in rows if "id" in r}
+            self._tables[name] = {self._key(r["id"]): r for r in rows if "id" in r}
         return self._tables[name]
 
     # ---- buildings ------------------------------------------------------- #
