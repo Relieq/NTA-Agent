@@ -12,3 +12,8 @@ def test_index_html_has_decisions_panel():
     assert "/api/decisions" in INDEX_HTML
     assert "/api/command" in INDEX_HTML
     assert "Quyết định đang chờ" in INDEX_HTML
+
+
+def test_index_html_has_equipment_panel():
+    assert "/api/equipment" in INDEX_HTML
+    assert "Trang bị lính" in INDEX_HTML
