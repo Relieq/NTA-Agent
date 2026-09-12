@@ -11,8 +11,9 @@ class FakeConfig:
                      7: {"id": 7, "value": 1001}},
             "pawnText": {"name_3101": {"vi": "Lính Trường Thương"},
                          "name_3102": {"vi": "Lính Trường Mâu"}},
-            "policyText": {"name_1001": {"vi": "Ngũ Cốc Phong Đăng"}},
-            "equipText": {},
+            "policyText": {"name_1001": {"vi": "Ngũ Cốc Phong Đăng"},
+                           "desc_1001": {"vi": "Sản lượng cơ bản mỗi giờ tăng {0}"}},
+            "equipText": {"effect_6001": {"vi": "HP +100"}},
         }
 
     def table(self, name):
@@ -32,8 +33,8 @@ def test_pending_pawn_decision_with_names():
     d = ds[0]
     assert isinstance(d, Decision) and d.track == "pawn" and d.tp == 2 and d.lv == 1
     assert d.options == [
-        {"ceri_id": 5, "value": 3101, "name": "Lính Trường Thương"},
-        {"ceri_id": 6, "value": 3102, "name": "Lính Trường Mâu"},
+        {"ceri_id": 5, "value": 3101, "name": "Lính Trường Thương", "desc": ""},
+        {"ceri_id": 6, "value": 3102, "name": "Lính Trường Mâu", "desc": ""},
     ]
 
 
@@ -50,4 +51,6 @@ def test_policy_track_and_unknown_value_fallback():
     ds = pending_decisions(st, FakeConfig())
     assert ds[0].track == "policy" and ds[0].tp == 1 and ds[0].reset_count == 2
     assert ds[0].options[0]["name"] == "Ngũ Cốc Phong Đăng"
+    assert ds[0].options[0]["desc"] == "Sản lượng cơ bản mỗi giờ tăng {0}"
     assert ds[0].options[1]["name"] == "#99"  # ceri id 99 unknown -> fallback
+    assert ds[0].options[1]["desc"] == ""     # unknown ceri id -> no desc
