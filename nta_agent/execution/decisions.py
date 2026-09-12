@@ -40,7 +40,6 @@ def _desc(config, text_name: str, value: int) -> str:
 
 def pending_decisions(state, config) -> list[Decision]:
     player = (state.raw or {}).get("player", {}) or {}
-    ceri = config.table("ceri")
     out: list[Decision] = []
     for slot_field, (tp, text_name) in TRACKS.items():
         text_table = config.table(text_name)
@@ -51,12 +50,14 @@ def pending_decisions(state, config) -> list[Decision]:
             select_ids = slot.get("selectIds") or []
             if (slot.get("id") or 0) > 0 or not select_ids:
                 continue  # already chosen, or nothing offered -> not pending
-            options = []
-            for cid in select_ids:
-                value = (ceri.get(cid) or {}).get("value", 0)
-                name = _name(text_table, value) if value else f"#{cid}"
-                desc = _desc(config, text_name, value) if value else ""
-                options.append({"ceri_id": cid, "value": value, "name": name, "desc": desc})
+            # selectIds ARE the offered ids directly (pawn/policy/equip id), not
+            # ceri-row ids — resolve name/desc straight from them.
+            options = [
+                {"ceri_id": sid, "value": sid,
+                 "name": _name(text_table, sid),
+                 "desc": _desc(config, text_name, sid)}
+                for sid in select_ids
+            ]
             out.append(Decision(track=_TRACK_NAME[slot_field], tp=tp, slot_key=str(slot_key),
                                 lv=int(slot.get("lv", 0) or 0),
                                 reset_count=int(slot.get("resetCount", 0) or 0),

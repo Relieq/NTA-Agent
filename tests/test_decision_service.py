@@ -26,7 +26,7 @@ def _cfg(tmp_path):
 
 def _state():
     st = GameState(source="api")
-    st.raw = {"player": {"pawnSlots": {"s0": {"selectIds": [5, 6], "id": 0, "resetCount": 0, "lv": 1}},
+    st.raw = {"player": {"pawnSlots": {"s0": {"selectIds": [3101, 3102], "id": 0, "resetCount": 0, "lv": 1}},
                           "policySlots": {}, "equipSlots": {}}}
     return st
 
