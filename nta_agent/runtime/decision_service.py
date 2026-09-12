@@ -8,6 +8,7 @@ from dataclasses import asdict
 from pathlib import Path
 
 from nta_agent.execution.decisions import pending_decisions
+from nta_agent.execution.equipment import pawn_equipment
 from nta_agent.runtime.commands import mark_done, read_pending
 
 _TRACK_TP = {"pawn": 2, "policy": 1, "equip": 3}
@@ -28,10 +29,24 @@ class DecisionService:
         tmp.write_text(json.dumps(data, ensure_ascii=False), encoding="utf-8")
         os.replace(tmp, path)
 
+    def _write_equipment(self, state) -> None:
+        data = pawn_equipment(state, self.config)
+        path = Path(self.cfg.equipment_path)
+        path.parent.mkdir(parents=True, exist_ok=True)
+        tmp = path.with_suffix(path.suffix + ".tmp")
+        tmp.write_text(json.dumps(data, ensure_ascii=False), encoding="utf-8")
+        os.replace(tmp, path)
+
     def _execute(self, cmd: dict) -> None:
-        action, track = cmd.get("action"), cmd.get("track")
-        tp = _TRACK_TP.get(track)
+        action = cmd.get("action")
         lv = int(cmd.get("lv", 0) or 0)
+        if action == "equip":
+            self.actions.change_pawn_equip(
+                int(cmd["pawn_id"]), cmd["equip_uid"],
+                int(cmd.get("skin_id", 0) or 0), int(cmd.get("attack_speed", 0) or 0))
+            return
+        track = cmd.get("track")
+        tp = _TRACK_TP.get(track)
         if tp is None:
             raise ValueError(f"unknown track {track!r}")
         if action == "select":
@@ -46,6 +61,10 @@ class DecisionService:
             self._write_decisions(state)
         except Exception as e:  # observability must not kill the loop
             sys.stderr.write(f"[decisions] write failed: {e}\n")
+        try:
+            self._write_equipment(state)
+        except Exception as e:
+            sys.stderr.write(f"[equipment] write failed: {e}\n")
         for cmd in read_pending(self.cfg.commands_path, self.cfg.commands_done_path):
             try:
                 self._execute(cmd)
