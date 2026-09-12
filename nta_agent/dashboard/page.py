@@ -24,6 +24,7 @@ INDEX_HTML = """<!doctype html>
  <div class="card"><h2>Tài nguyên</h2><div id="res" class="kv"></div></div>
  <div class="card"><h2>Thành chính &amp; công trình</h2><div id="city"></div></div>
  <div class="card"><h2>Quân &amp; nhiệm vụ</h2><div id="misc"></div></div>
+ <div class="card full"><h2>Quyết định đang chờ</h2><div id="decisions"><span class="muted">—</span></div></div>
  <div class="card full"><h2>Sự kiện gần đây</h2><ul id="feed" class="feed"></ul></div>
 </main>
 <script>
@@ -31,6 +32,22 @@ const RES=[["cereal","Lương"],["timber","Gỗ"],["stone","Đá"],["iron","Sắ
 function ago(ts){if(!ts)return"";const s=Math.max(0,Math.round(Date.now()/1000-ts));return s+"s trước";}
 function hms(ts){const d=new Date((ts||0)*1000);return d.toLocaleTimeString();}
 async function j(u){try{const r=await fetch(u);return await r.json();}catch(e){return null;}}
+async function post(cmd){try{await fetch("/api/command",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify(cmd)});}catch(e){}}
+function decCard(d){
+ const opts=(d.options||[]).map(o=>`<button data-a=select data-t="${d.track}" data-lv="${d.lv}" data-id="${o.ceri_id}">${o.name}</button>`).join(" ");
+ const reroll=`<button data-a=reroll data-t="${d.track}" data-lv="${d.lv}">Làm mới${d.reset_count?(" ("+d.reset_count+")"):" (free)"}</button>`;
+ return `<div style="margin:6px 0"><span class=muted>${d.track} · Lv${d.lv}</span><br>${opts} ${reroll}</div>`;
+}
+async function renderDecisions(){
+ const ds=await j("/api/decisions")||[];
+ const box=document.getElementById("decisions");
+ box.innerHTML=ds.length?ds.map(decCard).join(""):"<span class=muted>—</span>";
+ box.querySelectorAll("button").forEach(b=>b.onclick=async()=>{
+   const cmd={action:b.dataset.a,track:b.dataset.t,lv:Number(b.dataset.lv)};
+   if(b.dataset.a==="select")cmd.ceri_id=Number(b.dataset.id);
+   b.disabled=true;b.textContent="đã gửi…";await post(cmd);
+ });
+}
 async function refresh(){
  const s=await j("/api/state");
  const dot=document.querySelector("#status .dot"),txt=document.getElementById("statusText");
@@ -51,6 +68,7 @@ async function refresh(){
  document.getElementById("feed").innerHTML=ev.slice().reverse().map(e=>{
    const extra=e.kind==="tick"?("tick "+e.i+" · "+((e.fired||[]).join(", ")||"—")):(e.kind+(e.detail?(" · "+e.detail):""));
    return `<li><span class=muted>${hms(e.ts)}</span> ${extra}</li>`;}).join("")||"<li class=muted>—</li>";
+ renderDecisions();
 }
 refresh();setInterval(refresh,2000);
 </script></body></html>"""

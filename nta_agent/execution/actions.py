@@ -11,6 +11,9 @@ from typing import Any
 
 from nta_agent.io.api.session import GameSession
 
+# StudyType tp -> the player slot-map field it updates (verified in client).
+TP_SLOT_KEY = {1: "policySlots", 2: "pawnSlots", 3: "equipSlots"}
+
 
 @dataclass
 class Actions:
@@ -151,6 +154,22 @@ class Actions:
             "id": int(task_id), "treasureIndex": int(treasure_index), "selectIndex": int(select_index),
         })
         return self._apply_task_reply(reply, {"todayTasks": "todayTasks"})
+
+    # ---- ceri: unlock pawn / policy / equip (human-reserved) ------------- #
+    def study_select(self, lv: int, ceri_id: int, tp: int) -> dict:
+        """Pick a ceri option (GAME_HD_StudySelect). Applies returned slots."""
+        reply = self.session.request("game/HD_StudySelect",
+                                     {"lv": int(lv), "id": int(ceri_id), "tp": int(tp)})
+        slots = reply.get("slots")
+        key = TP_SLOT_KEY.get(int(tp))
+        if isinstance(slots, dict) and key:
+            player = (self._state.raw or {}).setdefault("player", {})
+            player[key] = slots
+        return reply
+
+    def ceri_reset(self, lv: int, tp: int) -> dict:
+        """Reroll the ceri options for a track/level (GAME_HD_CeriResetSelect)."""
+        return self.session.request("game/HD_CeriResetSelect", {"lv": int(lv), "tp": int(tp)})
 
     # ---- combat ---------------------------------------------------------- #
     def occupy_cell(

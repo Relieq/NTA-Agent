@@ -6,3 +6,9 @@ def test_index_html_is_self_contained():
     assert "/api/state" in INDEX_HTML and "/api/events" in INDEX_HTML
     # no external assets (CSP-safe): no http(s) src/href
     assert "http://" not in INDEX_HTML and "https://" not in INDEX_HTML
+
+
+def test_index_html_has_decisions_panel():
+    assert "/api/decisions" in INDEX_HTML
+    assert "/api/command" in INDEX_HTML
+    assert "Quyết định đang chờ" in INDEX_HTML

@@ -19,6 +19,14 @@ def read_state(path: Path) -> dict:
     return {"ok": True, **data}
 
 
+def read_json_array(path: Path) -> list:
+    try:
+        data = json.loads(Path(path).read_text(encoding="utf-8"))
+    except (OSError, ValueError, TypeError):
+        return []
+    return data if isinstance(data, list) else []
+
+
 def tail_events(path: Path, n: int = 50) -> list[dict]:
     try:
         lines = Path(path).read_text(encoding="utf-8").splitlines()

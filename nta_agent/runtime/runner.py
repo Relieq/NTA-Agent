@@ -3,6 +3,7 @@ from __future__ import annotations
 
 import sys
 
+from nta_agent.data.config import GameConfig
 from nta_agent.execution.agent import Agent
 from nta_agent.execution.heuristics import RuleEngine
 from nta_agent.io.adb import DeviceManager
@@ -10,6 +11,7 @@ from nta_agent.io.api.client import ServerConfig
 from nta_agent.io.api.session import GameSession
 from nta_agent.io.bootstrap import make_token_refresher
 from nta_agent.runtime.config import RuntimeConfig
+from nta_agent.runtime.decision_service import DecisionService
 from nta_agent.runtime.eventlog import EventLog
 from nta_agent.runtime.snapshot import write_snapshot
 
@@ -33,6 +35,12 @@ def run(cfg: RuntimeConfig, *, ticks: int = 0, session=None, engine=None) -> Non
     agent = Agent(session, engine or RuleEngine.default(),
                   max_backoff=cfg.max_backoff, on_event=log.append)
 
+    service = None
+    try:
+        service = DecisionService(agent.actions, GameConfig.load(), cfg, on_event=log.append)
+    except FileNotFoundError:
+        log.append("decisions_config_missing")
+
     def _safe(fn, *a):
         try:
             fn(*a)
@@ -42,6 +50,8 @@ def run(cfg: RuntimeConfig, *, ticks: int = 0, session=None, engine=None) -> Non
     def on_tick(i, fired, state):
         _safe(write_snapshot, state, cfg.snapshot_path)
         _safe(log.tick, i, fired, state)
+        if service is not None:
+            _safe(service.tick, state)
 
     try:
         agent.run(ticks=ticks, interval=cfg.interval, on_tick=on_tick)
