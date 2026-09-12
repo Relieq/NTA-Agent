@@ -52,20 +52,27 @@ function buildArea(input, requireByName) {
   const myUid = String(input.playerUid);
   const mapWidth = input.mapWidth || 600;
 
-  // --- our army -------------------------------------------------------- //
-  const army = input.armies[0];
-  const dir = entryDir(army.index, target, mapWidth, passPoints.length);
-  const entry = passPoints[dir] || passPoints[0];
-  const ourPawns = ourPawnStrips(army, entry);
-  const ourArmy = {
-    index: army.index,
-    uid: army.uid,
-    name: army.name || "D1",
-    owner: myUid,
-    state: FIGHT,
-    pawns: ourPawns,
-    enterDir: dir,
-  };
+  // --- our armies (selection order preserved) -------------------------- //
+  // Each selected army enters at its own entry point; pawns are ordered fastest
+  // -first within an army, and attackIndex continues across armies in SELECTION
+  // order (army 0's pawns act before army 1's) — this seeds the turn sequence,
+  // which is what the 1-tile tactic exploits (archers selected first, tank last).
+  const firstEntry = passPoints[entryDir(input.armies[0].index, target, mapWidth, passPoints.length)]
+    || passPoints[0];
+  const ourArmys = input.armies.map((army) => {
+    const dir = entryDir(army.index, target, mapWidth, passPoints.length);
+    const entry = passPoints[dir] || passPoints[0];
+    return {
+      index: army.index,
+      uid: army.uid,
+      name: army.name || "D1",
+      owner: myUid,
+      state: FIGHT,
+      pawns: ourPawnStrips(army, entry),
+      enterDir: dir,
+    };
+  });
+  const entry = firstEntry;  // enemy ordering references the lead army's entry
 
   // --- enemy ----------------------------------------------------------- //
   // Explicit conf, or generated from land config (defenders carry their points).
@@ -92,13 +99,15 @@ function buildArea(input, requireByName) {
     owner: "",
     hp,
     cityId: 0,
-    armys: [ourArmy, ...enemyConf.armys],
+    armys: [...ourArmys, ...enemyConf.armys],
   });
 
-  // --- fighter ordering (attackIndex/enterIndex), our side then enemy --- //
+  // --- fighter ordering (attackIndex/enterIndex): our armies (selection order),
+  //     then enemy --- //
   let acc = 0;
   const fighters = [];
-  for (const p of ourPawns) fighters.push({ uid: p.uid, camp: 2, attackIndex: ++acc, enterIndex: acc });
+  for (const a of ourArmys)
+    for (const p of a.pawns) fighters.push({ uid: p.uid, camp: 2, attackIndex: ++acc, enterIndex: acc });
   for (const a of enemyConf.armys)
     for (const p of a.pawns) fighters.push({ uid: p.uid, camp: 1, attackIndex: ++acc, enterIndex: acc });
 
