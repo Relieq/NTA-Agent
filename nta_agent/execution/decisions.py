@@ -43,8 +43,8 @@ def pending_decisions(state, config) -> list[Decision]:
             options = []
             for cid in select_ids:
                 value = (ceri.get(cid) or {}).get("value", 0)
-                options.append({"ceri_id": cid, "value": value,
-                                "name": _name(text_table, value)})
+                name = _name(text_table, value) if value else f"#{cid}"
+                options.append({"ceri_id": cid, "value": value, "name": name})
             out.append(Decision(track=_TRACK_NAME[slot_field], tp=tp, slot_key=str(slot_key),
                                 lv=int(slot.get("lv", 0) or 0),
                                 reset_count=int(slot.get("resetCount", 0) or 0),
