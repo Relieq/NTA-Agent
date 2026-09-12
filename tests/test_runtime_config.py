@@ -42,3 +42,8 @@ def test_decision_queue_paths():
 def test_equipment_path():
     cfg = RuntimeConfig.from_env({"NTA_DISTINCT_ID": "x", "NTA_LOG_DIR": "/l"})
     assert cfg.equipment_path == Path("/l/equipment.json")
+
+
+def test_armies_path():
+    cfg = RuntimeConfig.from_env({"NTA_DISTINCT_ID": "x", "NTA_LOG_DIR": "/l"})
+    assert cfg.armies_path == Path("/l/armies.json")
