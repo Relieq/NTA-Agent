@@ -33,3 +33,13 @@ def test_pawn_recruit_cost():
     gc = GameConfig.load()
     cost = gc.pawn_recruit_cost(3101)
     assert cost == {"cereal": 113}
+
+
+def test_table_mixed_int_and_str_keys(tmp_path):
+    """Numeric tables key by int id; text tables keep string ids like name_3101."""
+    import json
+    (tmp_path / "pawnAttr.json").write_text(json.dumps([{"id": 3101001, "hp": 135}]), encoding="utf-8")
+    (tmp_path / "pawnText.json").write_text(json.dumps([{"id": "name_3101", "vi": "Lính"}]), encoding="utf-8")
+    cfg = GameConfig(config_dir=tmp_path)
+    assert cfg.table("pawnAttr")[3101001]["hp"] == 135          # int-keyed
+    assert cfg.table("pawnText")["name_3101"]["vi"] == "Lính"    # str-keyed (no crash)
