@@ -57,6 +57,8 @@ class Handler(BaseHTTPRequestHandler):
             self._json(200, tail_events(cfg.event_log_path, n))
         elif parsed.path == "/api/decisions":
             self._json(200, read_json_array(cfg.decisions_path))
+        elif parsed.path == "/api/equipment":
+            self._json(200, read_json_array(cfg.equipment_path))
         else:
             self._json(404, {"error": "not found"})
 
@@ -72,7 +74,19 @@ class Handler(BaseHTTPRequestHandler):
         except (ValueError, TypeError):
             self._json(400, {"ok": False, "error": "bad json"})
             return
-        action, track = body.get("action"), body.get("track")
+        action = body.get("action")
+        if action == "equip":
+            if (not body.get("pawn_id") and body.get("pawn_id") != 0) or not body.get("equip_uid"):
+                self._json(400, {"ok": False, "error": "equip needs pawn_id + equip_uid"})
+                return
+            cmd = {"action": "equip", "pawn_id": int(body["pawn_id"]),
+                   "equip_uid": str(body["equip_uid"]),
+                   "skin_id": int(body.get("skin_id", 0) or 0),
+                   "attack_speed": int(body.get("attack_speed", 0) or 0)}
+            cid = append_command(cfg.commands_path, cmd)
+            self._json(200, {"ok": True, "id": cid})
+            return
+        track = body.get("track")
         if action not in ("select", "reroll") or track not in _VALID_TRACK:
             self._json(400, {"ok": False, "error": "bad action/track"})
             return
