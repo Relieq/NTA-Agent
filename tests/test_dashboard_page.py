@@ -1,0 +1,8 @@
+from nta_agent.dashboard.page import INDEX_HTML
+
+
+def test_index_html_is_self_contained():
+    assert "NTA Agent" in INDEX_HTML
+    assert "/api/state" in INDEX_HTML and "/api/events" in INDEX_HTML
+    # no external assets (CSP-safe): no http(s) src/href
+    assert "http://" not in INDEX_HTML and "https://" not in INDEX_HTML
