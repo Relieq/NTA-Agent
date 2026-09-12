@@ -27,6 +27,17 @@ def _name(text_table: dict, value: int) -> str:
     return row.get("vi") or row.get("en") or f"#{value}"
 
 
+def _desc(config, text_name: str, value: int) -> str:
+    if text_name == "policyText":
+        key = f"desc_{value}"
+    elif text_name == "equipText":
+        key = f"effect_{value}"
+    else:
+        return ""
+    row = config.table(text_name).get(key) or {}
+    return row.get("vi") or row.get("en") or ""
+
+
 def pending_decisions(state, config) -> list[Decision]:
     player = (state.raw or {}).get("player", {}) or {}
     ceri = config.table("ceri")
@@ -44,7 +55,8 @@ def pending_decisions(state, config) -> list[Decision]:
             for cid in select_ids:
                 value = (ceri.get(cid) or {}).get("value", 0)
                 name = _name(text_table, value) if value else f"#{cid}"
-                options.append({"ceri_id": cid, "value": value, "name": name})
+                desc = _desc(config, text_name, value) if value else ""
+                options.append({"ceri_id": cid, "value": value, "name": name, "desc": desc})
             out.append(Decision(track=_TRACK_NAME[slot_field], tp=tp, slot_key=str(slot_key),
                                 lv=int(slot.get("lv", 0) or 0),
                                 reset_count=int(slot.get("resetCount", 0) or 0),

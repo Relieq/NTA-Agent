@@ -17,3 +17,10 @@ def test_index_html_has_decisions_panel():
 def test_index_html_has_equipment_panel():
     assert "/api/equipment" in INDEX_HTML
     assert "Trang bị lính" in INDEX_HTML
+
+
+def test_index_html_has_army_section_and_labels():
+    assert "/api/armies" in INDEX_HTML
+    assert "Đội quân" in INDEX_HTML
+    assert "Sách EXP" in INDEX_HTML          # corrected resource label
+    assert "Thể lực" not in INDEX_HTML       # dropped

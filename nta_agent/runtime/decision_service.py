@@ -7,6 +7,7 @@ import sys
 from dataclasses import asdict
 from pathlib import Path
 
+from nta_agent.execution.armies import army_view
 from nta_agent.execution.decisions import pending_decisions
 from nta_agent.execution.equipment import pawn_equipment
 from nta_agent.runtime.commands import mark_done, read_pending
@@ -15,11 +16,13 @@ _TRACK_TP = {"pawn": 2, "policy": 1, "equip": 3}
 
 
 class DecisionService:
-    def __init__(self, actions, config, cfg, on_event=None):
+    def __init__(self, actions, config, cfg, on_event=None, armies_every=6):
         self.actions = actions
         self.config = config
         self.cfg = cfg
         self._on_event = on_event or (lambda *a: None)
+        self.armies_every = armies_every
+        self._armies_counter = 0
 
     def _write_decisions(self, state) -> None:
         data = [asdict(d) for d in pending_decisions(state, self.config)]
@@ -32,6 +35,14 @@ class DecisionService:
     def _write_equipment(self, state) -> None:
         data = pawn_equipment(state, self.config)
         path = Path(self.cfg.equipment_path)
+        path.parent.mkdir(parents=True, exist_ok=True)
+        tmp = path.with_suffix(path.suffix + ".tmp")
+        tmp.write_text(json.dumps(data, ensure_ascii=False), encoding="utf-8")
+        os.replace(tmp, path)
+
+    def _write_armies(self) -> None:
+        data = army_view(self.actions.get_player_armys(), self.config)
+        path = Path(self.cfg.armies_path)
         path.parent.mkdir(parents=True, exist_ok=True)
         tmp = path.with_suffix(path.suffix + ".tmp")
         tmp.write_text(json.dumps(data, ensure_ascii=False), encoding="utf-8")
@@ -65,6 +76,14 @@ class DecisionService:
             self._write_equipment(state)
         except Exception as e:
             sys.stderr.write(f"[equipment] write failed: {e}\n")
+        if self._armies_counter <= 0:
+            self._armies_counter = self.armies_every - 1
+            try:
+                self._write_armies()  # network call — never kill the loop
+            except Exception as e:
+                sys.stderr.write(f"[armies] fetch failed: {e}\n")
+        else:
+            self._armies_counter -= 1
         for cmd in read_pending(self.cfg.commands_path, self.cfg.commands_done_path):
             try:
                 self._execute(cmd)
