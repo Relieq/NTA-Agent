@@ -5,6 +5,7 @@ import sys
 
 from nta_agent.data.config import GameConfig
 from nta_agent.execution.agent import Agent
+from nta_agent.execution.captcha import CaptchaSolver
 from nta_agent.execution.heuristics import RuleEngine
 from nta_agent.io.adb import DeviceManager
 from nta_agent.io.api.client import ServerConfig
@@ -35,11 +36,15 @@ def run(cfg: RuntimeConfig, *, ticks: int = 0, session=None, engine=None) -> Non
     agent = Agent(session, engine or RuleEngine.default(),
                   max_backoff=cfg.max_backoff, on_event=log.append)
 
-    service = None
     try:
-        service = DecisionService(agent.actions, GameConfig.load(), cfg, on_event=log.append)
+        config = GameConfig.load()
     except FileNotFoundError:
-        log.append("decisions_config_missing")
+        config = None
+        log.append("config_missing")
+    service = None
+    if config is not None:
+        service = DecisionService(agent.actions, config, cfg, on_event=log.append)
+        agent.captcha = CaptchaSolver(agent.actions, config)
 
     def _safe(fn, *a):
         try:
