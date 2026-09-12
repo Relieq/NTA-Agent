@@ -40,6 +40,10 @@ class RuntimeConfig:
     def commands_done_path(self) -> Path:
         return self.log_dir / "commands.done"
 
+    @property
+    def equipment_path(self) -> Path:
+        return self.log_dir / "equipment.json"
+
     @classmethod
     def from_env(cls, env: Mapping[str, str] | None = None) -> RuntimeConfig:
         env = os.environ if env is None else env
