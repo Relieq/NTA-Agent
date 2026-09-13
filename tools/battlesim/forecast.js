@@ -4,7 +4,9 @@
 
 const { loadEngine } = require("./bundle");
 const { installAssets } = require("./assets");
-const { buildArea } = require("./area-factory");
+const { buildArea, enemyArmysFor } = require("./area-factory");
+const { buildFrames } = require("./frames");
+const { runWithReinforce } = require("./reinforce");
 
 const FPS = 20;
 const FPS_MUL = 400; // client's forecast fast-forward
@@ -40,8 +42,40 @@ function loss_lv(pct) {
   return 4;
 }
 
+// Multi-army: reinforcement-aware path. Assemble global attackIndex order
+// (our lead army, then enemy, then reinforcement waves) — matching real records.
+function forecastReinforce(input, req) {
+  const f = buildFrames(input, req);
+  const entry = (f.initial.firstArmy.pawns[0] || {}).point || { x: 0, y: 0 };
+  const { armys: enemyArmys, hp: enemyHp } = enemyArmysFor(input, req, entry);
+
+  let acc = 0;
+  const ourInit = f.initial.fighters.map((x) => ({ ...x, attackIndex: ++acc, enterIndex: acc }));
+  const enemyFighters = [];
+  for (const a of enemyArmys)
+    for (const p of a.pawns)
+      enemyFighters.push({ uid: p.uid, camp: 1, attackIndex: ++acc, enterIndex: acc });
+  const waves = f.waves.map((w) => ({
+    currentFrameIndex: w.currentFrameIndex, army: w.army,
+    fighters: w.fighters.map((x) => ({ ...x, attackIndex: ++acc, enterIndex: acc })),
+  }));
+
+  return runWithReinforce({
+    target: f.target,
+    armys: [f.initial.firstArmy, ...enemyArmys],
+    fighters: [...ourInit, ...enemyFighters],
+    randSeed: f.initial.randSeed, fps: f.initial.fps, hp: enemyHp,
+    waves,
+    selfTotal: ourInit.length + waves.reduce((n, w) => n + w.fighters.length, 0),
+    enemyTotal: enemyFighters.length,
+  }, req);
+}
+
 function forecast(input) {
   const req = bootstrap(input.playerUid);
+  if ((input.armies || []).length > 1) {
+    return forecastReinforce(input, req);
+  }
   const { area, fighters, seed } = buildArea(input, req);
 
   // Rendering + reddot are no-ops headless.

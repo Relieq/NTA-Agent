@@ -115,4 +115,25 @@ function buildArea(input, requireByName) {
   return { area, fighters, seed, hp };
 }
 
-module.exports = { buildArea };
+// Enemy defenders for a target, as {armys, hp}: explicit conf or generated from
+// land config; sorted by the engine's key (100*attackSpeed + (99-dist to entry)).
+// `entry` is the entry point our lead army funnels to.
+function enemyArmysFor(input, requireByName, entry) {
+  const mapHelper = requireByName("MapHelper").mapHelper;
+  const conf =
+    input.enemyArmyConf ||
+    requireByName("GameHelper").gameHpr.getAreaPawnConfInfo(
+      input.targetCellIndex, input.landId, input.selfToCellDistance);
+  conf.armys.forEach((a) => {
+    a.state = a.state || 2;
+    a.owner = a.owner || "";
+    a.pawns.sort((p, q) => {
+      const ps = 100 * pawnAttackSpeed(p.id) + (99 - mapHelper.getPointToPointDis(p.point, entry));
+      const qs = 100 * pawnAttackSpeed(q.id) + (99 - mapHelper.getPointToPointDis(q.point, entry));
+      return qs - ps;
+    });
+  });
+  return { armys: conf.armys, hp: conf.hp || [0, 0] };
+}
+
+module.exports = { buildArea, enemyArmysFor };

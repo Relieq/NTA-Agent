@@ -19,6 +19,17 @@ function pawnAttackSpeed(id) {
   return (base && base.attack_speed) || 0;
 }
 
+// Entry direction from attacker cell to target cell (pure index geometry).
+// 0=right 1=left 2=down 3=up, clamped to available passPoints.
+function entryDir(fromIndex, targetIndex, mapWidth, nPassPoints) {
+  const dx = (targetIndex % mapWidth) - (fromIndex % mapWidth);
+  const dy = Math.floor(targetIndex / mapWidth) - Math.floor(fromIndex / mapWidth);
+  let dir;
+  if (Math.abs(dx) >= Math.abs(dy)) dir = dx >= 0 ? 0 : 1;
+  else dir = dy >= 0 ? 2 : 3;
+  return nPassPoints > 0 ? dir % nPassPoints : 0;
+}
+
 // Build { initial:{firstArmy,fighters,randSeed,fps,attackIndexAcc}, waves:[...], target }.
 // armies are in SELECTION order; armies[0] is the frame-0 wave.
 function buildFrames(input, requireByName) {
@@ -27,16 +38,33 @@ function buildFrames(input, requireByName) {
   const randSeed = Math.floor(Number(myUid) / 100) + target;
   const armies = input.armies || [];
 
+  const mapHelper = requireByName("MapHelper").mapHelper;
+  const Constant = requireByName("Constant");
+  const areaSize = input.areaSize || Constant.DEFAULT_AREA_SIZE || 15;
+  const passPoints = mapHelper.getPassPoints(areaSize);
+  const mapWidth = input.mapWidth || 600;
+  const FIGHT = ((requireByName("Enums").ArmyState || {}).FIGHT) != null
+    ? requireByName("Enums").ArmyState.FIGHT : 2;
+
   let attackIndexAcc = 0;
   const stripArmy = (army) => {
-    const pawns = (army.pawns || []).slice().sort(
-      (a, b) => pawnAttackSpeed(b.id) - pawnAttackSpeed(a.id));
+    const dir = entryDir(army.index, target, mapWidth, passPoints.length);
+    const entry = passPoints[dir] || passPoints[0] || { x: 0, y: 0 };
+    const pawns = (army.pawns || []).slice()
+      .sort((a, b) => pawnAttackSpeed(b.id) - pawnAttackSpeed(a.id))
+      .map((p) => ({
+        index: army.index, uid: p.uid, id: p.id, lv: p.lv,
+        hp: p.hp ? (Array.isArray(p.hp) ? p.hp.slice() : [p.hp[0]]) : undefined,
+        point: { x: entry.x, y: entry.y },
+        equip: p.equip, portrayal: p.hero || undefined,
+        attackSpeed: pawnAttackSpeed(p.id), buffs: p.buffs || [],
+      }));
     const fighters = pawns.map((p) => ({
       uid: p.uid, camp: 2, attackIndex: ++attackIndexAcc, enterIndex: attackIndexAcc,
     }));
     return {
       army: { index: army.index, uid: army.uid, name: army.name || "D1",
-              owner: myUid, pawns },
+              owner: myUid, state: FIGHT, enterDir: dir, pawns },
       fighters,
     };
   };
