@@ -52,3 +52,54 @@ test("determinism: same input yields identical result", () => {
   const b = forecast(KNOWN_INPUT);
   assert.deepStrictEqual(a, b);
 });
+
+const fs = require("node:fs");
+const path = require("node:path");
+
+test("oracle: replaying the real 1-tile record reproduces its outcome", (t) => {
+  const enginePath = process.env.NTA_ENGINE_JS || "tools/re/decrypted/index.js";
+  if (!fs.existsSync(enginePath)) {
+    t.skip("engine bundle absent");
+    return;
+  }
+  const { replayRecord } = require("../record-replay");
+  const fixture = JSON.parse(
+    fs.readFileSync(path.join(__dirname, "fixtures", "battle_1tile.json"), "utf8"));
+  const { loadEngine } = require("../bundle");
+  const { installAssets } = require("../assets");
+  if (!globalThis.eventCenter) globalThis.eventCenter = { emit() {}, on() {}, off() {}, once() {} };
+  if (!globalThis.mc) globalThis.mc = { getModel: () => ({}) };
+  const req = loadEngine();
+  installAssets(undefined, req, { playerUid: "57696053" });
+  const out = replayRecord(fixture.record, req);
+  assert.strictEqual(out.isWin, true, "record says win");
+  assert.strictEqual(out.survivors.self.alive, out.survivors.self.total, "record has 0 dead");
+});
+
+test("multi-army forecast routes through reinforcement and is order-sensitive", (t) => {
+  const enginePath = process.env.NTA_ENGINE_JS || "tools/re/decrypted/index.js";
+  if (!fs.existsSync(enginePath)) {
+    t.skip("engine bundle absent");
+    return;
+  }
+  const enemy = {
+    index: 109725, hp: [100, 100],
+    armys: [{
+      index: 109725, uid: "e", state: 0, name: "", owner: "",
+      pawns: Array.from({ length: 12 }, (_, i) => ({
+        uid: "e" + i, id: 4101, lv: 2, point: { x: 6 + (i % 4), y: 6 + ((i / 4) | 0) } })),
+    }],
+  };
+  const cung = { uid: "ac", name: "Cung", index: 109726, marchTime: 0,
+    pawns: Array.from({ length: 5 }, (_, i) => ({ uid: "c" + i, id: 3305, lv: 1 })) };
+  const tank = { uid: "at", name: "Tank", index: 109726, marchTime: 0,
+    pawns: Array.from({ length: 5 }, (_, i) => ({ uid: "t" + i, id: 3101, lv: 1 })) };
+  const mk = (armies) => forecast({ playerUid: "1000000000", targetCellIndex: 109725,
+    landId: 0, selfToCellDistance: 1, areaSize: null, armies, enemyArmyConf: enemy });
+  const a = mk([cung, tank]); // cung first (1-tile)
+  const b = mk([tank, cung]); // tank first
+  assert.strictEqual(a.isWin, true, "cung-first should win");
+  assert.strictEqual(b.isWin, true, "tank-first should win");
+  assert.ok(a.lossPercent <= b.lossPercent,
+    `cung-first (${a.lossPercent}) should be <= tank-first (${b.lossPercent})`);
+});

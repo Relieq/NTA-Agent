@@ -168,8 +168,24 @@ class Actions:
         return reply
 
     def ceri_reset(self, lv: int, tp: int) -> dict:
-        """Reroll the ceri options for a track/level (GAME_HD_CeriResetSelect)."""
-        return self.session.request("game/HD_CeriResetSelect", {"lv": int(lv), "tp": int(tp)})
+        """Reroll the ceri options for a track/level (GAME_HD_CeriResetSelect).
+
+        The reply carries the fresh ``selectIds``/``resetCount`` directly (not a
+        slot map), so apply them onto the matching pending slot — otherwise the
+        local state keeps the old options and the reroll looks like a no-op.
+        """
+        reply = self.session.request("game/HD_CeriResetSelect", {"lv": int(lv), "tp": int(tp)})
+        key = TP_SLOT_KEY.get(int(tp))
+        select_ids = reply.get("selectIds")
+        player = (self._state.raw or {}).get("player") if self._state else None
+        if player and key and isinstance(select_ids, list):
+            for slot in (player.get(key) or {}).values():
+                if (isinstance(slot, dict) and int(slot.get("lv", 0) or 0) == int(lv)
+                        and (slot.get("id") or 0) <= 0):
+                    slot["selectIds"] = select_ids
+                    if "resetCount" in reply:
+                        slot["resetCount"] = reply["resetCount"]
+        return reply
 
     # ---- captcha (anti-cheat) ------------------------------------------- #
     def get_anticheat_question(self) -> dict:
@@ -194,6 +210,17 @@ class Actions:
         """All of the player's armies with their pawns (GAME_HD_GetPlayerArmys)."""
         reply = self.session.request("game/HD_GetPlayerArmys", {})
         return reply.get("list", []) or []
+
+    # ---- battle records (read-only ground truth) ------------------------ #
+    def get_battle_records_list(self) -> list[dict]:
+        """List the player's stored battles (GAME_HD_GetBattleRecordsList)."""
+        reply = self.session.request("game/HD_GetBattleRecordsList", {})
+        return reply.get("list", []) or []
+
+    def get_battle_record(self, uid: str) -> dict:
+        """Fetch one battle's full frame record (GAME_HD_GetBattleRecord)."""
+        reply = self.session.request("game/HD_GetBattleRecord", {"uid": str(uid)})
+        return reply.get("record", {}) or {}
 
     # ---- combat ---------------------------------------------------------- #
     def occupy_cell(

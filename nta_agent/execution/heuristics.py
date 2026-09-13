@@ -176,41 +176,52 @@ class OccupyCell:
         self._cooldown = self.discover_every  # throttle regardless of outcome
         predictor = self._pred()      # stats: fallback verdict
         sim = self._sim_pred()        # engine: authoritative win verdict when available
-        from nta_agent.execution.advisor import best_occupy
+        from nta_agent.execution.advisor import Plan, best_plan
+        from nta_agent.execution.order_strategies import candidate_orders
         from nta_agent.execution.predictors.sim_bridge import SimUnavailable
 
-        def predict(army, c):
-            # Prefer the headless sim; degrade to the stats predictor on any miss.
+        cand_by_index = {c.index: c for c in cands}
+
+        def plans_for(i):
+            # A few tactical selection-orders (1-tile vs avoid) + single armies.
+            group = actions.select_armies(i)
+            return [Plan(armies=order, target=i, label=label, prediction=None)
+                    for label, order in candidate_orders(group)]
+
+        def predict(plan):
+            c = cand_by_index[plan.target]
+            dist = self._dist(state.main_city_index, c.index)
             if sim is not None:
                 try:
-                    return sim.predict_target(
-                        state, army, target_index=c.index,
-                        land_id=c.land_id, distance=self._dist(state.main_city_index, c.index),
-                    )
+                    return sim.predict_armies(
+                        state, plan.armies,
+                        target_index=c.index, land_id=c.land_id, distance=dist)
                 except SimUnavailable:
                     pass
-            return predictor.predict(army["pawns"], c.defenders)
+            pawns = [p for a in plan.armies for p in (a.get("pawns") or [])]
+            return predictor.predict(pawns, c.defenders)
 
-        # Evaluate EVERY reachable army for EVERY candidate; pick the safest win.
-        rec = best_occupy(cands, lambda i: actions.select_armies(i), predict)
-        if rec is None:
+        # Evaluate candidate selection-orders for every candidate; pick safest win.
+        plan = best_plan(cands, plans_for, predict)
+        if plan is None:
             return False
-        self._pending = (rec.army, rec.target)
+        self._pending = (list(plan.armies), plan.target)
         if self.on_event:
             self.on_event("occupy_plan", {
-                "target": rec.target,
-                "army": rec.army.get("name") or rec.army.get("uid"),
-                "loss_percent": round(rec.prediction.loss_percent, 1),
+                "target": plan.target,
+                "label": plan.label,
+                "order": [a.get("name") or a.get("uid") for a in plan.armies],
+                "loss_percent": round(plan.prediction.loss_percent, 1),
             })
         return True
 
     def act(self, actions: Actions) -> None:
         if not self._pending:
             return
-        army, target = self._pending
+        armies, target = self._pending
         self._pending = None
         try:
-            actions.occupy_cell(target, [army])
+            actions.occupy_cell(target, armies)
         except Exception:
             self._cooldown = self.fail_cooldown
             raise

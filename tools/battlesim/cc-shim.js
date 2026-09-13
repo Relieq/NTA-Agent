@@ -32,6 +32,8 @@ class Vec2 {
   normalize() { const m = this.mag() || 1; this.x /= m; this.y /= m; return this; }
   Join() { return this.x + "," + this.y; }
 }
+// Static helpers the engine calls as cc.Vec2.equals(a, b) etc. (pathfinding).
+Vec2.equals = (a, b) => !!a && !!b && a.x === b.x && a.y === b.y;
 
 class Vec3 {
   constructor(x = 0, y = 0, z = 0) { this.x = x; this.y = y; this.z = z; }

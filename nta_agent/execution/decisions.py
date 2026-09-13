@@ -1,7 +1,15 @@
 """Detect reserved ceri decisions (unlock pawn/policy/equip) pending a human pick."""
 from __future__ import annotations
 
+import re
 from dataclasses import dataclass
+
+# Cocos rich-text markup the game renders as color/format; strip for plain display.
+_MARKUP = re.compile(r"</?c(?:olor=[^>]*)?>", re.IGNORECASE)
+
+
+def _clean(text: str) -> str:
+    return _MARKUP.sub("", text or "").strip()
 
 # player slot-map field -> (StudyType tp, text table). tp verified in client.
 TRACKS = {
@@ -29,13 +37,19 @@ def _name(text_table: dict, value: int) -> str:
 
 def _desc(config, text_name: str, value: int) -> str:
     if text_name == "policyText":
-        key = f"desc_{value}"
-    elif text_name == "equipText":
-        key = f"effect_{value}"
-    else:
-        return ""
-    row = config.table(text_name).get(key) or {}
-    return row.get("vi") or row.get("en") or ""
+        row = config.table(text_name).get(f"desc_{value}") or {}
+        tmpl = _clean(row.get("vi") or row.get("en") or "")
+        if not tmpl:
+            return ""
+        # The game fills {0} with the policy's base value (value.split(",")[0]) —
+        # see engine: policyText.desc_<id> setLocaleKey(..., r.value.split(",")[0]).
+        pol = config.table("policy").get(value) or {}
+        arg = str(pol.get("value", "")).split(",")[0]
+        return tmpl.replace("{0}", arg) if arg else tmpl
+    if text_name == "equipText":
+        row = config.table(text_name).get(f"effect_{value}") or {}
+        return _clean(row.get("vi") or row.get("en") or "")
+    return ""
 
 
 def pending_decisions(state, config) -> list[Decision]:

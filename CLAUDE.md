@@ -83,8 +83,9 @@ It requires **Node.js ≥ 18** and reads the (gitignored) decrypted engine + con
 
 ```bash
 node tools/battlesim/run-once.js                       # smoke: one known forecast
-node --test tools/battlesim/test/golden.test.js        # JS golden/determinism
-node --test tools/battlesim/test/server.test.js        # sidecar JSON-RPC
+# --test-force-exit: the engine boot leaves handles open, so node won't exit on its own.
+node --test --test-force-exit tools/battlesim/test/golden.test.js  # JS golden/determinism/oracle
+node --test --test-force-exit tools/battlesim/test/server.test.js  # sidecar JSON-RPC
 ```
 
 Python reaches it through `SimBattlePredictor` (`nta_agent/execution/predictors/`),
@@ -97,5 +98,7 @@ integration test is skipped unless Node + the engine are present.
 - Superpowers plugin (v6.3.0) is installed. Use its `brainstorming` → `write-plan` →
   `execute-plan` flow to develop each roadmap phase; use `systematic-debugging` and `TDD` skills
   as they apply.
-- Do not commit or push unless asked. On the default branch (`master`), branch first.
+- Commit proactively at logical checkpoints (green tests, a completed unit of work) with clear
+  messages; no need to ask first. Still branch before committing on the default branch (`master`).
+  Do not push or force-push unless asked.
 - Templates/asset names and much of the roadmap are in Vietnamese; match the user's language.

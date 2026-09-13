@@ -46,3 +46,45 @@ def test_best_occupy_skips_empty_armies_and_none_predictions():
     armies = [{"uid": "empty", "pawns": []}, {"uid": "A", "pawns": [1], "name": "A"}]
     rec = best_occupy([c], lambda i: armies, lambda a, c: None if a["uid"] == "empty" else Pred(True, 5.0))
     assert rec.army["uid"] == "A"
+
+
+# --- v2: best_plan over ordered multi-army plans ---
+from types import SimpleNamespace
+
+from nta_agent.execution.advisor import Plan, best_plan
+
+
+def _pred(win, loss):
+    return SimpleNamespace(win=win, loss_percent=loss)
+
+
+def test_best_plan_picks_lowest_loss_winning_plan():
+    cell = SimpleNamespace(index=7)
+    plans = {7: [
+        Plan(armies=[{"uid": "a"}, {"uid": "b"}], target=7, label="archers-first", prediction=None),
+        Plan(armies=[{"uid": "b"}, {"uid": "a"}], target=7, label="tanks-first", prediction=None),
+        Plan(armies=[{"uid": "a"}], target=7, label="single", prediction=None),
+    ]}
+    preds = {"archers-first": _pred(True, 10), "tanks-first": _pred(True, 20),
+             "single": _pred(False, 100)}
+    got = best_plan([cell], lambda i: plans[i], lambda p: preds[p.label])
+    assert got.label == "archers-first"
+    assert got.armies == [{"uid": "a"}, {"uid": "b"}]
+
+
+def test_best_plan_tie_prefers_fewer_armies():
+    cell = SimpleNamespace(index=7)
+    plans = {7: [
+        Plan(armies=[{"uid": "a"}, {"uid": "b"}], target=7, label="two", prediction=None),
+        Plan(armies=[{"uid": "a"}], target=7, label="one", prediction=None),
+    ]}
+    preds = {"two": _pred(True, 10), "one": _pred(True, 10)}
+    got = best_plan([cell], lambda i: plans[i], lambda p: preds[p.label])
+    assert got.label == "one"
+
+
+def test_best_plan_none_when_no_win():
+    cell = SimpleNamespace(index=7)
+    plans = {7: [Plan(armies=[{"uid": "a"}], target=7, label="x", prediction=None)]}
+    got = best_plan([cell], lambda i: plans[i], lambda p: _pred(False, 100))
+    assert got is None

@@ -50,15 +50,36 @@ class SimBattlePredictor:
         area_size: int | None = None,
         enemy_army_conf: dict | None = None,
     ) -> BattlePrediction:
-        """Run the headless forecast for ``army`` attacking ``target_index``."""
+        """Run the headless forecast for a single ``army`` attacking a target."""
+        return self.predict_armies(
+            state, [army], target_index=target_index, land_id=land_id,
+            distance=distance, area_size=area_size, enemy_army_conf=enemy_army_conf)
+
+    def predict_armies(
+        self,
+        state: GameState,
+        armies: list[dict[str, Any]],
+        *,
+        target_index: int,
+        land_id: int,
+        distance: int,
+        area_size: int | None = None,
+        enemy_army_conf: dict | None = None,
+    ) -> BattlePrediction:
+        """Run the headless forecast for ``armies`` (selection order) on a target.
+
+        Multiple armies use the reinforcement path: the first arrives, later ones
+        join as waves — reproducing the 1-tile turn order.
+        """
         inp = build_forecast_input(
-            state, [army],
+            state, armies,
             target_index=target_index, land_id=land_id, distance=distance,
             area_size=area_size, enemy_army_conf=enemy_army_conf,
         )
         res = self.bridge.forecast(inp)
 
-        my_power = self._power(army.get("pawns", []))
+        my_pawns = [p for a in armies for p in (a.get("pawns") or [])]
+        my_power = self._power(my_pawns)
         enemy_pawns = []
         if enemy_army_conf:
             for a in enemy_army_conf.get("armys", []) or []:

@@ -1,0 +1,558 @@
+{
+ "summary": {
+  "uid": "1789297051171004",
+  "beginTime": 1789296974324,
+  "endTime": 1789297051171,
+  "date": "2026-09-13",
+  "invalidInfo": {
+   "3": 276,
+   "15": 76,
+   "5": 17,
+   "6": 76,
+   "1": 3,
+   "13": 3,
+   "12": 276
+  },
+  "armyUidList": [
+   "1789295016684001",
+   "1789293739280001"
+  ],
+  "index": 109725,
+  "isWin": true,
+  "isCanPlay": true
+ },
+ "record": {
+  "uid": "1789297051171004",
+  "index": 109725,
+  "beginTime": 1789296974324,
+  "endTime": 1789297051171,
+  "frames": [
+   {
+    "fighters": [
+     {
+      "uid": "1789295325465001",
+      "camp": 2,
+      "attackIndex": 1,
+      "buffs": [
+       {
+        "type": 1027,
+        "lv": 1,
+        "provider": "1789295325465001",
+        "round": -1,
+        "times": -1,
+        "value": 10.0,
+        "needRound": -1
+       }
+      ],
+      "enterIndex": 1
+     },
+     {
+      "uid": "1789295634214001",
+      "camp": 2,
+      "attackIndex": 2,
+      "buffs": [
+       {
+        "type": 1027,
+        "lv": 1,
+        "provider": "1789295634214001",
+        "round": -1,
+        "times": -1,
+        "value": 10.0,
+        "needRound": -1
+       }
+      ],
+      "enterIndex": 2
+     },
+     {
+      "uid": "1789295942964001",
+      "camp": 2,
+      "attackIndex": 3,
+      "buffs": [
+       {
+        "type": 1027,
+        "lv": 1,
+        "provider": "1789295942964001",
+        "round": -1,
+        "times": -1,
+        "value": 10.0,
+        "needRound": -1
+       }
+      ],
+      "enterIndex": 3
+     },
+     {
+      "uid": "1789296251714001",
+      "camp": 2,
+      "attackIndex": 4,
+      "buffs": [
+       {
+        "type": 1027,
+        "lv": 1,
+        "provider": "1789296251714001",
+        "round": -1,
+        "times": -1,
+        "value": 10.0,
+        "needRound": -1
+       }
+      ],
+      "enterIndex": 4
+     },
+     {
+      "uid": "1789296560464001",
+      "camp": 2,
+      "attackIndex": 5,
+      "buffs": [
+       {
+        "type": 1027,
+        "lv": 1,
+        "provider": "1789296560464001",
+        "round": -1,
+        "times": -1,
+        "value": 10.0,
+        "needRound": -1
+       }
+      ],
+      "enterIndex": 5
+     },
+     {
+      "uid": "1789296905284003",
+      "camp": 1,
+      "attackIndex": 6,
+      "enterIndex": 6
+     },
+     {
+      "uid": "1789296905284002",
+      "camp": 1,
+      "attackIndex": 7,
+      "enterIndex": 7
+     },
+     {
+      "uid": "1789296905284001",
+      "camp": 1,
+      "attackIndex": 8,
+      "enterIndex": 8
+     }
+    ],
+    "hp": [
+     3,
+     3
+    ],
+    "fps": 20,
+    "armys": [
+     {
+      "index": 109725,
+      "uid": "1789295016684001",
+      "name": "Đội 2",
+      "pawns": [
+       {
+        "index": 109725,
+        "uid": "1789295325465001",
+        "point": {
+         "x": 10,
+         "y": 5
+        },
+        "id": 3305,
+        "lv": 1,
+        "attackSpeed": 5,
+        "hp": {
+         "0": 55
+        }
+       },
+       {
+        "index": 109725,
+        "uid": "1789295634214001",
+        "point": {
+         "x": 10,
+         "y": 5
+        },
+        "id": 3305,
+        "lv": 1,
+        "attackSpeed": 5,
+        "hp": {
+         "0": 55
+        }
+       },
+       {
+        "index": 109725,
+        "uid": "1789295942964001",
+        "point": {
+         "x": 10,
+         "y": 5
+        },
+        "id": 3305,
+        "lv": 1,
+        "attackSpeed": 5,
+        "hp": {
+         "0": 55
+        }
+       },
+       {
+        "index": 109725,
+        "uid": "1789296251714001",
+        "point": {
+         "x": 10,
+         "y": 5
+        },
+        "id": 3305,
+        "lv": 1,
+        "attackSpeed": 5,
+        "hp": {
+         "0": 55
+        }
+       },
+       {
+        "index": 109725,
+        "uid": "1789296560464001",
+        "point": {
+         "x": 10,
+         "y": 5
+        },
+        "id": 3305,
+        "lv": 1,
+        "attackSpeed": 5,
+        "hp": {
+         "0": 55
+        }
+       }
+      ],
+      "enterDir": 1,
+      "owner": "57696053"
+     },
+     {
+      "index": 109725,
+      "uid": "1789296905284004",
+      "pawns": [
+       {
+        "index": 109725,
+        "uid": "1789296905284001",
+        "point": {
+         "x": 4,
+         "y": 6
+        },
+        "id": 4116,
+        "lv": 2,
+        "curAnger": 4,
+        "attackSpeed": 7,
+        "hp": {
+         "0": 91
+        }
+       },
+       {
+        "index": 109725,
+        "uid": "1789296905284002",
+        "point": {
+         "x": 5,
+         "y": 4
+        },
+        "id": 4116,
+        "lv": 2,
+        "curAnger": 4,
+        "attackSpeed": 7,
+        "hp": {
+         "0": 91
+        }
+       },
+       {
+        "index": 109725,
+        "uid": "1789296905284003",
+        "point": {
+         "x": 6,
+         "y": 6
+        },
+        "id": 4116,
+        "lv": 2,
+        "curAnger": 4,
+        "attackSpeed": 7,
+        "hp": {
+         "0": 91
+        }
+       }
+      ],
+      "enterDir": -1
+     }
+    ],
+    "camp": 1,
+    "randSeed": 686685,
+    "buildInfo": [
+     0,
+     0
+    ],
+    "environmentBuffs": [
+     {
+      "type": 2002,
+      "lv": 1,
+      "round": -1,
+      "times": -1,
+      "value": 1.0,
+      "needRound": -1
+     }
+    ]
+   },
+   {
+    "type": 1,
+    "currentFrameIndex": 1,
+    "fighters": [
+     {
+      "uid": "1789293819115001",
+      "camp": 2,
+      "attackIndex": 9,
+      "roundCount": 1,
+      "buffs": [
+       {
+        "type": 1027,
+        "lv": 1,
+        "provider": "1789293819115001",
+        "round": -1,
+        "times": -1,
+        "value": 10.0,
+        "needRound": -1
+       }
+      ],
+      "enterIndex": 9
+     },
+     {
+      "uid": "1789294186865001",
+      "camp": 2,
+      "attackIndex": 10,
+      "roundCount": 1,
+      "buffs": [
+       {
+        "type": 1027,
+        "lv": 1,
+        "provider": "1789294186865001",
+        "round": -1,
+        "times": -1,
+        "value": 10.0,
+        "needRound": -1
+       }
+      ],
+      "enterIndex": 10
+     },
+     {
+      "uid": "1789294300865001",
+      "camp": 2,
+      "attackIndex": 11,
+      "roundCount": 1,
+      "buffs": [
+       {
+        "type": 1027,
+        "lv": 1,
+        "provider": "1789294300865001",
+        "round": -1,
+        "times": -1,
+        "value": 10.0,
+        "needRound": -1
+       }
+      ],
+      "enterIndex": 11
+     },
+     {
+      "uid": "1789294414866001",
+      "camp": 2,
+      "attackIndex": 12,
+      "roundCount": 1,
+      "buffs": [
+       {
+        "type": 1027,
+        "lv": 1,
+        "provider": "1789294414866001",
+        "round": -1,
+        "times": -1,
+        "value": 10.0,
+        "needRound": -1
+       }
+      ],
+      "enterIndex": 12
+     },
+     {
+      "uid": "1789294528864001",
+      "camp": 2,
+      "attackIndex": 13,
+      "roundCount": 1,
+      "buffs": [
+       {
+        "type": 1027,
+        "lv": 1,
+        "provider": "1789294528864001",
+        "round": -1,
+        "times": -1,
+        "value": 10.0,
+        "needRound": -1
+       }
+      ],
+      "enterIndex": 13
+     },
+     {
+      "uid": "1789294642864001",
+      "camp": 2,
+      "attackIndex": 14,
+      "roundCount": 1,
+      "buffs": [
+       {
+        "type": 1027,
+        "lv": 1,
+        "provider": "1789294642864001",
+        "round": -1,
+        "times": -1,
+        "value": 10.0,
+        "needRound": -1
+       }
+      ],
+      "enterIndex": 14
+     },
+     {
+      "uid": "1789294756864001",
+      "camp": 2,
+      "attackIndex": 15,
+      "roundCount": 1,
+      "buffs": [
+       {
+        "type": 1027,
+        "lv": 1,
+        "provider": "1789294756864001",
+        "round": -1,
+        "times": -1,
+        "value": 10.0,
+        "needRound": -1
+       }
+      ],
+      "enterIndex": 15
+     }
+    ],
+    "army": {
+     "index": 109725,
+     "uid": "1789293739280001",
+     "name": "Đội 3",
+     "pawns": [
+      {
+       "index": 109725,
+       "uid": "1789293819115001",
+       "point": {
+        "x": 10,
+        "y": 5
+       },
+       "id": 3101,
+       "lv": 1,
+       "curAnger": 4,
+       "attackSpeed": 6,
+       "hp": {
+        "0": 135
+       }
+      },
+      {
+       "index": 109725,
+       "uid": "1789294186865001",
+       "point": {
+        "x": 10,
+        "y": 5
+       },
+       "id": 3101,
+       "lv": 1,
+       "curAnger": 4,
+       "attackSpeed": 6,
+       "hp": {
+        "0": 135
+       }
+      },
+      {
+       "index": 109725,
+       "uid": "1789294300865001",
+       "point": {
+        "x": 10,
+        "y": 5
+       },
+       "id": 3101,
+       "lv": 1,
+       "curAnger": 4,
+       "attackSpeed": 6,
+       "hp": {
+        "0": 135
+       }
+      },
+      {
+       "index": 109725,
+       "uid": "1789294414866001",
+       "point": {
+        "x": 10,
+        "y": 5
+       },
+       "id": 3101,
+       "lv": 1,
+       "curAnger": 4,
+       "attackSpeed": 6,
+       "hp": {
+        "0": 135
+       }
+      },
+      {
+       "index": 109725,
+       "uid": "1789294528864001",
+       "point": {
+        "x": 10,
+        "y": 5
+       },
+       "id": 3101,
+       "lv": 1,
+       "curAnger": 4,
+       "attackSpeed": 6,
+       "hp": {
+        "0": 135
+       }
+      },
+      {
+       "index": 109725,
+       "uid": "1789294642864001",
+       "point": {
+        "x": 10,
+        "y": 5
+       },
+       "id": 3101,
+       "lv": 1,
+       "curAnger": 4,
+       "attackSpeed": 6,
+       "hp": {
+        "0": 135
+       }
+      },
+      {
+       "index": 109725,
+       "uid": "1789294756864001",
+       "point": {
+        "x": 10,
+        "y": 5
+       },
+       "id": 3101,
+       "lv": 1,
+       "curAnger": 4,
+       "attackSpeed": 6,
+       "hp": {
+        "0": 135
+       }
+      }
+     ],
+     "state": 2,
+     "enterDir": 1,
+     "owner": "57696053"
+    }
+   },
+   {
+    "type": 200,
+    "currentFrameIndex": 1537
+   }
+  ],
+  "treasures": [
+   {
+    "uid": "1789297051171001",
+    "id": 401
+   },
+   {
+    "uid": "1789297051171002",
+    "id": 401
+   },
+   {
+    "uid": "1789297051171003",
+    "id": 401
+   }
+  ]
+ }
+}
