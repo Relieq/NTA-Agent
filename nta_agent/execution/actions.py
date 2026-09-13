@@ -211,6 +211,17 @@ class Actions:
         reply = self.session.request("game/HD_GetPlayerArmys", {})
         return reply.get("list", []) or []
 
+    # ---- battle records (read-only ground truth) ------------------------ #
+    def get_battle_records_list(self) -> list[dict]:
+        """List the player's stored battles (GAME_HD_GetBattleRecordsList)."""
+        reply = self.session.request("game/HD_GetBattleRecordsList", {})
+        return reply.get("list", []) or []
+
+    def get_battle_record(self, uid: str) -> dict:
+        """Fetch one battle's full frame record (GAME_HD_GetBattleRecord)."""
+        reply = self.session.request("game/HD_GetBattleRecord", {"uid": str(uid)})
+        return reply.get("record", {}) or {}
+
     # ---- combat ---------------------------------------------------------- #
     def occupy_cell(
         self,
