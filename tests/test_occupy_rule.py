@@ -81,7 +81,7 @@ class FakeSim:
     def __init__(self, win):
         self._win = win
 
-    def predict_target(self, state, army, *, target_index, land_id, distance, **kw):
+    def predict_armies(self, state, armies, *, target_index, land_id, distance, **kw):
         if self._win is None:
             raise SimUnavailable("sidecar down")
         return BattlePrediction(
@@ -119,3 +119,37 @@ def test_occupy_falls_back_to_stats_when_sim_unavailable():
     assert rule.applies(st, act) is True
     rule.act(act)
     assert act.calls and act.calls[0][1] == center - 1
+
+
+# ---- v2: multi-army selection-order auto-apply --------------------------- #
+class OrderSensitiveSim:
+    """Sim whose loss depends on which army acts first (cung-first is best)."""
+    def predict_armies(self, state, armies, *, target_index, land_id, distance, **kw):
+        first = armies[0]["uid"]
+        if len(armies) == 2 and first == "cung":
+            return BattlePrediction(win=True, my_power=1, enemy_power=1, ratio=1,
+                                    loss_percent=0.0, loss_lv=0)
+        if len(armies) == 2:
+            return BattlePrediction(win=True, my_power=1, enemy_power=1, ratio=1,
+                                    loss_percent=30.0, loss_lv=2)
+        return BattlePrediction(win=False, my_power=1, enemy_power=1, ratio=1,
+                                loss_percent=100.0, loss_lv=4)
+
+
+def test_occupy_auto_applies_best_selection_order():
+    center = 182 * W + 526
+    st = GameState(source="api"); st.user.uid = "me"; st.main_city_index = center
+    st.resources.stamina = 10
+    areas = {center: _cell(owner="me", city=1001),
+             center - 1: _cell(owner="", pawns=[50])}
+    cung = {"index": center, "uid": "cung", "pawns": [{"id": 3305}, {"id": 3305}]}
+    tank = {"index": center, "uid": "tank", "pawns": [{"id": 3101}, {"id": 3101}]}
+    act = FakeActions(areas=areas, armies=[tank, cung])  # selected tank-first
+    events = []
+    rule = OccupyCell(radius=1, use_sim=True, sim=OrderSensitiveSim(),
+                      predictor=BattlePredictor(), on_event=lambda k, d: events.append((k, d)))
+    assert rule.applies(st, act) is True
+    rule.act(act)
+    assert act.calls and act.calls[0][1] == center - 1
+    assert act.calls[0][2] == ["cung", "tank"]  # reordered to cung-first
+    assert any(k == "occupy_plan" and d["label"] == "archers-first" for k, d in events)
