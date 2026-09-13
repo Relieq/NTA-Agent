@@ -18,6 +18,35 @@ class Recommendation:
     prediction: object  # BattlePrediction (win, loss_percent, ...)
 
 
+@dataclass
+class Plan:
+    armies: list        # ordered army dicts (selection order)
+    target: int
+    label: str
+    prediction: object  # BattlePrediction, filled by best_plan
+
+
+def best_plan(candidates, plans_for, predict):
+    """Best plan over candidates x candidate orderings.
+
+    ``plans_for(cell_index)`` yields :class:`Plan` objects (prediction unset);
+    ``predict(plan)`` returns a BattlePrediction (or None). The winner is the
+    winnable plan with the lowest ``loss_percent``; ties break toward fewer
+    armies (don't waste troops).
+    """
+    best = None  # ((loss_percent, n_armies), Plan)
+    for c in candidates:
+        for plan in plans_for(c.index):
+            pred = predict(plan)
+            if pred is None or not pred.win:
+                continue
+            key = (pred.loss_percent, len(plan.armies))
+            if best is None or key < best[0]:
+                plan.prediction = pred
+                best = (key, plan)
+    return best[1] if best else None
+
+
 def best_occupy(
     candidates,
     armies_for: Callable[[int], list[dict]],
