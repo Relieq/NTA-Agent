@@ -168,8 +168,24 @@ class Actions:
         return reply
 
     def ceri_reset(self, lv: int, tp: int) -> dict:
-        """Reroll the ceri options for a track/level (GAME_HD_CeriResetSelect)."""
-        return self.session.request("game/HD_CeriResetSelect", {"lv": int(lv), "tp": int(tp)})
+        """Reroll the ceri options for a track/level (GAME_HD_CeriResetSelect).
+
+        The reply carries the fresh ``selectIds``/``resetCount`` directly (not a
+        slot map), so apply them onto the matching pending slot — otherwise the
+        local state keeps the old options and the reroll looks like a no-op.
+        """
+        reply = self.session.request("game/HD_CeriResetSelect", {"lv": int(lv), "tp": int(tp)})
+        key = TP_SLOT_KEY.get(int(tp))
+        select_ids = reply.get("selectIds")
+        player = (self._state.raw or {}).get("player") if self._state else None
+        if player and key and isinstance(select_ids, list):
+            for slot in (player.get(key) or {}).values():
+                if (isinstance(slot, dict) and int(slot.get("lv", 0) or 0) == int(lv)
+                        and (slot.get("id") or 0) <= 0):
+                    slot["selectIds"] = select_ids
+                    if "resetCount" in reply:
+                        slot["resetCount"] = reply["resetCount"]
+        return reply
 
     # ---- captcha (anti-cheat) ------------------------------------------- #
     def get_anticheat_question(self) -> dict:
