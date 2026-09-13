@@ -97,5 +97,7 @@ integration test is skipped unless Node + the engine are present.
 - Superpowers plugin (v6.3.0) is installed. Use its `brainstorming` → `write-plan` →
   `execute-plan` flow to develop each roadmap phase; use `systematic-debugging` and `TDD` skills
   as they apply.
-- Do not commit or push unless asked. On the default branch (`master`), branch first.
+- Commit proactively at logical checkpoints (green tests, a completed unit of work) with clear
+  messages; no need to ask first. Still branch before committing on the default branch (`master`).
+  Do not push or force-push unless asked.
 - Templates/asset names and much of the roadmap are in Vietnamese; match the user's language.
