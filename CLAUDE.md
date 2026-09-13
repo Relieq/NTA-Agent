@@ -83,8 +83,9 @@ It requires **Node.js ≥ 18** and reads the (gitignored) decrypted engine + con
 
 ```bash
 node tools/battlesim/run-once.js                       # smoke: one known forecast
-node --test tools/battlesim/test/golden.test.js        # JS golden/determinism
-node --test tools/battlesim/test/server.test.js        # sidecar JSON-RPC
+# --test-force-exit: the engine boot leaves handles open, so node won't exit on its own.
+node --test --test-force-exit tools/battlesim/test/golden.test.js  # JS golden/determinism/oracle
+node --test --test-force-exit tools/battlesim/test/server.test.js  # sidecar JSON-RPC
 ```
 
 Python reaches it through `SimBattlePredictor` (`nta_agent/execution/predictors/`),

@@ -52,3 +52,26 @@ test("determinism: same input yields identical result", () => {
   const b = forecast(KNOWN_INPUT);
   assert.deepStrictEqual(a, b);
 });
+
+const fs = require("node:fs");
+const path = require("node:path");
+
+test("oracle: replaying the real 1-tile record reproduces its outcome", (t) => {
+  const enginePath = process.env.NTA_ENGINE_JS || "tools/re/decrypted/index.js";
+  if (!fs.existsSync(enginePath)) {
+    t.skip("engine bundle absent");
+    return;
+  }
+  const { replayRecord } = require("../record-replay");
+  const fixture = JSON.parse(
+    fs.readFileSync(path.join(__dirname, "fixtures", "battle_1tile.json"), "utf8"));
+  const { loadEngine } = require("../bundle");
+  const { installAssets } = require("../assets");
+  if (!globalThis.eventCenter) globalThis.eventCenter = { emit() {}, on() {}, off() {}, once() {} };
+  if (!globalThis.mc) globalThis.mc = { getModel: () => ({}) };
+  const req = loadEngine();
+  installAssets(undefined, req, { playerUid: "57696053" });
+  const out = replayRecord(fixture.record, req);
+  assert.strictEqual(out.isWin, true, "record says win");
+  assert.strictEqual(out.survivors.self.alive, out.survivors.self.total, "record has 0 dead");
+});
