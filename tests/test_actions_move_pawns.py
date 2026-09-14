@@ -22,3 +22,19 @@ def test_move_area_pawns_sends_route_and_pawns():
     assert params["index"] == 109725 and params["armyUid"] == "army1"
     assert {"uid": "p1", "point": {"x": 6, "y": 7}} in params["pawns"]
     assert {"uid": "p2", "point": {"x": 9, "y": 7}} in params["pawns"]
+
+
+def test_exchange_pawn_army_swaps_two_pawns():
+    s = FakeSession()
+    Actions(s).exchange_pawn_army(109726, "armyA", "p1", "p2")
+    route, params = s.sent[0]
+    assert route == "game/HD_ExchangePawnArmy"
+    assert params == {"index": 109726, "armyUid1": "armyA", "uid1": "p1",
+                      "armyUid2": "armyA", "uid2": "p2"}
+
+
+def test_exchange_pawn_army_across_armies():
+    s = FakeSession()
+    Actions(s).exchange_pawn_army(109726, "armyA", "p1", "p2", army_uid2="armyB")
+    _, params = s.sent[0]
+    assert params["armyUid1"] == "armyA" and params["armyUid2"] == "armyB"

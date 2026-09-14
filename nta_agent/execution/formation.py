@@ -1,8 +1,10 @@
-"""Candidate formations for a melee army: which pawn stands in front (tanks).
+"""Candidate tank troop ORDERS: which pawn is first in the army list.
 
-Enemies target the closest pawn, so the front slot draws fire. We permute pawns
-among the slots they already occupy — putting the beefiest pawn in front — and
-let the sim score the options.
+Battle positions come from advancing off a shared entry point; who acts first
+(attackIndex = attackSpeed desc, ties broken by list order) reaches the front and
+tanks. So the lever is the pawn ORDER in ``army.pawns``, applied via
+``ExchangePawnArmy`` swaps. (Grid points do not reach battle — see the design's
+Correction note.)
 """
 from __future__ import annotations
 
@@ -16,30 +18,36 @@ def _max_hp(pawn: dict) -> int:
     return 0
 
 
-def slot_order(army: dict, target: int, map_width: int = 600) -> list[dict]:
-    """Occupied slots ordered front->back (front = nearer the target approach)."""
-    pts = [p["point"] for p in army.get("pawns", []) if p.get("point")]
-    ai = int(army.get("index", 0))
-    dx = (target % map_width) - (ai % map_width)
-    dy = (target // map_width) - (ai // map_width)
-    # Front = toward the target: sort by the coordinate that decreases distance.
-    if abs(dx) >= abs(dy):
-        key = (lambda pt: pt["x"]) if dx < 0 else (lambda pt: -pt["x"])
-    else:
-        key = (lambda pt: pt["y"]) if dy < 0 else (lambda pt: -pt["y"])
-    return sorted(pts, key=key)
+def candidate_orderings(army: dict) -> list[tuple[str, list[dict]]]:
+    """[(label, ordered_pawns)]: beefy-first (HP desc) + keep; keep-only when trivial.
 
-
-def candidate_formations(army: dict, target: int, map_width: int = 600):
-    """[(label, {pawn_uid: point})]: beefy-front + keep; keep-only when trivial."""
-    pawns = army.get("pawns") or []
-    keep = {p["uid"]: p["point"] for p in pawns if p.get("point")}
+    A stable sort keeps equal-HP pawns in their current relative order, so
+    beefy-first only reshuffles when HP actually differs.
+    """
+    pawns = list(army.get("pawns") or [])
     if len(pawns) < 2:
-        return [("keep", keep)]
-    out = [("keep", keep)]
-    slots = slot_order(army, target, map_width)
-    ranked = sorted(pawns, key=_max_hp, reverse=True)  # beefiest first
-    beefy = {p["uid"]: slots[i] for i, p in enumerate(ranked) if i < len(slots)}
-    if beefy and beefy != keep:
-        out.insert(0, ("beefy-front", beefy))
+        return [("keep", pawns)]
+    out = [("keep", pawns)]
+    beefy = sorted(pawns, key=_max_hp, reverse=True)
+    if [p.get("uid") for p in beefy] != [p.get("uid") for p in pawns]:
+        out.insert(0, ("beefy-first", beefy))
     return out
+
+
+def swaps_for(current_uids: list[str], target_uids: list[str]) -> list[tuple[str, str]]:
+    """Selection-sort swaps (by uid) turning ``current`` order into ``target``.
+
+    Each swap maps to one ExchangePawnArmy call. Returns [] when already ordered.
+    """
+    cur = list(current_uids)
+    pos = {u: i for i, u in enumerate(cur)}
+    swaps: list[tuple[str, str]] = []
+    for i, want in enumerate(target_uids):
+        if cur[i] == want:
+            continue
+        j = pos[want]
+        a, b = cur[i], cur[j]
+        swaps.append((a, b))
+        cur[i], cur[j] = cur[j], cur[i]
+        pos[a], pos[b] = j, i
+    return swaps

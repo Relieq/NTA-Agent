@@ -1,8 +1,34 @@
 # Formation Optimizer (tank troop order) — Design
 
-Date: 2026-09-13
-Status: Approved (brainstorming) → ready for implementation plan
+Date: 2026-09-13 (corrected 2026-09-14)
+Status: Approved — CORRECTED to order-based lever (see Correction below)
 Owner: NTA-Agent execution (formation/heuristics) + predictors + io/api
+
+## Correction (2026-09-14) — the lever is pawn ORDER, not grid points
+
+The first implementation (merged in PR #3) used `HD_MoveAreaPawns` to set each
+pawn's grid `point`. **That was the wrong mechanic.** Live/RE findings:
+
+- `HD_MoveAreaPawns`/`point` moves a pawn within the **cell's scene grid** —
+  decorative, and it does **not** carry into battle. `toPawnsStrip` places every
+  pawn at the **same entry point** (unless god-mode), so formation points do not
+  reach the fight. (The earlier spike "proved" points mattered only because it
+  fed explicit points, i.e. god-mode-like — not how a real battle starts.)
+- The real lever is the pawn's **order in `army.pawns`**. Battle position is
+  decided by advancing from the shared entry: `attackIndex` order (attackSpeed
+  desc, **ties broken by list order**) → who acts/advances first → who reaches
+  the front → who the enemy (closest-target) hits. Confirmed by spike with **no
+  points**: beefy pawn first in the list → 3/3 survive; squishy first → 2/3.
+- The in-game "đổi vị trí lính trong đội" drag-drop calls
+  `HD_ExchangePawnArmy{index, armyUid1, uid1, armyUid2, uid2}`; for one army it
+  swaps the two pawns' slots in `army.pawns` (`s.pawns[d]=u; s.pawns[h]=c`).
+  Requires an idle army (errors `ecode.500036` mid-battle).
+- Formation source with real data: `get_area(cityIndex)` armys carry pawns with
+  id/lv/hp/attackSpeed **in list order** (`GetPlayerArmys` does not).
+
+The sections below are updated: the lever is **candidate pawn ORDERINGS**
+evaluated by the sim (no points), applied via `ExchangePawnArmy` swaps.
+`MoveAreaPawns` is not used for troop order.
 
 ## 1. Problem
 
