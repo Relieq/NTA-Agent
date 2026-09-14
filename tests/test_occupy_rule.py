@@ -199,3 +199,39 @@ def test_occupy_optimizes_troop_order_before_attack():
     assert swaps[0][0] == center and swaps[0][1] == "tank"
     assert any(k == "formation_plan" and d["label"] == "beefy-first" for k, d in events)
     assert act.calls and act.calls[0][0] == "occupy"
+
+
+# ---- B1: profile-driven chest-budget farming ----------------------------- #
+def test_occupy_uses_profile_farming_within_budget(monkeypatch):
+    from nta_agent.execution import treasure_model as tm
+    from nta_agent.execution.profile import Profile
+    from nta_agent.execution.treasure_model import CellLoot
+    center = 182 * W + 526
+    st = GameState(source="api"); st.user.uid = "me"; st.main_city_index = center
+    st.resources.stamina = 10
+    st.raw = {"player": {"treasureOpenCount": 1}}  # budget = 1 chest
+
+    def cell(owner="", pawns=(), city=0, landId=0):
+        return {"owner": owner, "cityId": city, "landId": landId,
+                "armys": [{"pawns": [{"hp": h} for h in pawns]}] if pawns else [], "hp": [3, 3]}
+
+    areas = {center: cell(owner="me", city=1001),
+             center - 1: cell(pawns=[50], landId=11),   # high reward/chest
+             center + 1: cell(pawns=[50], landId=22)}    # low reward/chest
+    army = [{"index": center, "uid": "A", "pawns": [{"hp": 500}, {"hp": 500}]}]
+    act = FakeActions(areas=areas, armies=army)
+    # max_loss=10 accommodates the stats-fallback predictor (reports ~5% even on
+    # crushing wins); with the real sim, 0-loss cells report 0. Tests the farming
+    # ranking, not the loss threshold.
+    prof = Profile(army={"group": ["A"], "roles": {}, "onetile": True, "composition": {}},
+                   occupy={"max_loss": 10, "max_march_ms": 0,
+                           "loot": {"enabled": True, "min_reward_per_chest": 0}})
+    monkeypatch.setattr(tm, "cell_loot",
+                        lambda land, cfg: CellLoot(1, 100.0) if land == 11 else CellLoot(1, 10.0))
+    events = []
+    rule = OccupyCell(radius=1, use_sim=False, predictor=BattlePredictor(),
+                      profile=prof, config=object(), on_event=lambda k, d: events.append((k, d)))
+    assert rule.applies(st, act) is True
+    rule.act(act)
+    assert act.calls and act.calls[0][1] == center - 1   # higher reward/chest cell chosen
+    assert any(k == "farm_plan" for k, d in events)
