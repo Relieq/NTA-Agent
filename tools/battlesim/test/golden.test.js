@@ -76,6 +76,25 @@ test("oracle: replaying the real 1-tile record reproduces its outcome", (t) => {
   assert.strictEqual(out.survivors.self.alive, out.survivors.self.total, "record has 0 dead");
 });
 
+test("oracle: replaying a real lossy record matches its win + dead count", (t) => {
+  const enginePath = process.env.NTA_ENGINE_JS || "tools/re/decrypted/index.js";
+  if (!fs.existsSync(enginePath)) { t.skip("engine absent"); return; }
+  const { replayRecord } = require("../record-replay");
+  const fixture = JSON.parse(
+    fs.readFileSync(path.join(__dirname, "fixtures", "battle_lossy.json"), "utf8"));
+  const { loadEngine } = require("../bundle");
+  const { installAssets } = require("../assets");
+  if (!globalThis.eventCenter) globalThis.eventCenter = { emit() {}, on() {}, off() {}, once() {} };
+  if (!globalThis.mc) globalThis.mc = { getModel: () => ({}) };
+  const req = loadEngine();
+  installAssets(undefined, req, { playerUid: "57696053" });
+  const out = replayRecord(fixture.record, req);
+  const realDead = (fixture.summary.deadInfo || []).length;
+  assert.strictEqual(out.isWin, fixture.summary.isWin, "win must match the record");
+  const simDead = out.survivors.self.total - out.survivors.self.alive;
+  assert.strictEqual(simDead, realDead, `sim dead (${simDead}) must match real (${realDead})`);
+});
+
 test("multi-army forecast routes through reinforcement and is order-sensitive", (t) => {
   const enginePath = process.env.NTA_ENGINE_JS || "tools/re/decrypted/index.js";
   if (!fs.existsSync(enginePath)) {
