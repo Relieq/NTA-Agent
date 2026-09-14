@@ -153,3 +153,44 @@ def test_occupy_auto_applies_best_selection_order():
     assert act.calls and act.calls[0][1] == center - 1
     assert act.calls[0][2] == ["cung", "tank"]  # reordered to cung-first
     assert any(k == "occupy_plan" and d["label"] == "archers-first" for k, d in events)
+
+
+# ---- Phase 2: formation optimization before attack ----------------------- #
+class FormationSim:
+    """predict_armies loss depends on whether 'big' pawn sits at the front slot (x=6)."""
+    def predict_armies(self, state, armies, *, target_index, land_id, distance, **kw):
+        pawns = [p for a in armies for p in a.get("pawns", [])]
+        big = next((p for p in pawns if p["uid"] == "big"), None)
+        front = bool(big and big.get("point", {}).get("x") == 6)
+        loss = 0.0 if front else 50.0
+        pred = BattlePrediction(win=True, my_power=1, enemy_power=1, ratio=1,
+                                loss_percent=loss, loss_lv=0)
+        pred.pawn_survival = [{"uid": p["uid"], "camp": 2,
+                               "alive": front or p["uid"] == "big", "curHp": 100} for p in pawns]
+        return pred
+
+
+def test_occupy_optimizes_formation_before_attack():
+    center = 182 * W + 526
+    st = GameState(source="api"); st.user.uid = "me"; st.main_city_index = center
+    st.resources.stamina = 10
+    areas = {center: _cell(owner="me", city=1001),
+             center - 1: _cell(owner="", pawns=[50])}
+    tank = {"index": center, "uid": "tank",
+            "pawns": [{"uid": "big", "id": 3101, "lv": 1, "hp": [200, 200], "point": {"x": 10, "y": 7}},
+                      {"uid": "sml", "id": 3101, "lv": 1, "hp": [50, 50], "point": {"x": 6, "y": 7}}]}
+    moves = []
+
+    class Acts(FakeActions):
+        def move_area_pawns(self, index, army_uid, assignment):
+            moves.append((index, army_uid, assignment)); return {}
+
+    act = Acts(areas=areas, armies=[tank])
+    events = []
+    rule = OccupyCell(radius=1, use_sim=True, sim=FormationSim(),
+                      predictor=BattlePredictor(), on_event=lambda k, d: events.append((k, d)))
+    assert rule.applies(st, act) is True
+    rule.act(act)
+    assert moves and moves[0][2]["big"] == {"x": 6, "y": 7}  # big moved to front slot
+    assert any(k == "formation_plan" for k, d in events)
+    assert act.calls and act.calls[0][0] == "occupy"
