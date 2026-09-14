@@ -132,6 +132,8 @@ class OccupyCell:
     use_sim: bool = False      # prefer the headless engine sim for the win verdict
     sim: object = None
     on_event: object = None    # optional on_event(kind, detail) to surface the plan
+    profile: object = None     # Profile: group + occupy/loot policy (farming)
+    config: object = None      # GameConfig for treasure model (lazy)
     _sim_off: bool = False     # sidecar checked and unavailable -> stop retrying
     _pending: object = None    # (armies_list, target_index)
     _cooldown: int = 0
@@ -164,6 +166,35 @@ class OccupyCell:
     def _dist(a: int, b: int, width: int = 600) -> int:
         return abs(a % width - b % width) + abs(a // width - b // width)
 
+    def _config(self):
+        if self.config is None:
+            from nta_agent.data.config import GameConfig
+            try:
+                self.config = GameConfig.load()
+            except FileNotFoundError:
+                self.config = False
+        return self.config or None
+
+    def _farm_select(self, cands, plans_for, predict, state):
+        """Pick the target maximizing loot within the chest budget (profile)."""
+        from nta_agent.execution.advisor import best_plan
+        from nta_agent.execution.farming import plan_farm
+        from nta_agent.execution.treasure_model import cell_loot, chest_budget
+        cfg = self._config()
+        if cfg is None:  # no treasure model -> fall back to safest win
+            return best_plan(cands, plans_for, predict)
+        occ = self.profile.occupy
+        picks = plan_farm(
+            cands,
+            lambda c: best_plan([c], plans_for, predict),
+            lambda c: cell_loot(c.land_id, cfg),
+            budget=chest_budget(state),
+            max_loss=occ.get("max_loss", 0),
+            min_reward_per_chest=(occ.get("loot") or {}).get("min_reward_per_chest", 0),
+            max_march_ms=occ.get("max_march_ms", 0),
+        )
+        return picks[0].plan if picks else None
+
     def applies(self, state: GameState, actions: Actions) -> bool:
         if state.resources.stamina < self.min_stamina or not state.main_city_index:
             return False
@@ -185,10 +216,14 @@ class OccupyCell:
         cand_by_index = {c.index: c for c in cands}
 
         def plans_for(i):
-            # A few tactical selection-orders (1-tile vs avoid) + single armies.
-            group = actions.select_armies(i)
+            # Candidate selection-orders from the profile group (or all reachable).
+            avail = actions.select_armies(i)
+            grp = (self.profile.army.get("group") if self.profile else None) or []
+            if grp:
+                chosen = [a for a in avail if str(a.get("uid")) in {str(x) for x in grp}]
+                avail = chosen or avail
             return [Plan(armies=order, target=i, label=label, prediction=None)
-                    for label, order in candidate_orders(group)]
+                    for label, order in candidate_orders(avail)]
 
         def predict(plan):
             c = cand_by_index[plan.target]
@@ -203,15 +238,22 @@ class OccupyCell:
             pawns = [p for a in plan.armies for p in (a.get("pawns") or [])]
             return predictor.predict(pawns, c.defenders)
 
-        # Evaluate candidate selection-orders for every candidate; pick safest win.
-        plan = best_plan(cands, plans_for, predict)
+        # Profile-driven farming (chest budget) or the plain safest-win pick.
+        loot_on = (self.profile is not None
+                   and (self.profile.occupy.get("loot") or {}).get("enabled", True))
+        kind = "occupy_plan"
+        if loot_on:
+            plan = self._farm_select(cands, plans_for, predict, state)
+            kind = "farm_plan"
+        else:
+            plan = best_plan(cands, plans_for, predict)
         if plan is None:
             return False
         self._pending = (list(plan.armies), plan.target)
         self._state_ref = state
         self._land_ref = cand_by_index[plan.target].land_id
         if self.on_event:
-            self.on_event("occupy_plan", {
+            self.on_event(kind, {
                 "target": plan.target,
                 "label": plan.label,
                 "order": [a.get("name") or a.get("uid") for a in plan.armies],
@@ -323,6 +365,7 @@ class Recruit:
     max_armies: int = 4
     fail_cooldown: int = 10
     config: object = None
+    profile: object = None    # Profile: fill armies toward army.composition
     _pending: object = None   # (build_uid, pawn_id, army_uid, army_name)
     _cooldown: int = 0
 
@@ -362,6 +405,18 @@ class Recruit:
         if pawn is None:
             return False
         armys = actions.get_area(state.main_city_index).get("data", {}).get("armys", []) or []
+        # profile-driven: fill the biggest composition gap into its own army.
+        if self.profile is not None:
+            from nta_agent.execution.profile import composition_target
+            tgt = composition_target(self.profile, armys, unlocked)
+            if tgt is not None:
+                army_uid, pid = tgt
+                army = next((a for a in armys if str(a.get("uid")) == army_uid), None)
+                if (army is not None and self._affordable(state, pid)
+                        and not army.get("state")
+                        and len(army.get("pawns", [])) < self.max_army_pawns):
+                    self._pending = (bu, pid, army_uid, "")
+                    return True
         # recruit into a non-marching city army that still has room
         room = next((a for a in armys
                      if not a.get("state") and len(a.get("pawns", [])) < self.max_army_pawns), None)
@@ -468,6 +523,8 @@ class RuleEngine:
         return fired
 
     @classmethod
-    def default(cls) -> RuleEngine:
-        return cls(rules=[CollectCityOutput(), BuildOrder(), Recruit(),
-                          OccupyCell(use_sim=True), ClaimTasks()])
+    def default(cls, profile: object = None) -> RuleEngine:
+        return cls(rules=[CollectCityOutput(), BuildOrder(),
+                          Recruit(profile=profile),
+                          OccupyCell(use_sim=True, profile=profile),
+                          ClaimTasks()])

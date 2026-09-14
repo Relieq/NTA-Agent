@@ -38,3 +38,11 @@ def test_exchange_pawn_army_across_armies():
     Actions(s).exchange_pawn_army(109726, "armyA", "p1", "p2", army_uid2="armyB")
     _, params = s.sent[0]
     assert params["armyUid1"] == "armyA" and params["armyUid2"] == "armyB"
+
+
+def test_treasure_open_and_claim_routes():
+    s = FakeSession()
+    Actions(s).open_army_treasure(109725, "armyA")
+    Actions(s).claim_army_treasure(109725, "armyA")
+    assert s.sent[0] == ("game/HD_OpenArmyTreasure", {"index": 109725, "auid": "armyA"})
+    assert s.sent[1] == ("game/HD_ClaimArmyTreasure", {"index": 109725, "auid": "armyA"})

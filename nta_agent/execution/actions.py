@@ -222,6 +222,17 @@ class Actions:
         reply = self.session.request("game/HD_GetBattleRecord", {"uid": str(uid)})
         return reply.get("record", {}) or {}
 
+    # ---- treasures (chests from occupying cells) ------------------------ #
+    def open_army_treasure(self, index: int, army_uid: str) -> dict:
+        """Open an army's earned treasures (GAME_HD_OpenArmyTreasure)."""
+        return self.session.request("game/HD_OpenArmyTreasure",
+                                    {"index": int(index), "auid": str(army_uid)})
+
+    def claim_army_treasure(self, index: int, army_uid: str) -> dict:
+        """Claim an army's opened treasures (GAME_HD_ClaimArmyTreasure)."""
+        return self.session.request("game/HD_ClaimArmyTreasure",
+                                    {"index": int(index), "auid": str(army_uid)})
+
     # ---- formation (tank troop order) ----------------------------------- #
     def move_area_pawns(self, index: int, army_uid: str, assignment: dict) -> dict:
         """Set the grid positions of an army's pawns (GAME_HD_MoveAreaPawns).

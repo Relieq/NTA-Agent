@@ -33,8 +33,10 @@ def run(cfg: RuntimeConfig, *, ticks: int = 0, session=None, engine=None) -> Non
     if session is None:
         session = build_session(cfg)
         log.append("started", {"host": cfg.host})
-    agent = Agent(session, engine or RuleEngine.default(),
-                  max_backoff=cfg.max_backoff, on_event=log.append)
+    if engine is None:
+        from nta_agent.execution.profile import load_profile
+        engine = RuleEngine.default(profile=load_profile(cfg.profile_path))
+    agent = Agent(session, engine, max_backoff=cfg.max_backoff, on_event=log.append)
 
     try:
         config = GameConfig.load()
