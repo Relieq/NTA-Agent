@@ -222,6 +222,17 @@ class Actions:
         reply = self.session.request("game/HD_GetBattleRecord", {"uid": str(uid)})
         return reply.get("record", {}) or {}
 
+    # ---- formation (tank troop order) ----------------------------------- #
+    def move_area_pawns(self, index: int, army_uid: str, assignment: dict) -> dict:
+        """Set the grid positions of an army's pawns (GAME_HD_MoveAreaPawns).
+
+        ``assignment`` maps pawn uid -> {"x","y"} point.
+        """
+        pawns = [{"uid": str(u), "point": {"x": int(p["x"]), "y": int(p["y"])}}
+                 for u, p in assignment.items()]
+        return self.session.request("game/HD_MoveAreaPawns",
+                                    {"index": int(index), "armyUid": str(army_uid), "pawns": pawns})
+
     # ---- combat ---------------------------------------------------------- #
     def occupy_cell(
         self,
