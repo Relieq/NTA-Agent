@@ -220,26 +220,45 @@ class OccupyCell:
         return True
 
     def _optimize_formations(self, actions, armies, target) -> None:
-        """Arrange each melee army so the beefiest pawn tanks (fewest deaths,
-        tie -> best damage spread). Best-effort: never block the occupy."""
-        from nta_agent.execution.formation import candidate_formations
+        """Reorder each melee army so the beefiest pawn tanks (fewest deaths, tie
+        -> best damage spread), applied via ExchangePawnArmy swaps in the city.
+        Best-effort: never block the occupy.
+
+        Formation pawns (with hp/id, in list order) come from get_area(city);
+        points are stripped before scoring so the sim decides by ORDER (pawns
+        stack at the entry, just like a real battle)."""
+        from nta_agent.execution.formation import candidate_orderings, swaps_for
         from nta_agent.execution.order_strategies import is_archer_army
         from nta_agent.execution.predictors.sim_bridge import SimUnavailable
         sim = self._sim_pred()
         if sim is None or self._state_ref is None:
             return
-        dist = self._dist(self._state_ref.main_city_index, target)
+        city = self._state_ref.main_city_index
+        dist = self._dist(city, target)
+        try:
+            area = actions.get_area(city).get("data", {})
+        except Exception:
+            return
+        area_by_uid = {a.get("uid"): a for a in (area.get("armys") or [])}
+
         for army in armies:
-            if is_archer_army(army) or len(army.get("pawns") or []) < 2:
+            area_army = area_by_uid.get(army.get("uid"))
+            if area_army is None:
                 continue
-            cands = candidate_formations(army, target)
+            pawns = list(area_army.get("pawns") or [])
+            if is_archer_army(area_army) or len(pawns) < 2:
+                continue
+            cands = candidate_orderings(area_army)
             if len(cands) < 2:
                 continue
 
-            def _score(assignment, army=army):
-                posed = dict(army)
-                posed["pawns"] = [{**p, "point": assignment.get(p["uid"], p.get("point"))}
-                                  for p in army["pawns"]]
+            au = army.get("uid")
+            aidx = area_army.get("index", city)
+
+            def _score(order, au=au, aidx=aidx):
+                # strip points -> pawns stack at entry -> ORDER decides who tanks
+                posed = {"uid": au, "index": aidx,
+                         "pawns": [{k: v for k, v in p.items() if k != "point"} for p in order]}
                 try:
                     pred = sim.predict_armies(self._state_ref, [posed], target_index=target,
                                               land_id=self._land_ref, distance=dist)
@@ -252,20 +271,23 @@ class OccupyCell:
                 return (pred.loss_percent, worst)
 
             best = None
-            for label, assignment in cands:
-                sc = _score(assignment)
+            for label, order in cands:
+                sc = _score(order)
                 if sc is None:
                     continue
                 if best is None or sc < best[0]:
-                    best = (sc, label, assignment)
+                    best = (sc, label, order)
             if best is None:
                 continue
-            sc, label, assignment = best
-            cur = {p["uid"]: p.get("point") for p in army["pawns"]}
-            if assignment == cur:
+            sc, label, order = best
+            cur_uids = [p.get("uid") for p in pawns]
+            target_uids = [p.get("uid") for p in order]
+            swaps = swaps_for(cur_uids, target_uids)
+            if not swaps:
                 continue
             try:
-                actions.move_area_pawns(army["index"], army["uid"], assignment)
+                for a_uid, b_uid in swaps:
+                    actions.exchange_pawn_army(city, army["uid"], a_uid, b_uid)
                 if self.on_event:
                     self.on_event("formation_plan", {
                         "army": army.get("name") or army.get("uid"),

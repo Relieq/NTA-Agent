@@ -155,42 +155,47 @@ def test_occupy_auto_applies_best_selection_order():
     assert any(k == "occupy_plan" and d["label"] == "archers-first" for k, d in events)
 
 
-# ---- Phase 2: formation optimization before attack ----------------------- #
-class FormationSim:
-    """predict_armies loss depends on whether 'big' pawn sits at the front slot (x=6)."""
+# ---- Phase 2 (corrected): order-based formation optimization ------------- #
+class OrderFormationSim:
+    """predict_armies: win with 0 loss when 'big' is FIRST in the pawn list, else 50%."""
     def predict_armies(self, state, armies, *, target_index, land_id, distance, **kw):
-        pawns = [p for a in armies for p in a.get("pawns", [])]
-        big = next((p for p in pawns if p["uid"] == "big"), None)
-        front = bool(big and big.get("point", {}).get("x") == 6)
-        loss = 0.0 if front else 50.0
+        pawns = armies[0].get("pawns", []) if armies else []
+        big_first = bool(pawns and pawns[0].get("uid") == "big")
+        loss = 0.0 if big_first else 50.0
         pred = BattlePrediction(win=True, my_power=1, enemy_power=1, ratio=1,
                                 loss_percent=loss, loss_lv=0)
         pred.pawn_survival = [{"uid": p["uid"], "camp": 2,
-                               "alive": front or p["uid"] == "big", "curHp": 100} for p in pawns]
+                               "alive": big_first or p["uid"] == "big", "curHp": 100} for p in pawns]
         return pred
 
 
-def test_occupy_optimizes_formation_before_attack():
+def test_occupy_optimizes_troop_order_before_attack():
     center = 182 * W + 526
     st = GameState(source="api"); st.user.uid = "me"; st.main_city_index = center
     st.resources.stamina = 10
-    areas = {center: _cell(owner="me", city=1001),
+    # formation source: get_area(city) returns the tank army with pawns in list
+    # order [sml, big] (squishy first) -> beefy-first should reorder to [big, sml]
+    tank_area = {"index": center, "uid": "tank", "owner": "me",
+                 "pawns": [{"uid": "sml", "id": 3101, "lv": 1, "hp": [50, 50]},
+                           {"uid": "big", "id": 3101, "lv": 1, "hp": [200, 200]}]}
+    areas = {center: {"owner": "me", "cityId": 1001, "armys": [tank_area], "hp": [3, 3]},
              center - 1: _cell(owner="", pawns=[50])}
     tank = {"index": center, "uid": "tank",
-            "pawns": [{"uid": "big", "id": 3101, "lv": 1, "hp": [200, 200], "point": {"x": 10, "y": 7}},
-                      {"uid": "sml", "id": 3101, "lv": 1, "hp": [50, 50], "point": {"x": 6, "y": 7}}]}
-    moves = []
+            "pawns": [{"uid": "sml", "id": 3101}, {"uid": "big", "id": 3101}]}
+    swaps = []
 
     class Acts(FakeActions):
-        def move_area_pawns(self, index, army_uid, assignment):
-            moves.append((index, army_uid, assignment)); return {}
+        def exchange_pawn_army(self, index, army_uid, uid1, uid2, army_uid2=None):
+            swaps.append((index, army_uid, uid1, uid2)); return {}
 
     act = Acts(areas=areas, armies=[tank])
     events = []
-    rule = OccupyCell(radius=1, use_sim=True, sim=FormationSim(),
+    rule = OccupyCell(radius=1, use_sim=True, sim=OrderFormationSim(),
                       predictor=BattlePredictor(), on_event=lambda k, d: events.append((k, d)))
     assert rule.applies(st, act) is True
     rule.act(act)
-    assert moves and moves[0][2]["big"] == {"x": 6, "y": 7}  # big moved to front slot
-    assert any(k == "formation_plan" for k, d in events)
+    # one swap of sml<->big to make big first (the tanking slot)
+    assert swaps and {swaps[0][2], swaps[0][3]} == {"sml", "big"}
+    assert swaps[0][0] == center and swaps[0][1] == "tank"
+    assert any(k == "formation_plan" and d["label"] == "beefy-first" for k, d in events)
     assert act.calls and act.calls[0][0] == "occupy"
