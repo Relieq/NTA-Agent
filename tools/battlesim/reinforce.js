@@ -39,10 +39,15 @@ function runWithReinforce(frames, req) {
       const fs = (bc && bc.getFighters()) || [];
       const aliveIn = (c) =>
         fs.filter((f) => f.getCamp && f.getCamp() === c && f.isDie && !f.isDie()).length;
-      const self = { alive: aliveIn(2), total: selfTotal };
-      const enemy = { alive: aliveIn(1), total: enemyTotal };
-      const lostPct = self.total ? (100 * (self.total - self.alive)) / self.total : 100;
-      // Per-pawn survival over the whole starting roster (dead pruned from fs).
+      // Only pawns that ENTERED can die; reinforcements that never arrived (the
+      // battle ended first) are fully alive — don't count them as casualties.
+      const entered = (c) => allFighters.filter((r) => r.camp === c).length;
+      const deadSelf = entered(2) - aliveIn(2);
+      const deadEnemy = entered(1) - aliveIn(1);
+      const self = { alive: selfTotal - deadSelf, total: selfTotal };
+      const enemy = { alive: enemyTotal - deadEnemy, total: enemyTotal };
+      const lostPct = self.total ? (100 * deadSelf) / self.total : 100;
+      // Per-pawn survival: entered fighters (cross-ref) + un-arrived waves (alive).
       const aliveByUid = {};
       fs.forEach((f) => { if (f.getUid) aliveByUid[f.getUid()] = f; });
       const pawns = allFighters.map((r) => {
@@ -51,6 +56,9 @@ function runWithReinforce(frames, req) {
                  alive: !!(lf && lf.isDie && !lf.isDie()),
                  curHp: lf && lf.getCurHp ? lf.getCurHp() : 0 };
       });
+      for (const w of pending)
+        for (const wf of w.fighters)
+          pawns.push({ uid: wf.uid, camp: wf.camp, alive: true, curHp: null });
       result = {
         isWin: !!(bc && bc.isWin()),
         lossLv: loss_lv(lostPct),
