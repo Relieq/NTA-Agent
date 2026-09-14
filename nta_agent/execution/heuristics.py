@@ -323,6 +323,7 @@ class Recruit:
     max_armies: int = 4
     fail_cooldown: int = 10
     config: object = None
+    profile: object = None    # Profile: fill armies toward army.composition
     _pending: object = None   # (build_uid, pawn_id, army_uid, army_name)
     _cooldown: int = 0
 
@@ -362,6 +363,18 @@ class Recruit:
         if pawn is None:
             return False
         armys = actions.get_area(state.main_city_index).get("data", {}).get("armys", []) or []
+        # profile-driven: fill the biggest composition gap into its own army.
+        if self.profile is not None:
+            from nta_agent.execution.profile import composition_target
+            tgt = composition_target(self.profile, armys, unlocked)
+            if tgt is not None:
+                army_uid, pid = tgt
+                army = next((a for a in armys if str(a.get("uid")) == army_uid), None)
+                if (army is not None and self._affordable(state, pid)
+                        and not army.get("state")
+                        and len(army.get("pawns", [])) < self.max_army_pawns):
+                    self._pending = (bu, pid, army_uid, "")
+                    return True
         # recruit into a non-marching city army that still has room
         room = next((a for a in armys
                      if not a.get("state") and len(a.get("pawns", [])) < self.max_army_pawns), None)

@@ -47,3 +47,28 @@ def save_profile(profile: Profile, path) -> None:
     p.parent.mkdir(parents=True, exist_ok=True)
     p.write_text(json.dumps({"army": profile.army, "occupy": profile.occupy},
                             ensure_ascii=False, indent=1), encoding="utf-8")
+
+
+def composition_target(profile: Profile, area_armys: list, unlocked_ids) -> tuple | None:
+    """The biggest unmet composition gap as ``(army_uid, pawn_id)``, or None.
+
+    ``profile.army.composition`` = {armyUid: {pawnId: targetCount}}. Only pawns in
+    ``unlocked_ids`` are eligible. Picks the largest positive (target - current) gap.
+    """
+    comp = (profile.army or {}).get("composition") or {}
+    unlocked = {int(x) for x in (unlocked_ids or [])}
+    by_uid = {str(a.get("uid")): a for a in area_armys}
+    best = None  # (gap, army_uid, pawn_id)
+    for army_uid, targets in comp.items():
+        army = by_uid.get(str(army_uid))
+        have: dict[int, int] = {}
+        for p in (army.get("pawns") if army else []) or []:
+            have[int(p.get("id", 0))] = have.get(int(p.get("id", 0)), 0) + 1
+        for pid_str, want in (targets or {}).items():
+            pid = int(pid_str)
+            if pid not in unlocked:
+                continue
+            gap = int(want) - have.get(pid, 0)
+            if gap > 0 and (best is None or gap > best[0]):
+                best = (gap, str(army_uid), pid)
+    return (best[1], best[2]) if best else None
