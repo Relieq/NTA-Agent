@@ -77,16 +77,42 @@ object), so edits are visible without re-wiring. Persisted for restarts.
 - Sanitizer rejects out-of-range/unknown → those fields dropped; valid ones still
   apply. A fully-invalid edit = no-op.
 
-## 7. Non-goals (B3)
+## 7. Companion: auto open/claim treasures (deterministic hands rule)
+
+Added to this batch (was a B1 follow-up). This is a **hands rule**, not brain —
+it closes the farming loop: after occupying cells, collect the earned chests.
+
+- **Detection:** scan `get_player_armys()` (or the city area) for pawns whose
+  `treasures` field is non-empty. An unopened treasure has empty `rewards`;
+  an opened one has `rewards` (pending claim). `PlayerInfo.hasNewTreasure` is a
+  cheap gate to skip the scan.
+- **Actions (batch):** `open_armys_treasure(targets)` /
+  `claim_armys_treasure(targets)` → routes `game/HD_OpenArmysTreasure` /
+  `game/HD_ClaimArmysTreasure` with `targets = [{index, auid}, …]`
+  (`ArmyTreasureTarget`). Per-army `open_army_treasure`/`claim_army_treasure`
+  already exist as the fallback.
+- **Rule `ClaimTreasures`:** when `hasNewTreasure` or any army has pending
+  treasures → build targets for those armies → open (unopened) then claim.
+  **Budget-aware:** open at most `chest_budget(state)` chests (unlimited sentinel
+  on the novice/free account). Best-effort: batch-result errors (e.g. `500076`
+  already-opened) are ignored; never blocks the loop.
+- Wired into `RuleEngine.default` alongside the other rules.
+- **Live-validation caveat:** the exact per-army index + budget consumption is
+  confirmed against the real account when available; the rule is guarded so a
+  wrong assumption degrades to a no-op rather than a failure.
+
+## 8. Non-goals (B3)
 
 - Interactive chat with the brain (B4).
 - B2 intents layer (dropped).
-- Auto open/claim treasure (B1 follow-up).
 - Build-order / auto-unlock authoring — profile scope stays army + occupy.
 - Multi-provider abstraction beyond the injectable `chat` seam.
 
-## 8. Testing
+## 9. Testing
 
+- `ClaimTreasures` — fake actions: armies with pending pawn `treasures` → builds
+  the right `targets` and calls open then claim (batch); no pending → no call;
+  respects the chest budget; batch errors swallowed.
 - `digest` — pure: state+profile → expected compact dict (no network).
 - `guard.sanitize_edits` — clamps ranges, drops unknown fields / fake army uids,
   keeps valid; fully-invalid → `{}`.
