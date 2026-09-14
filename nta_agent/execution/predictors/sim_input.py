@@ -12,7 +12,7 @@ from nta_agent.state.schema import GameState
 
 
 def _pawn(p: dict[str, Any]) -> dict[str, Any]:
-    return {
+    out = {
         "uid": p.get("uid"),
         "id": int(p.get("id", 0)),
         "lv": int(p.get("lv", 0) or 0),
@@ -22,6 +22,9 @@ def _pawn(p: dict[str, Any]) -> dict[str, Any]:
         "treasures": p.get("treasures") or [],
         "hero": p.get("hero") or None,
     }
+    if p.get("point"):  # a chosen formation position reaches the engine
+        out["point"] = p["point"]
+    return out
 
 
 def _army(a: dict[str, Any]) -> dict[str, Any]:
