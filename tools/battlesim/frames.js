@@ -55,7 +55,7 @@ function buildFrames(input, requireByName) {
       .map((p) => ({
         index: army.index, uid: p.uid, id: p.id, lv: p.lv,
         hp: p.hp ? (Array.isArray(p.hp) ? p.hp.slice() : [p.hp[0]]) : undefined,
-        point: { x: entry.x, y: entry.y },
+        point: p.point ? { x: p.point.x, y: p.point.y } : { x: entry.x, y: entry.y },
         equip: p.equip, portrayal: p.hero || undefined,
         attackSpeed: pawnAttackSpeed(p.id), buffs: p.buffs || [],
       }));

@@ -42,11 +42,20 @@ function runWithReinforce(frames, req) {
       const self = { alive: aliveIn(2), total: selfTotal };
       const enemy = { alive: aliveIn(1), total: enemyTotal };
       const lostPct = self.total ? (100 * (self.total - self.alive)) / self.total : 100;
+      // Per-pawn survival over the whole starting roster (dead pruned from fs).
+      const aliveByUid = {};
+      fs.forEach((f) => { if (f.getUid) aliveByUid[f.getUid()] = f; });
+      const pawns = allFighters.map((r) => {
+        const lf = aliveByUid[r.uid];
+        return { uid: r.uid, camp: r.camp,
+                 alive: !!(lf && lf.isDie && !lf.isDie()),
+                 curHp: lf && lf.getCurHp ? lf.getCurHp() : 0 };
+      });
       result = {
         isWin: !!(bc && bc.isWin()),
         lossLv: loss_lv(lostPct),
         lossPercent: Math.round(lostPct * 10) / 10,
-        survivors: { self, enemy },
+        survivors: { self, enemy, pawns },
       };
     }
     return origEnd();

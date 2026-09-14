@@ -94,6 +94,7 @@ class SimBattlePredictor:
             ratio=ratio,
             loss_percent=float(res.get("lossPercent", 0.0) or 0.0),
             loss_lv=int(res.get("lossLv", 0) or 0),
+            pawn_survival=(res.get("survivors") or {}).get("pawns"),
         )
 
     def predict(self, my_pawns: list[dict], enemy_pawns: list[dict]) -> BattlePrediction:

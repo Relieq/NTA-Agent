@@ -17,3 +17,11 @@ def test_forecast_input_preserves_army_order_and_marchtime():
     assert out["armies"][1]["marchTime"] == 5000
     assert out["armies"][0]["pawns"][0]["id"] == 3305
     assert out["targetCellIndex"] == 109725
+
+
+def test_forecast_input_passes_pawn_point_when_present():
+    st = GameState(source="api"); st.raw = {}; st.user.uid = "1"
+    armies = [{"uid": "a", "index": 1, "marchTime": 0,
+               "pawns": [{"uid": "p1", "id": 3101, "lv": 1, "point": {"x": 6, "y": 7}}]}]
+    out = build_forecast_input(st, armies, target_index=9, land_id=0, distance=1)
+    assert out["armies"][0]["pawns"][0]["point"] == {"x": 6, "y": 7}

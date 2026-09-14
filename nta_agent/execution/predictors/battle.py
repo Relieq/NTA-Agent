@@ -50,6 +50,7 @@ class BattlePrediction:
     ratio: float          # my_power / enemy_power (inf if no enemy)
     loss_percent: float   # estimated % of our power lost
     loss_lv: int          # 1..4, mirrors the client's tiers
+    pawn_survival: list | None = None  # per-pawn [{uid,camp,alive,curHp}] from the sim
 
 
 @dataclass

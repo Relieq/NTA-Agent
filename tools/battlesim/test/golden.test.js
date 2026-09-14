@@ -103,3 +103,37 @@ test("multi-army forecast routes through reinforcement and is order-sensitive", 
   assert.ok(a.lossPercent <= b.lossPercent,
     `cung-first (${a.lossPercent}) should be <= tank-first (${b.lossPercent})`);
 });
+
+test("formation: beefy-front survives more than squishy-front", (t) => {
+  const enginePath = process.env.NTA_ENGINE_JS || "tools/re/decrypted/index.js";
+  if (!fs.existsSync(enginePath)) { t.skip("engine absent"); return; }
+  const { loadEngine } = require("../bundle");
+  const { installAssets } = require("../assets");
+  const { runWithReinforce } = require("../reinforce");
+  if (!globalThis.eventCenter) globalThis.eventCenter = { emit() {}, on() {}, off() {}, once() {} };
+  if (!globalThis.mc) globalThis.mc = { getModel: () => ({}) };
+  const req = loadEngine();
+  installAssets(undefined, req, { playerUid: "1000000000" });
+  const TARGET = 109725, SEED = Math.floor(1000000000 / 100) + TARGET;
+  const run = (pts) => {
+    const our = { index: 109726, uid: "tank", name: "T", owner: "1000000000", state: 2,
+      pawns: [
+        { index: TARGET, uid: "big", id: 3101, lv: 1, attackSpeed: 6, point: pts[0], hp: [200, 200] },
+        { index: TARGET, uid: "mid", id: 3101, lv: 1, attackSpeed: 6, point: pts[1], hp: [80, 80] },
+        { index: TARGET, uid: "sml", id: 3101, lv: 1, attackSpeed: 6, point: pts[2], hp: [50, 50] }] };
+    const enemy = { index: TARGET, uid: "e", name: "", owner: "", state: 2,
+      pawns: Array.from({ length: 4 }, (_, i) => ({ index: TARGET, uid: "e" + i, id: 4101, lv: 1,
+        attackSpeed: 7, point: { x: 4 + (i % 3), y: 6 + ((i / 3) | 0) }, hp: [60, 60] })) };
+    let acc = 0; const f = [];
+    for (const p of our.pawns) f.push({ uid: p.uid, camp: 2, attackIndex: ++acc, enterIndex: acc });
+    for (const p of enemy.pawns) f.push({ uid: p.uid, camp: 1, attackIndex: ++acc, enterIndex: acc });
+    return runWithReinforce({ target: TARGET, armys: [our, enemy], fighters: f, randSeed: SEED,
+      fps: 20, hp: [100, 100], waves: [], selfTotal: 3, enemyTotal: 4 }, req);
+  };
+  const a = run([{ x: 6, y: 7 }, { x: 9, y: 7 }, { x: 10, y: 7 }]); // big front
+  const b = run([{ x: 10, y: 7 }, { x: 9, y: 7 }, { x: 6, y: 7 }]); // small front
+  assert.ok(a.survivors.self.alive > b.survivors.self.alive,
+    `big-front (${a.survivors.self.alive}) should outlast small-front (${b.survivors.self.alive})`);
+  assert.ok(Array.isArray(a.survivors.pawns));
+  assert.strictEqual(a.survivors.pawns.filter((p) => p.camp === 2).length, 3);
+});

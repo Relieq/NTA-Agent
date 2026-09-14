@@ -133,8 +133,10 @@ class OccupyCell:
     sim: object = None
     on_event: object = None    # optional on_event(kind, detail) to surface the plan
     _sim_off: bool = False     # sidecar checked and unavailable -> stop retrying
-    _pending: object = None    # (army_dict, target_index)
+    _pending: object = None    # (armies_list, target_index)
     _cooldown: int = 0
+    _state_ref: object = None  # stashed for act()'s formation optimization
+    _land_ref: int = 0
 
     def _pred(self):
         if self.predictor is None:
@@ -206,6 +208,8 @@ class OccupyCell:
         if plan is None:
             return False
         self._pending = (list(plan.armies), plan.target)
+        self._state_ref = state
+        self._land_ref = cand_by_index[plan.target].land_id
         if self.on_event:
             self.on_event("occupy_plan", {
                 "target": plan.target,
@@ -215,11 +219,66 @@ class OccupyCell:
             })
         return True
 
+    def _optimize_formations(self, actions, armies, target) -> None:
+        """Arrange each melee army so the beefiest pawn tanks (fewest deaths,
+        tie -> best damage spread). Best-effort: never block the occupy."""
+        from nta_agent.execution.formation import candidate_formations
+        from nta_agent.execution.order_strategies import is_archer_army
+        from nta_agent.execution.predictors.sim_bridge import SimUnavailable
+        sim = self._sim_pred()
+        if sim is None or self._state_ref is None:
+            return
+        dist = self._dist(self._state_ref.main_city_index, target)
+        for army in armies:
+            if is_archer_army(army) or len(army.get("pawns") or []) < 2:
+                continue
+            cands = candidate_formations(army, target)
+            if len(cands) < 2:
+                continue
+
+            def _score(assignment, army=army):
+                posed = dict(army)
+                posed["pawns"] = [{**p, "point": assignment.get(p["uid"], p.get("point"))}
+                                  for p in army["pawns"]]
+                try:
+                    pred = sim.predict_armies(self._state_ref, [posed], target_index=target,
+                                              land_id=self._land_ref, distance=dist)
+                except SimUnavailable:
+                    return None
+                if pred is None or not pred.win:
+                    return None
+                surv = pred.pawn_survival or []
+                worst = max((100 - s.get("curHp", 0) for s in surv if s.get("camp") == 2), default=0)
+                return (pred.loss_percent, worst)
+
+            best = None
+            for label, assignment in cands:
+                sc = _score(assignment)
+                if sc is None:
+                    continue
+                if best is None or sc < best[0]:
+                    best = (sc, label, assignment)
+            if best is None:
+                continue
+            sc, label, assignment = best
+            cur = {p["uid"]: p.get("point") for p in army["pawns"]}
+            if assignment == cur:
+                continue
+            try:
+                actions.move_area_pawns(army["index"], army["uid"], assignment)
+                if self.on_event:
+                    self.on_event("formation_plan", {
+                        "army": army.get("name") or army.get("uid"),
+                        "label": label, "loss_percent": round(sc[0], 1)})
+            except Exception:
+                pass  # never block the occupy
+
     def act(self, actions: Actions) -> None:
         if not self._pending:
             return
         armies, target = self._pending
         self._pending = None
+        self._optimize_formations(actions, armies, target)
         try:
             actions.occupy_cell(target, armies)
         except Exception:
