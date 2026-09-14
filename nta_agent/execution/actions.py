@@ -233,6 +233,18 @@ class Actions:
         return self.session.request("game/HD_MoveAreaPawns",
                                     {"index": int(index), "armyUid": str(army_uid), "pawns": pawns})
 
+    def exchange_pawn_army(self, index: int, army_uid: str, uid1: str, uid2: str,
+                           army_uid2: str | None = None) -> dict:
+        """Swap two pawns' slots (GAME_HD_ExchangePawnArmy).
+
+        Within one army (default) this reorders ``army.pawns`` — the tank
+        troop-order lever. Pass ``army_uid2`` to swap across two armies.
+        """
+        return self.session.request("game/HD_ExchangePawnArmy", {
+            "index": int(index), "armyUid1": str(army_uid), "uid1": str(uid1),
+            "armyUid2": str(army_uid2 or army_uid), "uid2": str(uid2),
+        })
+
     # ---- combat ---------------------------------------------------------- #
     def occupy_cell(
         self,
