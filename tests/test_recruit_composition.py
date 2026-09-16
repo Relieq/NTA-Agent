@@ -3,7 +3,7 @@ from nta_agent.execution.profile import Profile, composition_target
 
 def _prof(comp):
     return Profile(army={"group": list(comp), "roles": {}, "onetile": True, "composition": comp},
-                   occupy={}, notes=[])
+                   occupy={}, notes=[], build={"order": [], "skip": []})
 
 
 def test_targets_biggest_unmet_gap():

@@ -65,3 +65,17 @@ def test_notes_edit_replaces_list():
     apply_edits(p, {"notes": ["a"]})
     apply_edits(p, {"notes": ["a", "b"]})
     assert p.notes == ["a", "b"]
+
+
+def test_defaults_have_build_order_skip():
+    p = load_profile("none")
+    assert p.build == {"order": [], "skip": []}
+
+
+def test_apply_edits_merges_build_lists():
+    p = load_profile("none")
+    changed = apply_edits(p, {"build": {"order": [2002, 2004], "skip": [2000]}})
+    assert changed is True
+    assert p.build["order"] == [2002, 2004]
+    assert p.build["skip"] == [2000]
+    assert apply_edits(p, {"build": {"order": [2002, 2004], "skip": [2000]}}) is False

@@ -16,6 +16,7 @@ DEFAULT_PROFILE = {
     "occupy": {"max_loss": 0.0, "max_march_ms": 0,
                "loot": {"enabled": True, "min_reward_per_chest": 0.0}},
     "notes": [],
+    "build": {"order": [], "skip": []},
 }
 
 
@@ -36,6 +37,7 @@ class Profile:
     army: dict
     occupy: dict
     notes: list
+    build: dict
 
 
 def load_profile(path) -> Profile:
@@ -45,14 +47,15 @@ def load_profile(path) -> Profile:
     except (FileNotFoundError, ValueError, OSError):
         data = {}
     merged = _merge(DEFAULT_PROFILE, data if isinstance(data, dict) else {})
-    return Profile(army=merged["army"], occupy=merged["occupy"], notes=merged["notes"])
+    return Profile(army=merged["army"], occupy=merged["occupy"], notes=merged["notes"],
+                   build=merged["build"])
 
 
 def save_profile(profile: Profile, path) -> None:
     p = Path(path)
     p.parent.mkdir(parents=True, exist_ok=True)
     p.write_text(json.dumps({"army": profile.army, "occupy": profile.occupy,
-                             "notes": profile.notes},
+                             "notes": profile.notes, "build": profile.build},
                             ensure_ascii=False, indent=1), encoding="utf-8")
 
 
@@ -88,6 +91,11 @@ def apply_edits(profile: Profile, clean: dict) -> bool:
     if "notes" in clean and clean["notes"] != profile.notes:
         profile.notes = list(clean["notes"])
         changed = True
+    if isinstance(clean.get("build"), dict):
+        for k, v in clean["build"].items():
+            if profile.build.get(k) != v:
+                profile.build[k] = list(v)
+                changed = True
     active = profile.army.get("active") or ""
     preset = (profile.army.get("presets") or {}).get(active)
     if preset:
