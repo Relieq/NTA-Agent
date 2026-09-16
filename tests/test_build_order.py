@@ -1,0 +1,45 @@
+from nta_agent.data.config import GameConfig
+from nta_agent.execution.heuristics import BuildOrder
+from nta_agent.state.schema import Building, GameState
+
+
+def _state(builds):
+    st = GameState(source="api")
+    st.builds = builds
+    for r in ("cereal", "timber", "stone", "iron"):
+        setattr(st.resources, r, 99999)
+    st.build_queue = []
+    st.build_queue_slots = 2
+    st.main_city_index = 109726
+    return st
+
+
+class Acts:
+    def __init__(self):
+        self.calls = []
+
+    def add_build(self, index, build_id):
+        self.calls.append(("add", index, build_id))
+        return {}
+
+    def upgrade_build(self, index, uid=""):
+        self.calls.append(("up", index, uid))
+        return {}
+
+
+def test_build_order_constructs_missing():
+    st = _state([Building(id=2001, lv=10, uid="m", index=109726)])
+    act = Acts()
+    rule = BuildOrder(sequence=[2016], config=GameConfig.load())
+    assert rule.applies(st, act) is True
+    rule.act(act)
+    assert act.calls == [("add", 109726, 2016)]
+
+
+def test_build_order_upgrades_existing():
+    st = _state([Building(id=2001, lv=5, uid="m", index=109726)])
+    act = Acts()
+    rule = BuildOrder(sequence=[2001], config=GameConfig.load())
+    assert rule.applies(st, act) is True
+    rule.act(act)
+    assert act.calls == [("up", 109726, "m")]
