@@ -37,8 +37,17 @@ class CollectCityOutput:
     reject it anyway) to avoid pointless requests.
     """
     name: str = "collect_city_output"
-    fail_cooldown: int = 20  # ticks to wait after a rejection before retrying
+    fail_cooldown: int = 20    # ticks to wait after a hard rejection before retrying
+    max_cooldown: int = 720    # cap on the unclaimable back-off (~1h at 5s ticks)
     _cooldown: int = 0
+    _unclaimable: int = 0      # consecutive "nothing to claim" -> escalating wait
+
+    # The server rejects a claim with nothing accrued yet as ecode.500171
+    # ("Unclaimable"). It is an expected timing condition, not an error: whether
+    # output is ready is not in the state we fetch (no cityOutputMap), so we
+    # discover it by trying, then back off progressively so a city that simply has
+    # no claimable output goes dormant instead of retrying forever.
+    UNCLAIMABLE_ECODE = "ecode.500171"
 
     def applies(self, state: GameState, actions: Actions) -> bool:
         if self._cooldown > 0:
@@ -59,8 +68,15 @@ class CollectCityOutput:
     def act(self, actions: Actions) -> None:
         try:
             actions.collect_city_output()
-        except Exception:
-            self._cooldown = self.fail_cooldown  # back off, then surface the error
+            self._unclaimable = 0  # a real claim -> reset the back-off
+        except Exception as e:
+            if self.UNCLAIMABLE_ECODE in str(e):
+                # nothing to claim yet — expected; back off progressively, stay quiet
+                self._unclaimable += 1
+                self._cooldown = min(self.fail_cooldown * 2 ** (self._unclaimable - 1),
+                                     self.max_cooldown)
+                return
+            self._cooldown = self.fail_cooldown  # other rejection -> surface it
             raise
 
 

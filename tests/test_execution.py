@@ -47,6 +47,48 @@ def test_collect_rule_skips_when_caps_unknown():
     assert CollectCityOutput().applies(st, None) is False
 
 
+class _RaisingActions:
+    """collect_city_output raises the given ApiError message; others no-op."""
+    def __init__(self, msg):
+        self._msg = msg
+    def collect_city_output(self, index=None):
+        from nta_agent.io.api.client import ApiError
+        raise ApiError(self._msg)
+
+
+def test_collect_unclaimable_500171_swallowed_and_backs_off():
+    rule = CollectCityOutput()
+    act = _RaisingActions("game/HD_ClaimCityOutput: ecode.500171")
+    rule.act(act)  # must NOT raise (expected "nothing to claim")
+    assert rule._cooldown == 20      # first back-off = fail_cooldown
+    rule._cooldown = 0
+    rule.act(act)
+    assert rule._cooldown == 40      # escalates: 20 * 2
+    rule._cooldown = 0
+    rule.act(act)
+    assert rule._cooldown == 80      # 20 * 4
+
+
+def test_collect_unclaimable_backoff_capped():
+    rule = CollectCityOutput(max_cooldown=100)
+    act = _RaisingActions("x: ecode.500171")
+    for _ in range(10):
+        rule._cooldown = 0
+        rule.act(act)
+    assert rule._cooldown == 100     # never exceeds max_cooldown
+
+
+def test_collect_other_error_still_raises():
+    import pytest
+
+    from nta_agent.io.api.client import ApiError
+    rule = CollectCityOutput()
+    act = _RaisingActions("game/HD_ClaimCityOutput: ecode.500008")
+    with pytest.raises(ApiError):
+        rule.act(act)
+    assert rule._cooldown == 20
+
+
 def test_engine_fires_and_acts():
     s = FakeSession(state=_state(cereal=500, granary=1000, warehouse=1000))
     engine = RuleEngine.default()
