@@ -102,6 +102,16 @@ def read_territory_view(cfg) -> dict:
             "garrisons": st.get("garrisons") or [], "map_width": mw}
 
 
+def read_forts_view(cfg) -> dict:
+    """Fort recommendations (owned count + recs) from forts.json, if present."""
+    try:
+        data = json.loads(Path(cfg.forts_path).read_text(encoding="utf-8"))
+    except (OSError, ValueError):
+        return {"owned_count": 0, "recommendations": []}
+    return {"owned_count": data.get("owned_count", 0),
+            "recommendations": data.get("recommendations") or []}
+
+
 def handle_profile_edit(cfg, edits: dict) -> dict:
     """Apply a structured (non-LLM) profile edit: sanitize -> persist -> queue command."""
     from nta_agent.brain.guard import sanitize_edits
@@ -166,6 +176,8 @@ class Handler(BaseHTTPRequestHandler):
             self._json(200, read_profile_view(cfg))
         elif parsed.path == "/api/territory":
             self._json(200, read_territory_view(cfg))
+        elif parsed.path == "/api/forts":
+            self._json(200, read_forts_view(cfg))
         else:
             self._json(404, {"error": "not found"})
 

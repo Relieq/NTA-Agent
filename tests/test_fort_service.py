@@ -48,7 +48,7 @@ def test_skips_when_land_count_unchanged(tmp_path):
         calls.append(1)
         return {100 * 600 + 100}, {}
 
-    cfg, svc = _make(tmp_path, scan=scan, max_count_fn=lambda bid: 2)
+    _cfg, svc = _make(tmp_path, scan=scan, max_count_fn=lambda bid: 2)
     st = _state(land_count=5)
     svc.tick(st)
     svc.tick(st)  # same landCount -> no re-scan
@@ -62,7 +62,7 @@ def test_rescans_when_land_count_changes(tmp_path):
         calls.append(1)
         return {100 * 600 + 100}, {}
 
-    cfg, svc = _make(tmp_path, scan=scan, max_count_fn=lambda bid: 2)
+    _cfg, svc = _make(tmp_path, scan=scan, max_count_fn=lambda bid: 2)
     svc.tick(_state(land_count=5))
     svc.tick(_state(land_count=6))
     assert len(calls) == 2

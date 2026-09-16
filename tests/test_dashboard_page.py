@@ -17,3 +17,9 @@ def test_page_has_territory_panel():
     assert "/api/territory" in INDEX_HTML
     assert 'id="territory"' in INDEX_HTML
     assert "Lãnh thổ" in INDEX_HTML
+
+
+def test_page_has_forts_panel():
+    assert "/api/forts" in INDEX_HTML
+    assert 'id="forts"' in INDEX_HTML
+    assert "Cứ Điểm" in INDEX_HTML
