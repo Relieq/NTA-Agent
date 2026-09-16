@@ -38,7 +38,11 @@ INDEX_HTML = """<!doctype html>
  <div class="card full"><h2>Đội quân</h2><div id="armies"><span class="muted">—</span></div></div>
  <div class="card full"><h2>Quyết định đang chờ</h2><div id="decisions"><span class="muted">—</span></div></div>
  <div class="card full"><h2>Trang bị lính</h2><div id="equipment"><span class="muted">—</span></div></div>
- <div class="card full"><h2>Lãnh thổ</h2><div id="territory" class="muted">—</div></div>
+ <div class="card full"><h2>Lãnh thổ</h2>
+   <div id="territory" class="muted">—</div>
+   <canvas id="terrmap" width="640" height="360" style="width:100%;max-width:640px;margin-top:10px;border:1px solid #1e2a3a;border-radius:8px;background:#0b1320;display:block"></canvas>
+   <div id="terrlegend" class="muted" style="margin-top:6px;font-size:12px"></div>
+ </div>
  <div class="card full"><h2>Cứ Điểm — gợi ý</h2><div id="forts" class="muted">—</div></div>
  <div class="card full"><h2>Xây dựng — Thứ tự xây &amp; Bỏ qua</h2>
    <div class="muted">Kéo-thả hoặc ▲▼ để đổi ưu tiên; tick "bỏ qua" để agent không tự đụng.</div>
@@ -201,9 +205,47 @@ async function renderForts(){
    `Ô đã chiếm: <b>${f.owned_count||0}</b>`+
    `<div style=margin-top:6px>${recs}</div>`;
 }
+function idxXY(i,mw){return [i%mw, Math.floor(i/mw)];}
+async function renderTerritoryMap(){
+ const t=await j("/api/territory"), f=await j("/api/forts");
+ if(!t||!f)return;
+ const cv=document.getElementById("terrmap"); if(!cv)return;
+ const ctx=cv.getContext("2d"), W=cv.width, H=cv.height;
+ ctx.clearRect(0,0,W,H);
+ const mw=t.map_width||600, main=t.main_city||0;
+ if(!main){document.getElementById("terrlegend").textContent="Chưa có dữ liệu bản đồ.";return;}
+ const [mx,my]=idxXY(main,mw);
+ const owned=f.owned_cells||[];
+ const forts=(t.forts||[]).map(x=>[x.x,x.y]);
+ const garr=(t.garrisons||[]).map(i=>idxXY(i,mw));
+ const recs=(f.recommendations||[]).map(r=>[r.x,r.y]);
+ const R=6;
+ const pts=[[mx,my],...owned,...forts,...garr,...recs,[mx-R,my-R],[mx+R,my+R]];
+ let minX=Math.min(...pts.map(p=>p[0]))-1, maxX=Math.max(...pts.map(p=>p[0]))+1;
+ let minY=Math.min(...pts.map(p=>p[1]))-1, maxY=Math.max(...pts.map(p=>p[1]))+1;
+ const cols=maxX-minX+1, rows=maxY-minY+1;
+ const cell=Math.max(3,Math.floor(Math.min(W/cols,H/rows)));
+ const ox=Math.floor((W-cols*cell)/2), oy=Math.floor((H-rows*cell)/2);
+ const gx=x=>ox+(x-minX)*cell, gy=y=>oy+(y-minY)*cell;
+ const box=(x,y,c)=>{ctx.fillStyle=c;ctx.fillRect(gx(x)+1,gy(y)+1,cell-2,cell-2);};
+ // radius-6 speed zone (Chebyshev -> square), dashed
+ ctx.strokeStyle="#3b6ea5";ctx.lineWidth=1.5;ctx.setLineDash([4,3]);
+ ctx.strokeRect(gx(mx-R)+0.5,gy(my-R)+0.5,(2*R+1)*cell,(2*R+1)*cell);ctx.setLineDash([]);
+ owned.forEach(([x,y])=>box(x,y,"#2e7d5b"));
+ ctx.strokeStyle="#c9a227";ctx.lineWidth=1.5;
+ garr.forEach(([x,y])=>ctx.strokeRect(gx(x)+2,gy(y)+2,cell-4,cell-4));
+ forts.forEach(([x,y])=>box(x,y,"#e08a2b"));
+ recs.forEach(([x,y])=>{ctx.strokeStyle="#e5484d";ctx.lineWidth=2;ctx.beginPath();
+   ctx.arc(gx(x)+cell/2,gy(y)+cell/2,Math.max(3,cell/2-1),0,Math.PI*2);ctx.stroke();});
+ box(mx,my,"#3b82f6");
+ document.getElementById("terrlegend").innerHTML=
+   `🟦 thành chính · 🟩 ô đã chiếm (${owned.length}) · 🟨 quân trú (${garr.length}) · `+
+   `🟧 Cứ Điểm (${forts.length}) · 🔴 gợi ý (${recs.length}) · ⬚ nét đứt = bán kính ${R} ô (đã tăng tốc)`;
+}
 document.getElementById("boSave").onclick=saveBuildOrder;
 document.getElementById("chatsend").onclick=sendChat;
 document.getElementById("chatin").addEventListener("keydown",e=>{if(e.key==="Enter")sendChat();});
-renderBuildOrder();renderTerritory();renderForts();
-refresh();setInterval(refresh,2000);setInterval(renderTerritory,4000);setInterval(renderForts,4000);
+renderBuildOrder();renderTerritory();renderForts();renderTerritoryMap();
+refresh();setInterval(refresh,2000);
+setInterval(renderTerritory,4000);setInterval(renderForts,4000);setInterval(renderTerritoryMap,4000);
 </script></body></html>"""
