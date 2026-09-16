@@ -96,6 +96,7 @@ class GameState:
     chapter: int = 0
     land_score: int = 0
     main_city_index: int = 0  # area index of the main city (target for its builds)
+    room_type: int = 0  # game mode: 0 free, 1 newbie, 2 ranked (gates some buildings)
     build_queue: list[dict] = field(default_factory=list)  # in-progress upgrades (btQueues)
     build_queue_slots: int = 1  # how many concurrent builds are allowed
 

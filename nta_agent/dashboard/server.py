@@ -61,6 +61,48 @@ def handle_chat(cfg, message, *, history=None, propose=None):
             "notes": profile.notes}
 
 
+def _valid_build_ids():
+    try:
+        from nta_agent.data.config import GameConfig
+        return set(GameConfig.load().in_city_build_ids())
+    except Exception:
+        return None
+
+
+def read_profile_view(cfg) -> dict:
+    """Current profile plus building-name map + in-city catalogue (for the editor),
+    filtered to the current game mode (room_type from the snapshot)."""
+    from nta_agent.dashboard.names import load_build_names
+    from nta_agent.execution.profile import load_profile
+    profile = load_profile(cfg.profile_path)
+    names = load_build_names()
+    room_type = read_state(cfg.snapshot_path).get("room_type")
+    try:
+        from nta_agent.data.config import GameConfig
+        ids = GameConfig.load().in_city_build_ids(room_type)
+    except Exception:
+        ids = sorted(_valid_build_ids() or set())
+    catalogue = [{"id": bid, "name": names.get(bid, f"#{bid}")} for bid in ids]
+    return {"active": profile.army.get("active", ""),
+            "presets": list(profile.army.get("presets") or {}),
+            "notes": profile.notes,
+            "build": profile.build,
+            "names": {str(k): v for k, v in names.items()},
+            "catalogue": catalogue}
+
+
+def handle_profile_edit(cfg, edits: dict) -> dict:
+    """Apply a structured (non-LLM) profile edit: sanitize -> persist -> queue command."""
+    from nta_agent.brain.guard import sanitize_edits
+    from nta_agent.execution.profile import apply_edits, load_profile, save_profile
+    profile = load_profile(cfg.profile_path)
+    clean = sanitize_edits(edits, profile, set(), valid_build_ids=_valid_build_ids())
+    apply_edits(profile, clean)
+    save_profile(profile, cfg.profile_path)
+    append_command(cfg.commands_path, {"action": "profile_edit", "edits": clean})
+    return {"ok": True, "applied": clean, "build": profile.build}
+
+
 class DashboardServer(ThreadingHTTPServer):
     def __init__(self, addr, handler, cfg: RuntimeConfig):
         super().__init__(addr, handler)
@@ -109,6 +151,8 @@ class Handler(BaseHTTPRequestHandler):
             self._json(200, read_json_array(cfg.equipment_path))
         elif parsed.path == "/api/armies":
             self._json(200, read_json_array(cfg.armies_path))
+        elif parsed.path == "/api/profile":
+            self._json(200, read_profile_view(cfg))
         else:
             self._json(404, {"error": "not found"})
 
@@ -130,6 +174,27 @@ class Handler(BaseHTTPRequestHandler):
             out = handle_chat(cfg, msg, history=hist)
             self.server.chat_history = (hist + [{"role": "user", "content": msg}])[-6:]
             self._json(200 if out.get("ok") else 503, out)
+            return
+        if parsed.path == "/api/profile":
+            try:
+                length = int(self.headers.get("Content-Length", "0"))
+                body = json.loads(self.rfile.read(length) or b"{}")
+            except (ValueError, TypeError):
+                self._json(400, {"ok": False, "error": "bad json"})
+                return
+
+            def _ints(v):
+                out = []
+                for x in v if isinstance(v, list) else []:
+                    try:
+                        out.append(int(x))
+                    except (TypeError, ValueError):
+                        pass
+                return out
+
+            edits = {"build": {"order": _ints(body.get("order", [])),
+                               "skip": _ints(body.get("skip", []))}}
+            self._json(200, handle_profile_edit(cfg, edits))
             return
         if parsed.path != "/api/command":
             self._json(404, {"ok": False, "error": "not found"})

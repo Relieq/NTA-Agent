@@ -27,6 +27,7 @@ def state_to_dict(state: GameState) -> dict:
         "updated_at": state.updated_at,
         "uid": state.user.uid,
         "main_city_index": state.main_city_index,
+        "room_type": state.room_type,
         "resources": asdict(state.resources),
         "builds": [{"index": b.index, "id": b.id, "lv": b.lv, "uid": b.uid}
                    for b in state.builds],
