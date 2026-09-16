@@ -22,6 +22,9 @@ def _player_subset(raw: dict) -> dict:
 
 
 def state_to_dict(state: GameState) -> dict:
+    from nta_agent.execution.territory import build_territory
+    mw = int(getattr(state, "map_width", 0) or 0) or 600
+    terr = build_territory(state, map_width=mw)
     return {
         "source": state.source,
         "updated_at": state.updated_at,
@@ -39,6 +42,9 @@ def state_to_dict(state: GameState) -> dict:
         "granary_cap": state.granary_cap,
         "warehouse_cap": state.warehouse_cap,
         "player": _player_subset(state.raw),
+        "forts": [{"index": f.index, "auto_support": f.auto_support} for f in terr.forts],
+        "garrisons": terr.garrisons,
+        "map_width": terr.map_width,
     }
 
 
