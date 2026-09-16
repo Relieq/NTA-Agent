@@ -441,6 +441,51 @@ class Recruit:
 
 
 @dataclass
+class ClaimTreasures:
+    """Open + claim treasures earned from occupying cells (deterministic).
+
+    A pawn with a non-empty ``treasures`` field has a pending chest. We batch
+    open (unopened) then claim, capped at the current chest budget. Best-effort:
+    a batch error (e.g. already-opened) never blocks the loop.
+    """
+    name: str = "claim_treasures"
+    _targets: object = None
+
+    @staticmethod
+    def _pending(armies) -> list[dict]:
+        out = []
+        for a in armies or []:
+            if any((p.get("treasures") or []) for p in (a.get("pawns") or [])):
+                out.append({"index": int(a.get("index", 0)), "auid": str(a.get("uid"))})
+        return out
+
+    def applies(self, state: GameState, actions: Actions) -> bool:
+        # Cheap gate: only fetch armies when the server flags a new treasure.
+        player = (state.raw or {}).get("player", {}) or {}
+        if not player.get("hasNewTreasure"):
+            return False
+        try:
+            armies = actions.get_player_armys()
+        except Exception:
+            return False
+        from nta_agent.execution.treasure_model import chest_budget
+        budget = chest_budget(state)
+        targets = self._pending(armies)
+        self._targets = targets[:budget] if budget < 10_000 else targets
+        return bool(self._targets)
+
+    def act(self, actions: Actions) -> None:
+        targets, self._targets = self._targets, None
+        if not targets:
+            return
+        try:
+            actions.open_armys_treasure(targets)
+            actions.claim_armys_treasure(targets)
+        except Exception:
+            pass  # best-effort; never block the loop
+
+
+@dataclass
 class ClaimTasks:
     """Claim completed task rewards (guide / other / today) — server-authoritative.
 
@@ -527,4 +572,4 @@ class RuleEngine:
         return cls(rules=[CollectCityOutput(), BuildOrder(),
                           Recruit(profile=profile),
                           OccupyCell(use_sim=True, profile=profile),
-                          ClaimTasks()])
+                          ClaimTreasures(), ClaimTasks()])
