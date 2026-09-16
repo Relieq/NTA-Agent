@@ -12,6 +12,26 @@ def _num(v, lo, hi, default):
     return max(lo, min(hi, n))
 
 
+def _formation(f: dict, valid: set) -> dict:
+    """Validate one formation (group/roles/onetile/composition) against real uids."""
+    out: dict = {}
+    if isinstance(f.get("group"), list):
+        out["group"] = [str(u) for u in f["group"] if str(u) in valid]
+    if isinstance(f.get("roles"), dict):
+        out["roles"] = {str(u): r for u, r in f["roles"].items()
+                        if str(u) in valid and r in _ROLES}
+    if "onetile" in f:
+        out["onetile"] = bool(f["onetile"])
+    if isinstance(f.get("composition"), dict):
+        comp: dict = {}
+        for u, targets in f["composition"].items():
+            if str(u) in valid and isinstance(targets, dict):
+                comp[str(u)] = {str(pid): int(_num(c, 0, 10 ** 6, 0))
+                                for pid, c in targets.items()}
+        out["composition"] = comp
+    return out
+
+
 def sanitize_edits(edits: dict, profile, valid_army_uids) -> dict:
     valid = {str(u) for u in (valid_army_uids or ())}
     out: dict = {}
@@ -39,22 +59,20 @@ def sanitize_edits(edits: dict, profile, valid_army_uids) -> dict:
 
     army_in = edits.get("army") if isinstance(edits, dict) else None
     if isinstance(army_in, dict):
-        army: dict = {}
-        if isinstance(army_in.get("group"), list):
-            army["group"] = [str(u) for u in army_in["group"] if str(u) in valid]
-        if isinstance(army_in.get("roles"), dict):
-            army["roles"] = {str(u): r for u, r in army_in["roles"].items()
-                             if str(u) in valid and r in _ROLES}
-        if "onetile" in army_in:
-            army["onetile"] = bool(army_in["onetile"])
-        if isinstance(army_in.get("composition"), dict):
-            comp: dict = {}
-            for u, targets in army_in["composition"].items():
-                if str(u) in valid and isinstance(targets, dict):
-                    comp[str(u)] = {str(pid): int(_num(c, 0, 10 ** 6, 0))
-                                    for pid, c in targets.items()}
-            if comp:
-                army["composition"] = comp
+        army: dict = _formation(army_in, valid)  # flat group/roles/onetile/composition
+        if isinstance(army_in.get("presets"), dict):
+            presets = {str(n): _formation(f, valid) for n, f in army_in["presets"].items()
+                       if isinstance(f, dict)}
+            if presets:
+                army["presets"] = presets
+        if "active" in army_in:
+            name = str(army_in["active"])
+            known = set(army.get("presets") or {}) | set(profile.army.get("presets") or {})
+            if name == "" or name in known:
+                army["active"] = name
         if army:
             out["army"] = army
+
+    if isinstance(edits.get("notes"), list):
+        out["notes"] = [str(s).strip()[:200] for s in edits["notes"] if str(s).strip()][:20]
     return out
