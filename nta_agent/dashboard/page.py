@@ -39,6 +39,7 @@ INDEX_HTML = """<!doctype html>
  <div class="card full"><h2>Quyết định đang chờ</h2><div id="decisions"><span class="muted">—</span></div></div>
  <div class="card full"><h2>Trang bị lính</h2><div id="equipment"><span class="muted">—</span></div></div>
  <div class="card full"><h2>Lãnh thổ</h2><div id="territory" class="muted">—</div></div>
+ <div class="card full"><h2>Cứ Điểm — gợi ý</h2><div id="forts" class="muted">—</div></div>
  <div class="card full"><h2>Xây dựng — Thứ tự xây &amp; Bỏ qua</h2>
    <div class="muted">Kéo-thả hoặc ▲▼ để đổi ưu tiên; tick "bỏ qua" để agent không tự đụng.</div>
    <ul id="buildorder" class="bolist"></ul>
@@ -192,9 +193,16 @@ async function renderTerritory(){
    `Thành chính: <b>${t.main_city||"?"}</b> · Quân trú: <b>${(t.garrisons||[]).length}</b>`+
    `<div style=margin-top:6px>${forts}</div>`;
 }
+async function renderForts(){
+ const f=await j("/api/forts");if(!f)return;
+ const recs=(f.recommendations||[]).map((r,i)=>`${i+1}. Xây Cứ Điểm @${r.index} (${r.x},${r.y}) — ${r.reason||""}`).join("<br>")||"Chưa có gợi ý";
+ document.getElementById("forts").innerHTML=
+   `Ô đã chiếm: <b>${f.owned_count||0}</b>`+
+   `<div style=margin-top:6px>${recs}</div>`;
+}
 document.getElementById("boSave").onclick=saveBuildOrder;
 document.getElementById("chatsend").onclick=sendChat;
 document.getElementById("chatin").addEventListener("keydown",e=>{if(e.key==="Enter")sendChat();});
-renderBuildOrder();renderTerritory();
-refresh();setInterval(refresh,2000);setInterval(renderTerritory,4000);
+renderBuildOrder();renderTerritory();renderForts();
+refresh();setInterval(refresh,2000);setInterval(renderTerritory,4000);setInterval(renderForts,4000);
 </script></body></html>"""

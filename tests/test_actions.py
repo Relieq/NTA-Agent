@@ -46,6 +46,16 @@ def test_upgrade_build_passes_index_and_uid():
     assert s.calls == [("game/HD_UpAreaBuild", {"index": 870, "uid": "u1"})]
 
 
+def test_get_map_chunk_requests_route_with_chunk_id():
+    s = FakeSession(
+        state=_state_with_main_city(1),
+        replies={"game/HD_GetMapChunk": {"cells": {"57696053": {}}}},
+    )
+    reply = Actions(s).get_map_chunk(11)
+    assert s.calls == [("game/HD_GetMapChunk", {"chunkId": 11})]
+    assert reply == {"cells": {"57696053": {}}}
+
+
 def test_collect_requires_a_city():
     s = FakeSession(state=GameState(source="api"))  # no mainCityIndex, no areas
     try:

@@ -7,6 +7,8 @@ from __future__ import annotations
 
 from dataclasses import dataclass, field
 
+from .mapchunk import CHUNK, chunk_id, chunk_origin, decode_player_cells
+
 
 @dataclass(frozen=True)
 class Fort:
@@ -19,6 +21,7 @@ class Territory:
     main_city: int
     forts: list = field(default_factory=list)
     garrisons: list = field(default_factory=list)
+    owned_cells: set = field(default_factory=set)
     map_width: int = 600
 
     def pos(self, index: int) -> tuple[int, int]:
@@ -44,3 +47,61 @@ def build_territory(state, map_width: int = 600) -> Territory:
     garrisons = [int(d.get("index", 0)) for d in (player.get("armyDists") or [])
                  if isinstance(d, dict)]
     return Territory(main_city=main, forts=forts, garrisons=garrisons, map_width=map_width)
+
+
+def _neighbor_chunks(owned: list[int], cid: int, map_width: int) -> set[int]:
+    """Chunk ids adjacent to any owned cell that sits on this chunk's border."""
+    ox, oy = chunk_origin(cid, map_width)
+    per = -(-map_width // CHUNK)
+    cols = per
+    rows = -(-map_width // CHUNK)
+    cx, cy = cid % per, cid // per
+    out: set[int] = set()
+    for idx in owned:
+        x, y = idx % map_width, idx // map_width
+        if x == ox and cx > 0:
+            out.add(cid - 1)
+        if x == ox + CHUNK - 1 and cx < cols - 1:
+            out.add(cid + 1)
+        if y == oy and cy > 0:
+            out.add(cid - per)
+        if y == oy + CHUNK - 1 and cy < rows - 1:
+            out.add(cid + per)
+    out.discard(cid)
+    return out
+
+
+def scan_owned(actions, main: int, uid, map_width: int = 600, focus=None):
+    """Fetch the main-city chunk (+ border-adjacent + focus chunks) and decode.
+
+    Returns ``(owned: set[int], cities: dict[int, int])`` unioned across the
+    fetched chunks. ``uid`` selects this player's PlayerCellBytesInfo entry.
+    """
+    uid = str(uid)
+    owned: set[int] = set()
+    cities: dict[int, int] = {}
+    seen: set[int] = set()
+
+    def fetch(cid: int) -> list[int]:
+        """Decode one chunk into the accumulators; return its owned cells."""
+        if cid in seen:
+            return []
+        seen.add(cid)
+        reply = actions.get_map_chunk(int(cid)) or {}
+        info = (reply.get("cells") or {}).get(uid)
+        if not info:
+            return []
+        ox, oy = chunk_origin(int(cid), map_width)
+        cells, cmap = decode_player_cells(info, ox, oy, map_width)
+        owned.update(cells)
+        cities.update(cmap)
+        return cells
+
+    start = chunk_id(int(main), map_width)
+    start_cells = fetch(start)
+    for cid in _neighbor_chunks(start_cells, start, map_width):
+        fetch(cid)
+    for cid in (focus or []):
+        fetch(int(cid))
+
+    return owned, cities
