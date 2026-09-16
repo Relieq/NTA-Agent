@@ -100,14 +100,16 @@ class BuildOrder:
             self._sig = sig
             self._blocked.clear()
         from nta_agent.execution.build_planner import next_build_action
+        rt = state.room_type
         seq, skip = self.sequence, None
         if self.profile is not None:
             b = self.profile.build
             skip = b.get("skip") or []
             order = list(b.get("order") or [])
-            rest = sorted(set(cfg.in_city_build_ids()) | {x.id for x in state.builds})
+            rest = sorted(set(cfg.in_city_build_ids(rt)) | {x.id for x in state.builds})
             seq = order + [i for i in rest if i not in order]
-        self._pending = next_build_action(state, cfg, seq, self._blocked, skip=skip)
+        self._pending = next_build_action(state, cfg, seq, self._blocked, skip=skip,
+                                          room_type=rt)
         self._city = state.main_city_index
         return self._pending is not None
 

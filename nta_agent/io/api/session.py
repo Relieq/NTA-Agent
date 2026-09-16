@@ -146,9 +146,15 @@ class GameSession:
         """
         distinct_id = distinct_id or self._distinct_id
         is_reconnect = self._in_game and sid is not None
+        room_type = 0
         if sid is None:
             rooms = self.client.request("lobby/HD_GetRoomStateInfos", {})
             sid = rooms.get("playSid") or rooms.get("allotPlaySid") or 0
+            # current mode = the active room state (state==2); roomType 0=free 1=newbie 2=ranked
+            for stt in rooms.get("states") or []:
+                if isinstance(stt, dict) and stt.get("state") == 2:
+                    room_type = int(stt.get("roomType", 0) or 0)
+                    break
         if not sid:
             raise RuntimeError("no game server assigned (allotPlaySid/playSid empty)")
 
@@ -165,6 +171,7 @@ class GameSession:
             self.state = from_entry_rst(rst, user=user.raw or None)
             if not self.state.user.uid:
                 self.state.user = user
+            self.state.room_type = room_type
         self._sid = int(sid)
         self._in_game = True
         return entry

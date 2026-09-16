@@ -117,10 +117,23 @@ class GameConfig:
         n = abs(int(row.get("bt_count", 0))) if row else 0
         return n or 1
 
-    def in_city_build_ids(self) -> list[int]:
-        """In-city building ids (buildBase type == 1), sorted."""
+    @staticmethod
+    def _build_in_mode(row: dict, room_type: int | None) -> bool:
+        """A building's ``server`` field gates it by room type: "" = all modes,
+        else a comma list of room types (e.g. 0 = free, "1,2" = newbie+ranked)."""
+        if room_type is None:
+            return True
+        sv = row.get("server", "")
+        if sv == "" or sv is None:
+            return True
+        modes = {int(x) for x in str(sv).split(",") if str(x).strip() != ""}
+        return int(room_type) in modes
+
+    def in_city_build_ids(self, room_type: int | None = None) -> list[int]:
+        """In-city building ids (buildBase type == 1), sorted; filtered to the
+        given room type when provided (mode-gated buildings via ``server``)."""
         return sorted(bid for bid, r in self.table("buildBase").items()
-                      if r.get("type") == 1)
+                      if r.get("type") == 1 and self._build_in_mode(r, room_type))
 
     # ---- pawns ----------------------------------------------------------- #
     def pawn_base(self, pawn_id: int) -> dict | None:

@@ -18,6 +18,13 @@ INDEX_HTML = """<!doctype html>
  ul{list-style:none;margin:0;padding:0}li{padding:3px 0;border-bottom:1px solid #21262d}
  .feed{max-height:320px;overflow:auto;font-family:ui-monospace,Consolas,monospace;font-size:12px}
  .muted{color:#8b949e}
+ .bolist{list-style:none;padding:0;margin:8px 0;max-width:520px}
+ .bolist li{display:flex;align-items:center;gap:8px;padding:5px 8px;margin:3px 0;background:#161b22;border:1px solid #3a4450;border-radius:6px;cursor:grab}
+ .bolist li.drag{opacity:.4}
+ .bolist li.skip{opacity:.5;text-decoration:line-through}
+ .bolist .grip{color:#8b949e;cursor:grab}
+ .bolist .nm{flex:1}
+ .bolist label{font-size:12px;color:#8b949e;cursor:pointer}
  .card h2{color:#58a6ff}
  .card{transition:border-color .15s}.card:hover{border-color:#3a4450}
  button{background:#21262d;color:#e6e6e6;border:1px solid #3a4450;border-radius:6px;padding:4px 10px;margin:2px;cursor:pointer}
@@ -31,6 +38,12 @@ INDEX_HTML = """<!doctype html>
  <div class="card full"><h2>Đội quân</h2><div id="armies"><span class="muted">—</span></div></div>
  <div class="card full"><h2>Quyết định đang chờ</h2><div id="decisions"><span class="muted">—</span></div></div>
  <div class="card full"><h2>Trang bị lính</h2><div id="equipment"><span class="muted">—</span></div></div>
+ <div class="card full"><h2>Xây dựng — Thứ tự xây &amp; Bỏ qua</h2>
+   <div class="muted">Kéo-thả hoặc ▲▼ để đổi ưu tiên; tick "bỏ qua" để agent không tự đụng.</div>
+   <ul id="buildorder" class="bolist"></ul>
+   <button id="boSave" style="margin-top:6px">Lưu thứ tự xây</button>
+   <span id="boMsg" class="muted"></span>
+ </div>
  <div class="card full"><h2>Chiến thuật (brain)</h2>
    <div id="tactics" class="muted">—</div>
    <div id="chatlog" class="feed" style="max-height:200px;overflow:auto;margin:8px 0"></div>
@@ -131,7 +144,49 @@ async function sendChat(){
    else{chatLine("Brain",(o.rationale||"đã cập nhật")+" — "+JSON.stringify(o.applied));renderTactics(o);}
  }catch(e){chatLine("Brain","⚠️ "+e);}finally{btn.disabled=false;}
 }
+const boList=document.getElementById("buildorder");
+let BONAMES={};
+function boRow(id,skip){
+ const li=document.createElement("li");li.draggable=true;li.dataset.id=id;
+ if(skip)li.classList.add("skip");
+ li.innerHTML=`<span class=grip>⠿</span><span class=nm>${BONAMES[id]||("#"+id)} <span class=muted>(${id})</span></span>`+
+   `<button data-a=up title="Lên">▲</button><button data-a=down title="Xuống">▼</button>`+
+   `<label><input type=checkbox ${skip?"checked":""}> bỏ qua</label>`;
+ li.querySelector("[data-a=up]").onclick=()=>{if(li.previousElementSibling)li.parentNode.insertBefore(li,li.previousElementSibling);};
+ li.querySelector("[data-a=down]").onclick=()=>{if(li.nextElementSibling)li.parentNode.insertBefore(li.nextElementSibling,li);};
+ li.querySelector("input").onchange=e=>li.classList.toggle("skip",e.target.checked);
+ li.addEventListener("dragstart",()=>li.classList.add("drag"));
+ li.addEventListener("dragend",()=>li.classList.remove("drag"));
+ li.addEventListener("dragover",e=>{e.preventDefault();const d=boList.querySelector(".drag");if(!d||d===li)return;
+   const r=li.getBoundingClientRect();const after=e.clientY>r.top+r.height/2;
+   boList.insertBefore(d,after?li.nextElementSibling:li);});
+ return li;
+}
+async function renderBuildOrder(){
+ const p=await j("/api/profile");if(!p)return;
+ BONAMES=p.names||{};
+ const b=p.build||{order:[],skip:[]};
+ const skip=new Set((b.skip||[]).map(Number));
+ const cat=(p.catalogue||[]).map(c=>c.id);
+ const order=(b.order||[]).map(Number).filter(i=>cat.includes(i));
+ const ids=order.concat(cat.filter(i=>!order.includes(i)));  // ordered first, rest after
+ boList.innerHTML="";
+ ids.forEach(i=>boList.appendChild(boRow(i,skip.has(i))));
+}
+async function saveBuildOrder(){
+ const msg=document.getElementById("boMsg");msg.textContent=" đang lưu…";
+ const rows=[...boList.querySelectorAll("li")];
+ const order=rows.map(li=>parseInt(li.dataset.id,10));
+ const skip=rows.filter(li=>li.querySelector("input").checked).map(li=>parseInt(li.dataset.id,10));
+ try{
+   const r=await fetch("/api/profile",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({order,skip})});
+   const o=await r.json();msg.textContent=o.ok?" ✓ đã lưu":(" ⚠️ "+(o.error||"lỗi"));
+   renderBuildOrder();
+ }catch(e){msg.textContent=" ⚠️ "+e;}
+}
+document.getElementById("boSave").onclick=saveBuildOrder;
 document.getElementById("chatsend").onclick=sendChat;
 document.getElementById("chatin").addEventListener("keydown",e=>{if(e.key==="Enter")sendChat();});
+renderBuildOrder();
 refresh();setInterval(refresh,2000);
 </script></body></html>"""

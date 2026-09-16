@@ -81,3 +81,13 @@ def test_skip_excludes_from_construct_and_upgrade():
     # skip only 2002 -> falls back to upgrading 2000
     act = next_build_action(st, c, sequence=[2000, 2002], skip={2002})
     assert act.kind == "upgrade" and act.build_id == 2000
+
+
+def test_room_type_excludes_wrong_mode_market():
+    c = GameConfig.load()
+    st = _state([_b(2001, 10)])
+    # newbie (room_type=1): Chợ Tự Do (2006) is free-only -> never constructed
+    assert next_build_action(st, c, sequence=[2006], room_type=1) is None
+    # free (room_type=0): 2006 is valid -> constructed
+    act = next_build_action(st, c, sequence=[2006], room_type=0)
+    assert act is not None and act.kind == "construct" and act.build_id == 2006

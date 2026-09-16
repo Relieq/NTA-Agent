@@ -104,6 +104,7 @@ def next_build_action(
     sequence: list[int] | None = None,
     blocked: set | None = None,
     skip: set | None = None,
+    room_type: int | None = None,
 ) -> BuildAction | None:
     """The next build action — construct a new building (lv1) or upgrade one.
 
@@ -117,6 +118,10 @@ def next_build_action(
         return None
     blocked = blocked or set()
     skip = set(skip or ())
+    # mode-gated buildings for the wrong room type are excluded like skip.
+    in_city = set(config.in_city_build_ids(room_type))
+    if room_type is not None:
+        skip = skip | (set(config.in_city_build_ids()) - in_city)
     queued_uids = {str(q.get("uid", "")) for q in state.build_queue}
     level_by_id = {b.id: b.lv for b in state.builds}
     main_lv = level_by_id.get(MAIN_HALL_ID, 0)
@@ -125,7 +130,7 @@ def next_build_action(
         counts[b.id] = counts.get(b.id, 0) + 1
     # Default order also covers not-yet-built in-city types, so new buildings get
     # constructed (existing-only order would never reach an unbuilt type).
-    order = sequence or sorted(set(counts) | set(config.in_city_build_ids()))
+    order = sequence or sorted(set(counts) | in_city)
 
     # Construct-first: build every eligible missing/allowed building before
     # spending on upgrades (upgrades would otherwise starve construction).
