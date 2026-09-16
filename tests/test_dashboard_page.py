@@ -23,3 +23,10 @@ def test_page_has_forts_panel():
     assert "/api/forts" in INDEX_HTML
     assert 'id="forts"' in INDEX_HTML
     assert "Cứ Điểm" in INDEX_HTML
+
+
+def test_event_detail_object_is_formatted_not_stringified():
+    # brain_plan detail is an object; must not render as "[object Object]"
+    assert "[object Object]" not in INDEX_HTML  # no literal accidental output
+    assert "rationale" in INDEX_HTML  # fmt helper reads .rationale
+    assert "JSON.stringify" in INDEX_HTML  # fallback for other objects

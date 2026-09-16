@@ -118,7 +118,8 @@ async function refresh(){
  }
  const ev=await j("/api/events?n=50")||[];
  document.getElementById("feed").innerHTML=ev.slice().reverse().map(e=>{
-   const extra=e.kind==="tick"?("tick "+e.i+" · "+((e.fired||[]).join(", ")||"—")):(e.kind+(e.detail?(" · "+e.detail):""));
+   const fmt=d=>d==null?"":(typeof d==="object"?(d.rationale||JSON.stringify(d)):String(d));
+   const extra=e.kind==="tick"?("tick "+e.i+" · "+((e.fired||[]).join(", ")||"—")):(e.kind+(e.detail?(" · "+fmt(e.detail)):""));
    return `<li><span class=muted>${hms(e.ts)}</span> ${extra}</li>`;}).join("")||"<li class=muted>—</li>";
  renderArmies();
  renderDecisions();
