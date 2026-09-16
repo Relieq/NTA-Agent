@@ -56,3 +56,19 @@ def test_tick_executes_reroll(tmp_path):
     append_command(cfg.commands_path, {"action": "reroll", "track": "policy", "lv": 2})
     svc.tick(_state())
     assert act.calls == [("reroll", 2, 1)]
+
+
+def test_profile_edit_command_applies_to_live_profile(tmp_path):
+    from types import SimpleNamespace
+
+    from nta_agent.execution.profile import load_profile
+    from nta_agent.runtime.decision_service import DecisionService
+    prof = load_profile("none")
+    cfg = SimpleNamespace(
+        decisions_path=tmp_path / "d.json", equipment_path=tmp_path / "e.json",
+        armies_path=tmp_path / "a.json", commands_path=tmp_path / "c.jsonl",
+        commands_done_path=tmp_path / "c.done")
+    svc = DecisionService(actions=SimpleNamespace(get_player_armys=list),
+                          config=None, cfg=cfg, profile=prof)
+    svc._execute({"action": "profile_edit", "edits": {"occupy": {"max_loss": 9}}})
+    assert prof.occupy["max_loss"] == 9

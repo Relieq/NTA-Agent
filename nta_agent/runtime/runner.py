@@ -46,7 +46,8 @@ def run(cfg: RuntimeConfig, *, ticks: int = 0, session=None, engine=None) -> Non
         log.append("config_missing")
     service = None
     if config is not None:
-        service = DecisionService(agent.actions, config, cfg, on_event=log.append)
+        service = DecisionService(agent.actions, config, cfg, on_event=log.append,
+                                  profile=profile)
         agent.captcha = CaptchaSolver(agent.actions, config)
     from nta_agent.runtime.brain_service import BrainService
     brain = BrainService(profile, cfg, on_event=log.append, actions=agent.actions)
