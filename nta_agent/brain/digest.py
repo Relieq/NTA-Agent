@@ -19,4 +19,5 @@ def digest(state, profile, armies=None) -> dict:
         "resources": res,
         "armies": army_rows,
         "profile": {"army": profile.army, "occupy": profile.occupy},
+        "notes": list(getattr(profile, "notes", []) or []),
     }
