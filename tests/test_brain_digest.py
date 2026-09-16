@@ -34,3 +34,15 @@ def test_digest_includes_presets_active_notes():
     assert "turtle" in d["profile"]["army"]["presets"]
     assert d["profile"]["army"]["active"] == "turtle"
     assert d["notes"] == ["early: timber"]
+
+
+def test_digest_includes_build():
+    from nta_agent.execution.profile import load_profile
+    p = load_profile("none")
+    p.build["order"] = [2002]
+    st = SimpleNamespace(main_city_index=1,
+                         resources=SimpleNamespace(**{k: 0 for k in
+                             ("cereal", "timber", "stone", "iron", "gold", "stamina",
+                              "exp_book", "up_scroll", "fixator")}),
+                         raw={})
+    assert digest(st, p, [])["profile"]["build"]["order"] == [2002]

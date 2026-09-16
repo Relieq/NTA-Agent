@@ -103,6 +103,7 @@ def next_build_action(
     config: GameConfig,
     sequence: list[int] | None = None,
     blocked: set | None = None,
+    skip: set | None = None,
 ) -> BuildAction | None:
     """The next build action — construct a new building (lv1) or upgrade one.
 
@@ -115,6 +116,7 @@ def next_build_action(
     if len(state.build_queue) >= state.build_queue_slots:
         return None
     blocked = blocked or set()
+    skip = set(skip or ())
     queued_uids = {str(q.get("uid", "")) for q in state.build_queue}
     level_by_id = {b.id: b.lv for b in state.builds}
     main_lv = level_by_id.get(MAIN_HALL_ID, 0)
@@ -128,6 +130,8 @@ def next_build_action(
     # Construct-first: build every eligible missing/allowed building before
     # spending on upgrades (upgrades would otherwise starve construction).
     for build_id in order:
+        if build_id in skip:
+            continue
         if (counts.get(build_id, 0) < config.max_count(build_id)
                 and ("construct", build_id) not in blocked):
             up1 = config.build_upgrade(build_id, 1)
@@ -137,6 +141,8 @@ def next_build_action(
                 return BuildAction(kind="construct", build_id=build_id, up=up1)
 
     for build_id in order:
+        if build_id in skip:
+            continue
         for build in [b for b in state.builds if b.id == build_id]:
             if build.uid in queued_uids:
                 continue

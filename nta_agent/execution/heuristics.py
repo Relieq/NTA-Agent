@@ -75,6 +75,7 @@ class BuildOrder:
     name: str = "build_order"
     sequence: list[int] | None = None
     config: object | None = None
+    profile: object = None   # tactics profile: build.order / build.skip
     _pending: object = None  # BuildAction chosen in applies()
     _city: int = 0           # main-city index for construction
     _blocked: set = field(default_factory=set)  # server-rejected steps (2 key shapes)
@@ -99,7 +100,14 @@ class BuildOrder:
             self._sig = sig
             self._blocked.clear()
         from nta_agent.execution.build_planner import next_build_action
-        self._pending = next_build_action(state, cfg, self.sequence, self._blocked)
+        seq, skip = self.sequence, None
+        if self.profile is not None:
+            b = self.profile.build
+            skip = b.get("skip") or []
+            order = list(b.get("order") or [])
+            rest = sorted(set(cfg.in_city_build_ids()) | {x.id for x in state.builds})
+            seq = order + [i for i in rest if i not in order]
+        self._pending = next_build_action(state, cfg, seq, self._blocked, skip=skip)
         self._city = state.main_city_index
         return self._pending is not None
 
@@ -581,7 +589,7 @@ class RuleEngine:
 
     @classmethod
     def default(cls, profile: object = None) -> RuleEngine:
-        return cls(rules=[CollectCityOutput(), BuildOrder(),
+        return cls(rules=[CollectCityOutput(), BuildOrder(profile=profile),
                           Recruit(profile=profile),
                           OccupyCell(use_sim=True, profile=profile),
                           ClaimTreasures(), ClaimTasks()])

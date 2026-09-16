@@ -226,7 +226,8 @@ def test_occupy_uses_profile_farming_within_budget(monkeypatch):
     prof = Profile(army={"group": ["A"], "roles": {}, "onetile": True, "composition": {},
                          "active": "", "presets": {}},
                    occupy={"max_loss": 10, "max_march_ms": 0,
-                           "loot": {"enabled": True, "min_reward_per_chest": 0}}, notes=[])
+                           "loot": {"enabled": True, "min_reward_per_chest": 0}}, notes=[],
+                   build={"order": [], "skip": []})
     monkeypatch.setattr(tm, "cell_loot",
                         lambda land, cfg: CellLoot(1, 100.0) if land == 11 else CellLoot(1, 10.0))
     events = []
@@ -252,7 +253,8 @@ def test_occupy_uses_active_preset_group():
                          "active": "duo", "presets": {"duo": {"group": ["cung", "tank"],
                          "roles": {}, "onetile": True, "composition": {}}}},
                    occupy={"max_loss": 100, "max_march_ms": 0,
-                           "loot": {"enabled": False, "min_reward_per_chest": 0}}, notes=[])
+                           "loot": {"enabled": False, "min_reward_per_chest": 0}}, notes=[],
+                   build={"order": [], "skip": []})
 
     class Sim:
         def predict_armies(self, state, armies, **kw):

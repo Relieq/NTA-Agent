@@ -22,7 +22,9 @@ _SYSTEM = (
     "predicted troop-loss % for occupying a cell (0 = never lose troops).\n"
     "army.presets is a map of named formations you can create/recall; set "
     "army.active to a preset name to make it the active formation. notes is a "
-    "list of durable free-form strategy reminders you should keep and consider."
+    "list of durable free-form strategy reminders you should keep and consider.\n"
+    "build.order is the building priority (list of build ids, high priority first) "
+    "and build.skip lists build ids to never auto-build/upgrade."
 )
 
 

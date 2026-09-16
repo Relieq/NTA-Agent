@@ -28,6 +28,16 @@ class BrainService:
         self._tick = 0
         self._calls = 0
         self._off = False
+        self._build_ids = None  # lazily-loaded valid build ids
+
+    def _valid_build_ids(self):
+        if self._build_ids is None:
+            try:
+                from nta_agent.data.config import GameConfig
+                self._build_ids = set(GameConfig.load().in_city_build_ids())
+            except Exception:
+                self._build_ids = set()
+        return self._build_ids or None
 
     def tick(self, state) -> None:
         self._tick += 1
@@ -38,7 +48,8 @@ class BrainService:
             dg = digest(state, self.profile, armies)
             edits = self._propose(dg, self.profile)
             valid = {str(a.get("uid")) for a in armies}
-            clean = sanitize_edits(edits, self.profile, valid)
+            clean = sanitize_edits(edits, self.profile, valid,
+                                   valid_build_ids=self._valid_build_ids())
             changed = apply_edits(self.profile, clean)
             if changed:
                 save_profile(self.profile, self.cfg.profile_path)
