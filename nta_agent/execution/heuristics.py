@@ -94,6 +94,12 @@ class BuildOrder:
         cfg = self._cfg()
         if not cfg:
             return False
+        # The build queue holds concurrent build/upgrade tasks; when it is full the
+        # server rejects any further build with ecode.500014 ("Construction Queue
+        # Full"). Skip entirely rather than churn the whole build list against it.
+        slots = state.build_queue_slots or 0
+        if slots and len(state.build_queue) >= slots:
+            return False
         # When any building level changes, retry previously-blocked steps.
         sig = tuple(sorted((b.uid, b.lv) for b in state.builds))
         if sig != self._sig:

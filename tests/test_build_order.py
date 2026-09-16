@@ -45,6 +45,23 @@ def test_build_order_upgrades_existing():
     assert act.calls == [("up", 109726, "m")]
 
 
+def test_build_order_skips_when_build_queue_full():
+    # single slot already busy -> every build attempt would hit ecode.500014
+    st = _state([Building(id=2001, lv=5, uid="m", index=109726)])
+    st.build_queue = [{"uid": "m"}]
+    st.build_queue_slots = 1
+    rule = BuildOrder(sequence=[2001], config=GameConfig.load())
+    assert rule.applies(st, Acts()) is False
+
+
+def test_build_order_runs_when_queue_has_a_free_slot():
+    st = _state([Building(id=2001, lv=5, uid="m", index=109726)])
+    st.build_queue = [{"uid": "x"}]  # 1 busy of 2 -> a slot is free
+    st.build_queue_slots = 2
+    rule = BuildOrder(sequence=[2001], config=GameConfig.load())
+    assert rule.applies(st, Acts()) is True
+
+
 from nta_agent.execution.profile import Profile
 
 
