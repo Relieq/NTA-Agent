@@ -71,3 +71,13 @@ def test_default_order_includes_unbuilt_in_city_types():
     act = next_build_action(st, c)  # no sequence
     assert act is not None and act.kind == "construct"
     assert act.build_id in c.in_city_build_ids()
+
+
+def test_skip_excludes_from_construct_and_upgrade():
+    c = GameConfig.load()
+    st = _state([_b(2001, 10), _b(2000, 5)])
+    # skip both candidates -> nothing
+    assert next_build_action(st, c, sequence=[2000, 2002], skip={2000, 2002}) is None
+    # skip only 2002 -> falls back to upgrading 2000
+    act = next_build_action(st, c, sequence=[2000, 2002], skip={2002})
+    assert act.kind == "upgrade" and act.build_id == 2000
