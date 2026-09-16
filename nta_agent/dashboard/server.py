@@ -91,6 +91,17 @@ def read_profile_view(cfg) -> dict:
             "catalogue": catalogue}
 
 
+def read_territory_view(cfg) -> dict:
+    """Own territory (main city, forts with pos + auto-support, garrisons) from the snapshot."""
+    st = read_state(cfg.snapshot_path)
+    mw = int(st.get("map_width") or 600)
+    forts = [{"index": f["index"], "auto_support": f.get("auto_support", False),
+              "x": f["index"] % mw, "y": f["index"] // mw}
+             for f in (st.get("forts") or [])]
+    return {"main_city": st.get("main_city_index", 0), "forts": forts,
+            "garrisons": st.get("garrisons") or [], "map_width": mw}
+
+
 def handle_profile_edit(cfg, edits: dict) -> dict:
     """Apply a structured (non-LLM) profile edit: sanitize -> persist -> queue command."""
     from nta_agent.brain.guard import sanitize_edits
@@ -153,6 +164,8 @@ class Handler(BaseHTTPRequestHandler):
             self._json(200, read_json_array(cfg.armies_path))
         elif parsed.path == "/api/profile":
             self._json(200, read_profile_view(cfg))
+        elif parsed.path == "/api/territory":
+            self._json(200, read_territory_view(cfg))
         else:
             self._json(404, {"error": "not found"})
 
