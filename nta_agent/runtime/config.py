@@ -54,6 +54,10 @@ class RuntimeConfig:
     def profile_path(self) -> Path:
         return self.log_dir / "profile.json"
 
+    @property
+    def forts_path(self) -> Path:
+        return self.log_dir / "forts.json"
+
     @classmethod
     def from_env(cls, env: Mapping[str, str] | None = None) -> RuntimeConfig:
         env = os.environ if env is None else env

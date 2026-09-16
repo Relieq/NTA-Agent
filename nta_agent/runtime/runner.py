@@ -51,6 +51,8 @@ def run(cfg: RuntimeConfig, *, ticks: int = 0, session=None, engine=None) -> Non
         agent.captcha = CaptchaSolver(agent.actions, config)
     from nta_agent.runtime.brain_service import BrainService
     brain = BrainService(profile, cfg, on_event=log.append, actions=agent.actions)
+    from nta_agent.runtime.fort_service import FortService
+    forts = FortService(cfg, agent.actions, on_event=log.append)
     # Surface the occupy planner's reasoning (chosen army + predicted loss) to the log.
     for rule in getattr(agent.engine, "rules", []):
         if getattr(rule, "name", "") == "occupy_cell":
@@ -68,6 +70,7 @@ def run(cfg: RuntimeConfig, *, ticks: int = 0, session=None, engine=None) -> Non
         if service is not None:
             _safe(service.tick, state)
         _safe(brain.tick, state)
+        _safe(forts.tick, state)
 
     try:
         agent.run(ticks=ticks, interval=cfg.interval, on_tick=on_tick)
