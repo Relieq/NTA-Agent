@@ -57,3 +57,43 @@ def test_blocks_at_army_cap():
     armys = [{"uid": f"A{i}", "pawns": [{}] * 9, "state": None} for i in range(4)]
     r = Recruit(config=False, max_armies=4)
     assert r.applies(st, FakeActions(st, armys=armys)) is False
+
+
+@dataclass
+class FailingActions(FakeActions):
+    """drill_pawn raises ecode.500019 (army full) for the given army uids."""
+    full_uids: set = field(default_factory=set)
+
+    def drill_pawn(self, build_uid, pawn_id, *, index=None, army_uid="", army_name=""):
+        if army_uid in self.full_uids:
+            from nta_agent.io.api.client import ApiError
+            raise ApiError("game/HD_DrillPawn: ecode.500019")
+        self.calls.append((build_uid, pawn_id, army_uid, army_name)); return {}
+
+
+def test_500019_marks_army_full_and_does_not_retry_it():
+    st = _state([3101])
+    # rule thinks army A (2 pawns) has room, but the server says it's full.
+    act = FailingActions(st, armys=[{"uid": "A", "pawns": [{}, {}], "state": None}],
+                         full_uids={"A"})
+    r = Recruit(config=False)
+    assert r.applies(st, act) is True          # optimistically picks A
+    r.act(act)                                  # 500019 swallowed, A marked full
+    assert act.calls == []                      # nothing recruited
+    # next pass: A is known-full -> skip it and create a new army instead
+    assert r.applies(st, act) is True
+    r.act(act)
+    assert act.calls == [("bar", 3101, "", "D2")]
+
+
+def test_full_mark_cleared_when_army_pawn_count_changes():
+    st = _state([3101])
+    act = FailingActions(st, armys=[{"uid": "A", "pawns": [{}, {}], "state": None}],
+                         full_uids={"A"})
+    r = Recruit(config=False, max_armies=1)  # can't create new army -> only A
+    assert r.applies(st, act) is True
+    r.act(act)                                # A marked full at 2 pawns
+    assert r.applies(st, act) is False        # A still full at 2 -> nothing to do
+    # a pawn leaves A (count changes) -> stale full mark dropped, A eligible again
+    act.armys[0]["pawns"] = [{}]
+    assert r.applies(st, act) is True

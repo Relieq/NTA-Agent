@@ -37,8 +37,17 @@ class CollectCityOutput:
     reject it anyway) to avoid pointless requests.
     """
     name: str = "collect_city_output"
-    fail_cooldown: int = 20  # ticks to wait after a rejection before retrying
+    fail_cooldown: int = 20    # ticks to wait after a hard rejection before retrying
+    max_cooldown: int = 720    # cap on the unclaimable back-off (~1h at 5s ticks)
     _cooldown: int = 0
+    _unclaimable: int = 0      # consecutive "nothing to claim" -> escalating wait
+
+    # The server rejects a claim with nothing accrued yet as ecode.500171
+    # ("Unclaimable"). It is an expected timing condition, not an error: whether
+    # output is ready is not in the state we fetch (no cityOutputMap), so we
+    # discover it by trying, then back off progressively so a city that simply has
+    # no claimable output goes dormant instead of retrying forever.
+    UNCLAIMABLE_ECODE = "ecode.500171"
 
     def applies(self, state: GameState, actions: Actions) -> bool:
         if self._cooldown > 0:
@@ -59,8 +68,15 @@ class CollectCityOutput:
     def act(self, actions: Actions) -> None:
         try:
             actions.collect_city_output()
-        except Exception:
-            self._cooldown = self.fail_cooldown  # back off, then surface the error
+            self._unclaimable = 0  # a real claim -> reset the back-off
+        except Exception as e:
+            if self.UNCLAIMABLE_ECODE in str(e):
+                # nothing to claim yet — expected; back off progressively, stay quiet
+                self._unclaimable += 1
+                self._cooldown = min(self.fail_cooldown * 2 ** (self._unclaimable - 1),
+                                     self.max_cooldown)
+                return
+            self._cooldown = self.fail_cooldown  # other rejection -> surface it
             raise
 
 
@@ -93,6 +109,12 @@ class BuildOrder:
     def applies(self, state: GameState, actions: Actions) -> bool:
         cfg = self._cfg()
         if not cfg:
+            return False
+        # The build queue holds concurrent build/upgrade tasks; when it is full the
+        # server rejects any further build with ecode.500014 ("Construction Queue
+        # Full"). Skip entirely rather than churn the whole build list against it.
+        slots = state.build_queue_slots or 0
+        if slots and len(state.build_queue) >= slots:
             return False
         # When any building level changes, retry previously-blocked steps.
         sig = tuple(sorted((b.uid, b.lv) for b in state.builds))
@@ -387,8 +409,23 @@ class Recruit:
     fail_cooldown: int = 10
     config: object = None
     profile: object = None    # Profile: fill armies toward army.composition
-    _pending: object = None   # (build_uid, pawn_id, army_uid, army_name)
+    _pending: object = None   # (build_uid, pawn_id, army_uid, army_name, pawn_count)
     _cooldown: int = 0
+    # Armies the server rejected as full (ecode.500019), by uid -> pawn count when
+    # rejected. The per-army cap is not in the data (it varies by army), so we learn
+    # it: skip an army marked full until its pawn count changes.
+    _full: dict = field(default_factory=dict)
+
+    ARMY_FULL_ECODE = "ecode.500019"
+
+    def _is_full(self, army: dict) -> bool:
+        uid = str(army.get("uid"))
+        if uid not in self._full:
+            return False
+        if self._full[uid] == len(army.get("pawns", [])):
+            return True
+        del self._full[uid]  # roster changed -> stale mark, re-evaluate
+        return False
 
     def _cfg(self):
         if self.config is None:
@@ -436,16 +473,18 @@ class Recruit:
                 army = next((a for a in armys if str(a.get("uid")) == army_uid), None)
                 if (army is not None and self._affordable(state, pid)
                         and not army.get("state")
+                        and not self._is_full(army)
                         and len(army.get("pawns", [])) < self.max_army_pawns):
-                    self._pending = (bu, pid, army_uid, "")
+                    self._pending = (bu, pid, army_uid, "", len(army.get("pawns", [])))
                     return True
         # recruit into a non-marching city army that still has room
         room = next((a for a in armys
-                     if not a.get("state") and len(a.get("pawns", [])) < self.max_army_pawns), None)
+                     if not a.get("state") and not self._is_full(a)
+                     and len(a.get("pawns", [])) < self.max_army_pawns), None)
         if room:
-            self._pending = (bu, pawn, str(room["uid"]), "")
+            self._pending = (bu, pawn, str(room["uid"]), "", len(room.get("pawns", [])))
         elif len(armys) < self.max_armies:
-            self._pending = (bu, pawn, "", f"D{len(armys) + 1}")
+            self._pending = (bu, pawn, "", f"D{len(armys) + 1}", 0)
         else:
             return False
         return True
@@ -453,11 +492,17 @@ class Recruit:
     def act(self, actions: Actions) -> None:
         if not self._pending:
             return
-        bu, pawn, au, name = self._pending
+        bu, pawn, au, name, count = self._pending
         self._pending = None
         try:
             actions.drill_pawn(bu, pawn, army_uid=au, army_name=name)
-        except Exception:
+        except Exception as e:
+            # "Army Soldier Full": our optimistic cap was wrong for this army.
+            # Learn it and stop retrying this army — an expected condition, not an
+            # error worth surfacing every cooldown.
+            if au and self.ARMY_FULL_ECODE in str(e):
+                self._full[str(au)] = count
+                return
             self._cooldown = self.fail_cooldown
             raise
 
