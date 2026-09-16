@@ -87,6 +87,10 @@ class Actions:
     def get_marches(self) -> dict:
         return self.session.request("game/HD_GetMarchs", {})
 
+    def get_map_chunk(self, chunk_id: int) -> dict:
+        """Fetch a packed map chunk: cells: map<playerUid, PlayerCellBytesInfo>."""
+        return self.session.request("game/HD_GetMapChunk", {"chunkId": int(chunk_id)})
+
     def get_select_armys(self, index: int, type_: int = 0) -> dict:
         return self.session.request("game/HD_GetSelectArmys", {"index": int(index), "type": type_})
 
