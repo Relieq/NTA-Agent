@@ -107,6 +107,21 @@ class GameConfig:
             prep_cond=str(row.get("prep_cond", "")),
         )
 
+    def build_base(self, build_id: int) -> dict | None:
+        """A buildBase row (id, type, bt_count, prep_cond, ui, size…)."""
+        return self.table("buildBase").get(build_id)
+
+    def max_count(self, build_id: int) -> int:
+        """Max instances allowed of a building (abs(bt_count); 0/unknown → 1)."""
+        row = self.build_base(build_id)
+        n = abs(int(row.get("bt_count", 0))) if row else 0
+        return n or 1
+
+    def in_city_build_ids(self) -> list[int]:
+        """In-city building ids (buildBase type == 1), sorted."""
+        return sorted(bid for bid, r in self.table("buildBase").items()
+                      if r.get("type") == 1)
+
     # ---- pawns ----------------------------------------------------------- #
     def pawn_base(self, pawn_id: int) -> dict | None:
         return self.table("pawnBase").get(pawn_id)
