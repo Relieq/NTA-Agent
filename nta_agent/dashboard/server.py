@@ -107,8 +107,9 @@ def read_forts_view(cfg) -> dict:
     try:
         data = json.loads(Path(cfg.forts_path).read_text(encoding="utf-8"))
     except (OSError, ValueError):
-        return {"owned_count": 0, "recommendations": []}
+        return {"owned_count": 0, "owned_cells": [], "recommendations": []}
     return {"owned_count": data.get("owned_count", 0),
+            "owned_cells": data.get("owned_cells") or [],
             "recommendations": data.get("recommendations") or []}
 
 

@@ -60,7 +60,9 @@ class FortService:
                                    map_width=self.map_width, max_forts=slots,
                                    radius=self.radius) if slots else []
 
-            payload = {"owned_count": len(owned), "recommendations": recs}
+            cells = sorted([c % self.map_width, c // self.map_width] for c in owned)
+            payload = {"owned_count": len(owned), "owned_cells": cells,
+                       "recommendations": recs}
             path = self.cfg.forts_path
             path.parent.mkdir(parents=True, exist_ok=True)
             path.write_text(json.dumps(payload, ensure_ascii=False, indent=2),

@@ -39,6 +39,10 @@ def test_scans_and_writes_on_first_tick(tmp_path):
     assert data["owned_count"] == 2
     assert len(data["recommendations"]) == 1
     assert data["recommendations"][0]["index"] == 120 * 600 + 100
+    # owned cells written as [x, y] pairs for the dashboard map
+    assert [100, 100] in data["owned_cells"]
+    assert [100, 120] in data["owned_cells"]
+    assert len(data["owned_cells"]) == 2
 
 
 def test_skips_when_land_count_unchanged(tmp_path):

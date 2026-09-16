@@ -25,6 +25,12 @@ def test_page_has_forts_panel():
     assert "Cứ Điểm" in INDEX_HTML
 
 
+def test_page_has_territory_map_canvas():
+    assert 'id="terrmap"' in INDEX_HTML
+    assert "renderTerritoryMap" in INDEX_HTML
+    assert "owned_cells" in INDEX_HTML  # map reads owned cell coords
+
+
 def test_event_detail_object_is_formatted_not_stringified():
     # brain_plan detail is an object; must not render as "[object Object]"
     assert "[object Object]" not in INDEX_HTML  # no literal accidental output
