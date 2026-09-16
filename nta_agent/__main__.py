@@ -14,6 +14,8 @@ def main(argv: list[str] | None = None) -> int:
     ap.add_argument("--ticks", type=int, default=0, help="number of ticks (0 = forever)")
     ap.add_argument("--once", action="store_true", help="run a single tick then exit")
     args = ap.parse_args(argv)
+    from nta_agent.env import load_dotenv
+    load_dotenv()
     ticks = 1 if args.once else args.ticks
     try:
         cfg = RuntimeConfig.from_env()
