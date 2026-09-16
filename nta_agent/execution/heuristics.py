@@ -216,9 +216,12 @@ class OccupyCell:
         cand_by_index = {c.index: c for c in cands}
 
         def plans_for(i):
-            # Candidate selection-orders from the profile group (or all reachable).
+            # Candidate selection-orders from the active formation group (or all reachable).
             avail = actions.select_armies(i)
-            grp = (self.profile.army.get("group") if self.profile else None) or []
+            grp = []
+            if self.profile is not None:
+                from nta_agent.execution.profile import active_formation
+                grp = active_formation(self.profile).get("group") or []
             if grp:
                 chosen = [a for a in avail if str(a.get("uid")) in {str(x) for x in grp}]
                 avail = chosen or avail
@@ -407,8 +410,9 @@ class Recruit:
         armys = actions.get_area(state.main_city_index).get("data", {}).get("armys", []) or []
         # profile-driven: fill the biggest composition gap into its own army.
         if self.profile is not None:
-            from nta_agent.execution.profile import composition_target
-            tgt = composition_target(self.profile, armys, unlocked)
+            from nta_agent.execution.profile import active_formation, composition_target
+            comp = active_formation(self.profile).get("composition")
+            tgt = composition_target(self.profile, armys, unlocked, composition=comp)
             if tgt is not None:
                 army_uid, pid = tgt
                 army = next((a for a in armys if str(a.get("uid")) == army_uid), None)

@@ -98,13 +98,15 @@ def apply_edits(profile: Profile, clean: dict) -> bool:
     return changed
 
 
-def composition_target(profile: Profile, area_armys: list, unlocked_ids) -> tuple | None:
+def composition_target(profile: Profile, area_armys: list, unlocked_ids,
+                       composition: dict | None = None) -> tuple | None:
     """The biggest unmet composition gap as ``(army_uid, pawn_id)``, or None.
 
-    ``profile.army.composition`` = {armyUid: {pawnId: targetCount}}. Only pawns in
-    ``unlocked_ids`` are eligible. Picks the largest positive (target - current) gap.
+    Composition = {armyUid: {pawnId: targetCount}} — from ``composition`` when
+    given (e.g. the active preset's), else ``profile.army.composition``. Only
+    pawns in ``unlocked_ids`` are eligible; picks the largest positive gap.
     """
-    comp = (profile.army or {}).get("composition") or {}
+    comp = composition if composition is not None else ((profile.army or {}).get("composition") or {})
     unlocked = {int(x) for x in (unlocked_ids or [])}
     by_uid = {str(a.get("uid")): a for a in area_armys}
     best = None  # (gap, army_uid, pawn_id)
