@@ -121,10 +121,13 @@ def next_build_action(
     counts: dict[int, int] = {}
     for b in state.builds:
         counts[b.id] = counts.get(b.id, 0) + 1
-    order = sequence or sorted({b.id for b in state.builds})
+    # Default order also covers not-yet-built in-city types, so new buildings get
+    # constructed (existing-only order would never reach an unbuilt type).
+    order = sequence or sorted(set(counts) | set(config.in_city_build_ids()))
 
+    # Construct-first: build every eligible missing/allowed building before
+    # spending on upgrades (upgrades would otherwise starve construction).
     for build_id in order:
-        # construct if under the instance cap and eligible at lv1
         if (counts.get(build_id, 0) < config.max_count(build_id)
                 and ("construct", build_id) not in blocked):
             up1 = config.build_upgrade(build_id, 1)
@@ -132,7 +135,8 @@ def next_build_action(
                     and _affordable(up1.cost, state)
                     and (build_id == MAIN_HALL_ID or main_lv >= 1)):
                 return BuildAction(kind="construct", build_id=build_id, up=up1)
-        # else upgrade an existing instance
+
+    for build_id in order:
         for build in [b for b in state.builds if b.id == build_id]:
             if build.uid in queued_uids:
                 continue

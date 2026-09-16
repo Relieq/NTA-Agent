@@ -54,3 +54,20 @@ def test_unaffordable_construct_skipped():
     st = _state([_b(2001, 10)], cereal=0, timber=0, stone=0, iron=0)
     act = next_build_action(st, c, sequence=[2016])
     assert act is None
+
+
+def test_construct_first_beats_available_upgrade():
+    c = GameConfig.load()
+    # wall (2000) present & upgradeable, granary (2002) missing -> construct wins.
+    st = _state([_b(2001, 10), _b(2000, 5)])
+    act = next_build_action(st, c, sequence=[2000, 2002])
+    assert act.kind == "construct" and act.build_id == 2002
+
+
+def test_default_order_includes_unbuilt_in_city_types():
+    c = GameConfig.load()
+    # sequence=None: an unbuilt type (e.g. 2016 Y Quán) must still be constructable.
+    st = _state([_b(2001, 10)])
+    act = next_build_action(st, c)  # no sequence
+    assert act is not None and act.kind == "construct"
+    assert act.build_id in c.in_city_build_ids()
