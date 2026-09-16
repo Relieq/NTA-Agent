@@ -223,9 +223,10 @@ def test_occupy_uses_profile_farming_within_budget(monkeypatch):
     # max_loss=10 accommodates the stats-fallback predictor (reports ~5% even on
     # crushing wins); with the real sim, 0-loss cells report 0. Tests the farming
     # ranking, not the loss threshold.
-    prof = Profile(army={"group": ["A"], "roles": {}, "onetile": True, "composition": {}},
+    prof = Profile(army={"group": ["A"], "roles": {}, "onetile": True, "composition": {},
+                         "active": "", "presets": {}},
                    occupy={"max_loss": 10, "max_march_ms": 0,
-                           "loot": {"enabled": True, "min_reward_per_chest": 0}})
+                           "loot": {"enabled": True, "min_reward_per_chest": 0}}, notes=[])
     monkeypatch.setattr(tm, "cell_loot",
                         lambda land, cfg: CellLoot(1, 100.0) if land == 11 else CellLoot(1, 10.0))
     events = []
@@ -235,3 +236,34 @@ def test_occupy_uses_profile_farming_within_budget(monkeypatch):
     rule.act(act)
     assert act.calls and act.calls[0][1] == center - 1   # higher reward/chest cell chosen
     assert any(k == "farm_plan" for k, d in events)
+
+
+def test_occupy_uses_active_preset_group():
+    from nta_agent.execution.profile import Profile
+    center = 182 * W + 526
+    st = GameState(source="api"); st.user.uid = "me"; st.main_city_index = center
+    st.resources.stamina = 10
+    areas = {center: _cell(owner="me", city=1001), center - 1: _cell(owner="", pawns=[50])}
+    cung = {"index": center, "uid": "cung", "pawns": [{"id": 3305}, {"id": 3305}]}
+    tank = {"index": center, "uid": "tank", "pawns": [{"id": 3101}, {"id": 3101}]}
+    other = {"index": center, "uid": "extra", "pawns": [{"id": 3101}]}  # NOT in preset
+    act = FakeActions(areas=areas, armies=[cung, tank, other])
+    prof = Profile(army={"group": [], "roles": {}, "onetile": True, "composition": {},
+                         "active": "duo", "presets": {"duo": {"group": ["cung", "tank"],
+                         "roles": {}, "onetile": True, "composition": {}}}},
+                   occupy={"max_loss": 100, "max_march_ms": 0,
+                           "loot": {"enabled": False, "min_reward_per_chest": 0}}, notes=[])
+
+    class Sim:
+        def predict_armies(self, state, armies, **kw):
+            from nta_agent.execution.predictors.battle import BattlePrediction
+            return BattlePrediction(win=True, my_power=1, enemy_power=1, ratio=1,
+                                    loss_percent=0, loss_lv=0)
+
+    rule = OccupyCell(radius=1, use_sim=True, sim=Sim(), predictor=BattlePredictor(), profile=prof)
+    assert rule.applies(st, act) is True
+    rule.act(act)
+    # only preset armies used; "extra" excluded even though select_armies returned it
+    assert act.calls
+    used = set(act.calls[0][2])
+    assert used <= {"cung", "tank"} and "extra" not in used and used

@@ -7,7 +7,7 @@ from nta_agent.brain.digest import digest
 from nta_agent.brain.guard import sanitize_edits
 from nta_agent.brain.llm import BrainUnavailable
 from nta_agent.brain.policies import BrainPolicy
-from nta_agent.execution.profile import save_profile
+from nta_agent.execution.profile import apply_edits, save_profile
 
 
 class BrainService:
@@ -29,16 +29,6 @@ class BrainService:
         self._calls = 0
         self._off = False
 
-    def _apply(self, clean: dict) -> bool:
-        changed = False
-        for domain in ("army", "occupy"):
-            target = getattr(self.profile, domain)
-            for k, v in (clean.get(domain) or {}).items():
-                if target.get(k) != v:
-                    target[k] = v
-                    changed = True
-        return changed
-
     def tick(self, state) -> None:
         self._tick += 1
         if self._off or not self.policy.should_call(self._tick, self._calls):
@@ -49,7 +39,7 @@ class BrainService:
             edits = self._propose(dg, self.profile)
             valid = {str(a.get("uid")) for a in armies}
             clean = sanitize_edits(edits, self.profile, valid)
-            changed = self._apply(clean)
+            changed = apply_edits(self.profile, clean)
             if changed:
                 save_profile(self.profile, self.cfg.profile_path)
             self._calls += 1

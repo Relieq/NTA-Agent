@@ -17,3 +17,20 @@ def test_digest_is_compact_and_has_armies_and_profile():
     assert d["armies"][0]["uid"] == "A"
     assert d["armies"][0]["composition"] == {"3101": 2, "3305": 1}
     assert "occupy" in d["profile"] and "army" in d["profile"]
+
+
+def test_digest_includes_presets_active_notes():
+    from nta_agent.execution.profile import load_profile
+    p = load_profile("none")
+    p.army["presets"]["turtle"] = {"group": ["A"]}
+    p.army["active"] = "turtle"
+    p.notes = ["early: timber"]
+    st = SimpleNamespace(main_city_index=1,
+                         resources=SimpleNamespace(**{k: 0 for k in
+                             ("cereal", "timber", "stone", "iron", "gold", "stamina",
+                              "exp_book", "up_scroll", "fixator")}),
+                         raw={})
+    d = digest(st, p, [])
+    assert "turtle" in d["profile"]["army"]["presets"]
+    assert d["profile"]["army"]["active"] == "turtle"
+    assert d["notes"] == ["early: timber"]

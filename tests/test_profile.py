@@ -25,3 +25,43 @@ def test_save_then_load_roundtrip(tmp_path):
     prof.occupy["max_loss"] = 7
     save_profile(prof, f)
     assert load_profile(f).occupy["max_loss"] == 7
+
+
+# --- B4: presets / active / notes ---
+from nta_agent.execution.profile import active_formation, apply_edits
+
+
+def test_defaults_have_presets_active_notes():
+    p = load_profile("none")
+    assert p.army["presets"] == {} and p.army["active"] == ""
+    assert p.notes == []
+
+
+def test_active_formation_prefers_active_preset():
+    p = load_profile("none")
+    p.army["presets"]["turtle"] = {"group": ["A"], "roles": {"A": "tank"},
+                                   "onetile": False, "composition": {"A": {"3101": 5}}}
+    assert active_formation(p)["group"] == p.army["group"]   # active "" -> flat
+    p.army["active"] = "turtle"
+    assert active_formation(p)["group"] == ["A"]
+    assert active_formation(p)["onetile"] is False
+
+
+def test_apply_edits_merges_and_activates():
+    p = load_profile("none")
+    changed = apply_edits(p, {"army": {"presets": {"turtle": {"group": ["A"], "roles": {},
+                              "onetile": True, "composition": {}}}, "active": "turtle"},
+                              "occupy": {"max_loss": 8}, "notes": ["early: timber"]})
+    assert changed is True
+    assert p.army["active"] == "turtle"
+    assert p.army["group"] == ["A"]           # activated -> flat synced
+    assert p.occupy["max_loss"] == 8
+    assert p.notes == ["early: timber"]
+    assert apply_edits(p, {}) is False        # no-op
+
+
+def test_notes_edit_replaces_list():
+    p = load_profile("none")
+    apply_edits(p, {"notes": ["a"]})
+    apply_edits(p, {"notes": ["a", "b"]})
+    assert p.notes == ["a", "b"]

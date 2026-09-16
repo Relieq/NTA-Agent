@@ -19,7 +19,10 @@ _SYSTEM = (
     '"occupy":{"max_loss":0-100,"max_march_ms":int>=0,'
     '"loot":{"enabled":bool,"min_reward_per_chest":number>=0}}}\n'
     "Only include fields you want to change. max_loss is the max acceptable "
-    "predicted troop-loss % for occupying a cell (0 = never lose troops)."
+    "predicted troop-loss % for occupying a cell (0 = never lose troops).\n"
+    "army.presets is a map of named formations you can create/recall; set "
+    "army.active to a preset name to make it the active formation. notes is a "
+    "list of durable free-form strategy reminders you should keep and consider."
 )
 
 
@@ -37,13 +40,19 @@ def _parse_json(text: str) -> dict:
         return {}
 
 
-def propose(digest: dict, profile, chat=None) -> dict:
+def propose(digest: dict, profile, chat=None, instruction=None, history=None) -> dict:
     chat = chat or default_chat()
     user = ("CURRENT PROFILE:\n"
-            + json.dumps({"army": profile.army, "occupy": profile.occupy})
+            + json.dumps({"army": profile.army, "occupy": profile.occupy,
+                          "notes": profile.notes})
             + "\n\nGAME STATE:\n" + json.dumps(digest))
     messages = [{"role": "system", "content": _SYSTEM},
                 {"role": "user", "content": user}]
+    for h in (history or []):
+        if isinstance(h, dict) and h.get("role") and h.get("content"):
+            messages.append({"role": h["role"], "content": str(h["content"])})
+    if instruction:
+        messages.append({"role": "user", "content": "INSTRUCTION: " + str(instruction)})
     return _parse_json(chat(messages))
 
 

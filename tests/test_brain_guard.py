@@ -30,3 +30,26 @@ def test_army_only_real_uids_and_nonneg_counts():
 
 def test_fully_invalid_is_empty():
     assert sanitize_edits({"nope": 1}, _prof(), set()) == {}
+
+
+def test_presets_validated_like_formation():
+    e = {"army": {"presets": {"turtle": {"group": ["A", "X"], "roles": {"A": "tank", "X": "archer"},
+                  "onetile": 1, "composition": {"A": {"3101": -1}, "X": {"3305": 2}}}},
+                  "active": "turtle"}}
+    out = sanitize_edits(e, _prof(), {"A"})
+    t = out["army"]["presets"]["turtle"]
+    assert t["group"] == ["A"] and t["roles"] == {"A": "tank"}
+    assert t["onetile"] is True and t["composition"] == {"A": {"3101": 0}}
+    assert out["army"]["active"] == "turtle"   # names a preset in the edit
+
+
+def test_active_dropped_when_unknown():
+    out = sanitize_edits({"army": {"active": "ghost"}}, _prof(), {"A"})
+    assert "active" not in out.get("army", {})
+
+
+def test_notes_capped_and_stringified():
+    e = {"notes": ["ok note", 123, "x" * 500] + ["n"] * 30}
+    out = sanitize_edits(e, _prof(), set())
+    assert len(out["notes"]) <= 20
+    assert all(isinstance(s, str) and len(s) <= 200 for s in out["notes"])

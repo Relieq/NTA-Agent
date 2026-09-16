@@ -28,3 +28,18 @@ def test_default_chat_without_key_raises(monkeypatch):
         raise AssertionError("expected BrainUnavailable")
     except BrainUnavailable:
         pass
+
+
+def test_instruction_and_history_reach_prompt():
+    seen = {}
+
+    def fake_chat(messages):
+        seen["m"] = messages
+        return "{}"
+
+    propose({"x": 1}, load_profile("none"), chat=fake_chat,
+            instruction="create formation turtle",
+            history=[{"role": "user", "content": "hi earlier"}])
+    blob = " ".join(m["content"] for m in seen["m"])
+    assert "create formation turtle" in blob and "hi earlier" in blob
+    assert "presets" in seen["m"][0]["content"]  # schema documents presets

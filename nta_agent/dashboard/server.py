@@ -3,6 +3,8 @@ from __future__ import annotations
 
 import json
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
+from pathlib import Path
+from types import SimpleNamespace
 from urllib.parse import parse_qs, urlparse
 
 from nta_agent.dashboard.data import read_json_array, read_state, tail_events
@@ -12,6 +14,46 @@ from nta_agent.runtime.commands import append_command
 from nta_agent.runtime.config import RuntimeConfig
 
 _VALID_TRACK = {"pawn", "policy", "equip"}
+_RES_KEYS = ("cereal", "timber", "stone", "iron", "gold", "stamina",
+             "exp_book", "up_scroll", "fixator")
+
+
+def _chat_state():
+    """Minimal state object the digest can read (chat needs no live resources)."""
+    return SimpleNamespace(main_city_index=0,
+                           resources=SimpleNamespace(**{k: 0 for k in _RES_KEYS}), raw={})
+
+
+def handle_chat(cfg, message, *, history=None, propose=None):
+    """Turn a chat instruction into a guarded profile edit: LLM -> sanitize ->
+    apply -> persist profile.json -> queue a profile_edit command. Pure of HTTP."""
+    from nta_agent.brain import llm as _llm
+    from nta_agent.brain.digest import digest
+    from nta_agent.brain.guard import sanitize_edits
+    from nta_agent.brain.llm import BrainUnavailable
+    from nta_agent.execution.profile import apply_edits, load_profile, save_profile
+    propose = propose or _llm.propose
+    profile = load_profile(cfg.profile_path)
+    try:
+        armies = json.loads(Path(cfg.armies_path).read_text(encoding="utf-8"))
+    except (OSError, ValueError):
+        armies = []
+    valid = {str(a.get("uid")) for a in armies}
+    dg = digest(_chat_state(), profile, armies)
+    try:
+        edits = propose(dg, profile, instruction=message, history=history or [])
+    except BrainUnavailable as e:
+        return {"ok": False, "error": "brain unavailable: %s" % e}
+    except Exception as e:  # network/parse — surface, change nothing
+        return {"ok": False, "error": str(e)}
+    clean = sanitize_edits(edits, profile, valid)
+    apply_edits(profile, clean)
+    save_profile(profile, cfg.profile_path)
+    append_command(cfg.commands_path, {"action": "profile_edit", "edits": clean})
+    return {"ok": True, "applied": clean, "rationale": (edits or {}).get("rationale", ""),
+            "active": profile.army.get("active", ""),
+            "presets": list(profile.army.get("presets") or {}),
+            "notes": profile.notes}
 
 
 class DashboardServer(ThreadingHTTPServer):
@@ -19,6 +61,7 @@ class DashboardServer(ThreadingHTTPServer):
         super().__init__(addr, handler)
         self.cfg = cfg
         self.build_names = load_build_names()
+        self.chat_history = []
 
 
 class Handler(BaseHTTPRequestHandler):
@@ -67,6 +110,22 @@ class Handler(BaseHTTPRequestHandler):
     def do_POST(self):
         parsed = urlparse(self.path)
         cfg = self.server.cfg
+        if parsed.path == "/api/chat":
+            try:
+                length = int(self.headers.get("Content-Length", "0"))
+                body = json.loads(self.rfile.read(length) or b"{}")
+            except (ValueError, TypeError):
+                self._json(400, {"ok": False, "error": "bad json"})
+                return
+            msg = str(body.get("message", "")).strip()
+            if not msg:
+                self._json(400, {"ok": False, "error": "empty message"})
+                return
+            hist = getattr(self.server, "chat_history", [])
+            out = handle_chat(cfg, msg, history=hist)
+            self.server.chat_history = (hist + [{"role": "user", "content": msg}])[-6:]
+            self._json(200 if out.get("ok") else 503, out)
+            return
         if parsed.path != "/api/command":
             self._json(404, {"ok": False, "error": "not found"})
             return

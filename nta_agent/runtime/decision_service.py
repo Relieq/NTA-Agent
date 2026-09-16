@@ -16,13 +16,14 @@ _TRACK_TP = {"pawn": 2, "policy": 1, "equip": 3}
 
 
 class DecisionService:
-    def __init__(self, actions, config, cfg, on_event=None, armies_every=6):
+    def __init__(self, actions, config, cfg, on_event=None, armies_every=6, profile=None):
         self.actions = actions
         self.config = config
         self.cfg = cfg
         self._on_event = on_event or (lambda *a: None)
         self.armies_every = armies_every
         self._armies_counter = 0
+        self.profile = profile  # shared live Profile for profile_edit commands
 
     def _write_decisions(self, state) -> None:
         data = [asdict(d) for d in pending_decisions(state, self.config)]
@@ -51,6 +52,11 @@ class DecisionService:
     def _execute(self, cmd: dict) -> None:
         action = cmd.get("action")
         lv = int(cmd.get("lv", 0) or 0)
+        if action == "profile_edit":
+            if self.profile is not None:
+                from nta_agent.execution.profile import apply_edits
+                apply_edits(self.profile, cmd.get("edits") or {})
+            return
         if action == "equip":
             self.actions.change_pawn_equip(
                 int(cmd["pawn_id"]), cmd["equip_uid"],
