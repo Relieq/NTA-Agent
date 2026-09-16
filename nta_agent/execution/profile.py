@@ -11,9 +11,11 @@ from dataclasses import dataclass
 from pathlib import Path
 
 DEFAULT_PROFILE = {
-    "army": {"group": [], "roles": {}, "onetile": True, "composition": {}},
+    "army": {"group": [], "roles": {}, "onetile": True, "composition": {},
+             "active": "", "presets": {}},
     "occupy": {"max_loss": 0.0, "max_march_ms": 0,
                "loot": {"enabled": True, "min_reward_per_chest": 0.0}},
+    "notes": [],
 }
 
 
@@ -33,6 +35,7 @@ def _merge(base: dict, over: dict) -> dict:
 class Profile:
     army: dict
     occupy: dict
+    notes: list
 
 
 def load_profile(path) -> Profile:
@@ -42,14 +45,57 @@ def load_profile(path) -> Profile:
     except (FileNotFoundError, ValueError, OSError):
         data = {}
     merged = _merge(DEFAULT_PROFILE, data if isinstance(data, dict) else {})
-    return Profile(army=merged["army"], occupy=merged["occupy"])
+    return Profile(army=merged["army"], occupy=merged["occupy"], notes=merged["notes"])
 
 
 def save_profile(profile: Profile, path) -> None:
     p = Path(path)
     p.parent.mkdir(parents=True, exist_ok=True)
-    p.write_text(json.dumps({"army": profile.army, "occupy": profile.occupy},
+    p.write_text(json.dumps({"army": profile.army, "occupy": profile.occupy,
+                             "notes": profile.notes},
                             ensure_ascii=False, indent=1), encoding="utf-8")
+
+
+def active_formation(profile: Profile) -> dict:
+    """The active preset's formation, or the flat army fields when none is active."""
+    name = (profile.army or {}).get("active") or ""
+    preset = (profile.army.get("presets") or {}).get(name)
+    src = preset if preset else profile.army
+    return {"group": src.get("group", []), "roles": src.get("roles", {}),
+            "onetile": src.get("onetile", True), "composition": src.get("composition", {})}
+
+
+def apply_edits(profile: Profile, clean: dict) -> bool:
+    """Merge sanitized edits (occupy/army/presets/notes/active) into the profile in
+    place. Activating a preset syncs its fields into the flat army.*. Returns
+    whether anything changed."""
+    changed = False
+    if isinstance(clean.get("occupy"), dict):
+        for k, v in clean["occupy"].items():
+            if profile.occupy.get(k) != v:
+                profile.occupy[k] = v
+                changed = True
+    if isinstance(clean.get("army"), dict):
+        for k, v in clean["army"].items():
+            if k == "presets" and isinstance(v, dict):
+                for name, preset in v.items():
+                    if profile.army["presets"].get(name) != preset:
+                        profile.army["presets"][name] = preset
+                        changed = True
+            elif profile.army.get(k) != v:
+                profile.army[k] = v
+                changed = True
+    if "notes" in clean and clean["notes"] != profile.notes:
+        profile.notes = list(clean["notes"])
+        changed = True
+    active = profile.army.get("active") or ""
+    preset = (profile.army.get("presets") or {}).get(active)
+    if preset:
+        for k in ("group", "roles", "onetile", "composition"):
+            if k in preset and profile.army.get(k) != preset[k]:
+                profile.army[k] = preset[k]
+                changed = True
+    return changed
 
 
 def composition_target(profile: Profile, area_armys: list, unlocked_ids) -> tuple | None:

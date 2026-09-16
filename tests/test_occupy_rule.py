@@ -223,9 +223,10 @@ def test_occupy_uses_profile_farming_within_budget(monkeypatch):
     # max_loss=10 accommodates the stats-fallback predictor (reports ~5% even on
     # crushing wins); with the real sim, 0-loss cells report 0. Tests the farming
     # ranking, not the loss threshold.
-    prof = Profile(army={"group": ["A"], "roles": {}, "onetile": True, "composition": {}},
+    prof = Profile(army={"group": ["A"], "roles": {}, "onetile": True, "composition": {},
+                         "active": "", "presets": {}},
                    occupy={"max_loss": 10, "max_march_ms": 0,
-                           "loot": {"enabled": True, "min_reward_per_chest": 0}})
+                           "loot": {"enabled": True, "min_reward_per_chest": 0}}, notes=[])
     monkeypatch.setattr(tm, "cell_loot",
                         lambda land, cfg: CellLoot(1, 100.0) if land == 11 else CellLoot(1, 10.0))
     events = []
