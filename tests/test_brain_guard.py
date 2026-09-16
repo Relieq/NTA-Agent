@@ -53,3 +53,15 @@ def test_notes_capped_and_stringified():
     out = sanitize_edits(e, _prof(), set())
     assert len(out["notes"]) <= 20
     assert all(isinstance(s, str) and len(s) <= 200 for s in out["notes"])
+
+
+def test_build_edits_filtered_to_valid_ids():
+    out = sanitize_edits({"build": {"order": [2002, 999999, "x"], "skip": [2000]}},
+                         _prof(), set(), valid_build_ids={2000, 2002})
+    assert out["build"]["order"] == [2002]     # 999999/"x" dropped
+    assert out["build"]["skip"] == [2000]
+
+
+def test_build_edits_dropped_without_valid_ids():
+    out = sanitize_edits({"build": {"order": [2002]}}, _prof(), set())
+    assert "build" not in out

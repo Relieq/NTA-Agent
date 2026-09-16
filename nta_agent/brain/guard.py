@@ -32,7 +32,7 @@ def _formation(f: dict, valid: set) -> dict:
     return out
 
 
-def sanitize_edits(edits: dict, profile, valid_army_uids) -> dict:
+def sanitize_edits(edits: dict, profile, valid_army_uids, valid_build_ids=None) -> dict:
     valid = {str(u) for u in (valid_army_uids or ())}
     out: dict = {}
 
@@ -75,4 +75,15 @@ def sanitize_edits(edits: dict, profile, valid_army_uids) -> dict:
 
     if isinstance(edits.get("notes"), list):
         out["notes"] = [str(s).strip()[:200] for s in edits["notes"] if str(s).strip()][:20]
+
+    build_in = edits.get("build") if isinstance(edits, dict) else None
+    if isinstance(build_in, dict) and valid_build_ids is not None:
+        valid_b = {int(x) for x in valid_build_ids}
+        b: dict = {}
+        for key in ("order", "skip"):
+            if isinstance(build_in.get(key), list):
+                b[key] = [int(x) for x in build_in[key]
+                          if isinstance(x, int) and int(x) in valid_b]
+        if b:
+            out["build"] = b
     return out

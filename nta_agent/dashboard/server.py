@@ -39,6 +39,11 @@ def handle_chat(cfg, message, *, history=None, propose=None):
     except (OSError, ValueError):
         armies = []
     valid = {str(a.get("uid")) for a in armies}
+    try:
+        from nta_agent.data.config import GameConfig
+        valid_build = set(GameConfig.load().in_city_build_ids())
+    except Exception:
+        valid_build = None
     dg = digest(_chat_state(), profile, armies)
     try:
         edits = propose(dg, profile, instruction=message, history=history or [])
@@ -46,7 +51,7 @@ def handle_chat(cfg, message, *, history=None, propose=None):
         return {"ok": False, "error": "brain unavailable: %s" % e}
     except Exception as e:  # network/parse — surface, change nothing
         return {"ok": False, "error": str(e)}
-    clean = sanitize_edits(edits, profile, valid)
+    clean = sanitize_edits(edits, profile, valid, valid_build_ids=valid_build)
     apply_edits(profile, clean)
     save_profile(profile, cfg.profile_path)
     append_command(cfg.commands_path, {"action": "profile_edit", "edits": clean})
