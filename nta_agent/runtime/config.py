@@ -19,6 +19,8 @@ class RuntimeConfig:
     interval: float = 5.0
     max_backoff: float = 60.0
     log_dir: Path = Path("build/run")
+    brain_every_ticks: int = 60
+    brain_max_calls: int = 50
 
     @property
     def snapshot_path(self) -> Path:
@@ -65,4 +67,6 @@ class RuntimeConfig:
             interval=float(env.get("NTA_TICK_INTERVAL", "5.0")),
             max_backoff=float(env.get("NTA_MAX_BACKOFF", "60.0")),
             log_dir=Path(env.get("NTA_LOG_DIR", "build/run")),
+            brain_every_ticks=int(env.get("NTA_BRAIN_EVERY", "60")),
+            brain_max_calls=int(env.get("NTA_BRAIN_MAX_CALLS", "50")),
         )
