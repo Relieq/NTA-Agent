@@ -38,6 +38,7 @@ INDEX_HTML = """<!doctype html>
  <div class="card full"><h2>Đội quân</h2><div id="armies"><span class="muted">—</span></div></div>
  <div class="card full"><h2>Quyết định đang chờ</h2><div id="decisions"><span class="muted">—</span></div></div>
  <div class="card full"><h2>Trang bị lính</h2><div id="equipment"><span class="muted">—</span></div></div>
+ <div class="card full"><h2>Lãnh thổ</h2><div id="territory" class="muted">—</div></div>
  <div class="card full"><h2>Xây dựng — Thứ tự xây &amp; Bỏ qua</h2>
    <div class="muted">Kéo-thả hoặc ▲▼ để đổi ưu tiên; tick "bỏ qua" để agent không tự đụng.</div>
    <ul id="buildorder" class="bolist"></ul>
@@ -184,9 +185,16 @@ async function saveBuildOrder(){
    renderBuildOrder();
  }catch(e){msg.textContent=" ⚠️ "+e;}
 }
+async function renderTerritory(){
+ const t=await j("/api/territory");if(!t)return;
+ const forts=(t.forts||[]).map(f=>`Cứ Điểm @${f.index} (${f.x},${f.y})${f.auto_support?" ⛨":""}`).join("<br>")||"—";
+ document.getElementById("territory").innerHTML=
+   `Thành chính: <b>${t.main_city||"?"}</b> · Quân trú: <b>${(t.garrisons||[]).length}</b>`+
+   `<div style=margin-top:6px>${forts}</div>`;
+}
 document.getElementById("boSave").onclick=saveBuildOrder;
 document.getElementById("chatsend").onclick=sendChat;
 document.getElementById("chatin").addEventListener("keydown",e=>{if(e.key==="Enter")sendChat();});
-renderBuildOrder();
-refresh();setInterval(refresh,2000);
+renderBuildOrder();renderTerritory();
+refresh();setInterval(refresh,2000);setInterval(renderTerritory,4000);
 </script></body></html>"""
