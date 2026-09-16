@@ -43,3 +43,31 @@ def test_build_order_upgrades_existing():
     assert rule.applies(st, act) is True
     rule.act(act)
     assert act.calls == [("up", 109726, "m")]
+
+
+from nta_agent.execution.profile import Profile
+
+
+def _profile(order, skip):
+    return Profile(army={"group": [], "roles": {}, "onetile": True, "composition": {},
+                         "active": "", "presets": {}},
+                   occupy={}, notes=[], build={"order": order, "skip": skip})
+
+
+def test_build_order_skips_wall_via_profile():
+    st = _state([Building(id=2001, lv=10, uid="m", index=109726),
+                 Building(id=2000, lv=5, uid="w", index=109726)])
+    act = Acts()
+    rule = BuildOrder(profile=_profile(order=[], skip=[2000]), config=GameConfig.load())
+    assert rule.applies(st, act) is True
+    rule.act(act)
+    assert act.calls and act.calls[0][0] == "add"      # a construct, not wall upgrade
+
+
+def test_build_order_prioritizes_profile_order():
+    st = _state([Building(id=2001, lv=10, uid="m", index=109726)])
+    act = Acts()
+    rule = BuildOrder(profile=_profile(order=[2016], skip=[]), config=GameConfig.load())
+    assert rule.applies(st, act) is True
+    rule.act(act)
+    assert act.calls == [("add", 109726, 2016)]
