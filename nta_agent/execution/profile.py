@@ -5,6 +5,7 @@ Persisted JSON with defaults; loaded each tick. Later authored by brain/chat
 """
 from __future__ import annotations
 
+import copy
 import json
 from dataclasses import dataclass
 from pathlib import Path
@@ -17,12 +18,14 @@ DEFAULT_PROFILE = {
 
 
 def _merge(base: dict, over: dict) -> dict:
-    out = dict(base)
+    # deep-copy so the returned profile never shares mutable state with DEFAULT_PROFILE
+    # (rules/brain mutate the profile in place).
+    out = copy.deepcopy(base)
     for k, v in (over or {}).items():
         if isinstance(v, dict) and isinstance(base.get(k), dict):
             out[k] = _merge(base[k], v)
         else:
-            out[k] = v
+            out[k] = copy.deepcopy(v)
     return out
 
 

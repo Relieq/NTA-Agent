@@ -233,6 +233,17 @@ class Actions:
         return self.session.request("game/HD_ClaimArmyTreasure",
                                     {"index": int(index), "auid": str(army_uid)})
 
+    def open_armys_treasure(self, targets: list[dict]) -> dict:
+        """Batch-open earned treasures (GAME_HD_OpenArmysTreasure).
+
+        ``targets`` = [{"index": int, "auid": str}, ...].
+        """
+        return self.session.request("game/HD_OpenArmysTreasure", {"targets": targets})
+
+    def claim_armys_treasure(self, targets: list[dict]) -> dict:
+        """Batch-claim opened treasures (GAME_HD_ClaimArmysTreasure)."""
+        return self.session.request("game/HD_ClaimArmysTreasure", {"targets": targets})
+
     # ---- formation (tank troop order) ----------------------------------- #
     def move_area_pawns(self, index: int, army_uid: str, assignment: dict) -> dict:
         """Set the grid positions of an army's pawns (GAME_HD_MoveAreaPawns).

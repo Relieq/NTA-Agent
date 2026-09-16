@@ -1,0 +1,66 @@
+"""The only module that talks to OpenAI. Injectable ``chat`` for tests."""
+from __future__ import annotations
+
+import json
+import os
+import urllib.request
+
+
+class BrainUnavailable(Exception):
+    """No API key / provider unreachable — the brain is skipped this tick."""
+
+
+_SYSTEM = (
+    "You tune a strategy game agent by editing its tactics PROFILE. You never "
+    "control the game directly. Return ONLY a JSON object with the profile fields "
+    "to change and a short 'rationale'. Schema:\n"
+    '{"army":{"group":[armyUid],"roles":{armyUid:"archer|tank"},"onetile":bool,'
+    '"composition":{armyUid:{pawnId:count}}},'
+    '"occupy":{"max_loss":0-100,"max_march_ms":int>=0,'
+    '"loot":{"enabled":bool,"min_reward_per_chest":number>=0}}}\n'
+    "Only include fields you want to change. max_loss is the max acceptable "
+    "predicted troop-loss % for occupying a cell (0 = never lose troops)."
+)
+
+
+def _parse_json(text: str) -> dict:
+    t = (text or "").strip()
+    if t.startswith("```"):
+        t = t[3:]
+        if t.lower().startswith("json"):
+            t = t[4:]
+        t = t.split("```", 1)[0]
+    try:
+        obj = json.loads(t.strip())
+        return obj if isinstance(obj, dict) else {}
+    except (ValueError, TypeError):
+        return {}
+
+
+def propose(digest: dict, profile, chat=None) -> dict:
+    chat = chat or default_chat()
+    user = ("CURRENT PROFILE:\n"
+            + json.dumps({"army": profile.army, "occupy": profile.occupy})
+            + "\n\nGAME STATE:\n" + json.dumps(digest))
+    messages = [{"role": "system", "content": _SYSTEM},
+                {"role": "user", "content": user}]
+    return _parse_json(chat(messages))
+
+
+def default_chat():
+    key = os.environ.get("OPENAI_API_KEY")
+    if not key:
+        raise BrainUnavailable("OPENAI_API_KEY not set")
+    model = os.environ.get("OPENAI_MODEL", "gpt-4o-mini")
+
+    def chat(messages):
+        body = json.dumps({"model": model, "messages": messages, "temperature": 0.2,
+                           "response_format": {"type": "json_object"}}).encode("utf-8")
+        req = urllib.request.Request(
+            "https://api.openai.com/v1/chat/completions", data=body,
+            headers={"Authorization": "Bearer " + key, "Content-Type": "application/json"})
+        with urllib.request.urlopen(req, timeout=30) as resp:
+            data = json.loads(resp.read().decode("utf-8"))
+        return data["choices"][0]["message"]["content"]
+
+    return chat

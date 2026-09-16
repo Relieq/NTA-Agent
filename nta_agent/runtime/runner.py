@@ -33,9 +33,10 @@ def run(cfg: RuntimeConfig, *, ticks: int = 0, session=None, engine=None) -> Non
     if session is None:
         session = build_session(cfg)
         log.append("started", {"host": cfg.host})
+    from nta_agent.execution.profile import load_profile
+    profile = load_profile(cfg.profile_path)  # shared by the rules and the brain
     if engine is None:
-        from nta_agent.execution.profile import load_profile
-        engine = RuleEngine.default(profile=load_profile(cfg.profile_path))
+        engine = RuleEngine.default(profile=profile)
     agent = Agent(session, engine, max_backoff=cfg.max_backoff, on_event=log.append)
 
     try:
@@ -47,6 +48,8 @@ def run(cfg: RuntimeConfig, *, ticks: int = 0, session=None, engine=None) -> Non
     if config is not None:
         service = DecisionService(agent.actions, config, cfg, on_event=log.append)
         agent.captcha = CaptchaSolver(agent.actions, config)
+    from nta_agent.runtime.brain_service import BrainService
+    brain = BrainService(profile, cfg, on_event=log.append, actions=agent.actions)
     # Surface the occupy planner's reasoning (chosen army + predicted loss) to the log.
     for rule in getattr(agent.engine, "rules", []):
         if getattr(rule, "name", "") == "occupy_cell":
@@ -63,6 +66,7 @@ def run(cfg: RuntimeConfig, *, ticks: int = 0, session=None, engine=None) -> Non
         _safe(log.tick, i, fired, state)
         if service is not None:
             _safe(service.tick, state)
+        _safe(brain.tick, state)
 
     try:
         agent.run(ticks=ticks, interval=cfg.interval, on_tick=on_tick)
