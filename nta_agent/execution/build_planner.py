@@ -8,10 +8,20 @@ can't verify locally are left for the server to reject (the rule handles that).
 """
 from __future__ import annotations
 
+from dataclasses import dataclass
+
 from nta_agent.data.config import GameConfig
 from nta_agent.state.schema import Building, GameState
 
 MAIN_HALL_ID = 2001
+
+
+@dataclass
+class BuildAction:
+    kind: str          # "construct" | "upgrade"
+    build_id: int
+    up: object         # BuildUpgrade for the target level
+    build: object = None  # existing Building (upgrades); None for constructs
 _PREP_NEED_BUILDING = 4  # prep_cond "4,<buildId>,<lv>": need that building at <lv>
 
 
@@ -85,4 +95,55 @@ def next_upgrade(
             if not _affordable(up.cost, state):
                 continue
             return build, up
+    return None
+
+
+def next_build_action(
+    state: GameState,
+    config: GameConfig,
+    sequence: list[int] | None = None,
+    blocked: set | None = None,
+) -> BuildAction | None:
+    """The next build action — construct a new building (lv1) or upgrade one.
+
+    For each id in the order: if the instance count is below ``max_count`` and a
+    fresh lv1 is unlocked/affordable/not-blocked, construct it; otherwise fall
+    through to upgrading an existing instance (as :func:`next_upgrade`).
+    """
+    if not state.builds:
+        return None
+    if len(state.build_queue) >= state.build_queue_slots:
+        return None
+    blocked = blocked or set()
+    queued_uids = {str(q.get("uid", "")) for q in state.build_queue}
+    level_by_id = {b.id: b.lv for b in state.builds}
+    main_lv = level_by_id.get(MAIN_HALL_ID, 0)
+    counts: dict[int, int] = {}
+    for b in state.builds:
+        counts[b.id] = counts.get(b.id, 0) + 1
+    order = sequence or sorted({b.id for b in state.builds})
+
+    for build_id in order:
+        # construct if under the instance cap and eligible at lv1
+        if (counts.get(build_id, 0) < config.max_count(build_id)
+                and ("construct", build_id) not in blocked):
+            up1 = config.build_upgrade(build_id, 1)
+            if (up1 is not None and _prep_ok(up1.prep_cond, level_by_id)
+                    and _affordable(up1.cost, state)
+                    and (build_id == MAIN_HALL_ID or main_lv >= 1)):
+                return BuildAction(kind="construct", build_id=build_id, up=up1)
+        # else upgrade an existing instance
+        for build in [b for b in state.builds if b.id == build_id]:
+            if build.uid in queued_uids:
+                continue
+            target = build.lv + 1
+            if (build.uid, target) in blocked:
+                continue
+            if build_id != MAIN_HALL_ID and target > main_lv:
+                continue
+            up = config.build_upgrade(build_id, target)
+            if up is None or not _prep_ok(up.prep_cond, level_by_id) \
+                    or not _affordable(up.cost, state):
+                continue
+            return BuildAction(kind="upgrade", build_id=build_id, up=up, build=build)
     return None
