@@ -73,6 +73,11 @@ class Actions:
         self._apply_result(reply)
         return reply
 
+    def add_build(self, index: int, build_id: int) -> dict:
+        """Construct a new building; the server auto-places it (GAME_HD_AddAreaBuild)."""
+        return self.session.request("game/HD_AddAreaBuild",
+                                    {"index": int(index), "id": int(build_id)})
+
     # ---- reads ----------------------------------------------------------- #
     def get_area(self, index: int, no_record: bool = True) -> dict:
         return self.session.request(
