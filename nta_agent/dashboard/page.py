@@ -31,6 +31,14 @@ INDEX_HTML = """<!doctype html>
  <div class="card full"><h2>Đội quân</h2><div id="armies"><span class="muted">—</span></div></div>
  <div class="card full"><h2>Quyết định đang chờ</h2><div id="decisions"><span class="muted">—</span></div></div>
  <div class="card full"><h2>Trang bị lính</h2><div id="equipment"><span class="muted">—</span></div></div>
+ <div class="card full"><h2>Chiến thuật (brain)</h2>
+   <div id="tactics" class="muted">—</div>
+   <div id="chatlog" class="feed" style="max-height:200px;overflow:auto;margin:8px 0"></div>
+   <div style="display:flex;gap:6px">
+     <input id="chatin" placeholder="Ra chỉ thị cho brain (vd: tạo đội hình 'rùa' 1 khiên 4 IMP)…" style="flex:1"/>
+     <button id="chatsend">Gửi</button>
+   </div>
+ </div>
  <div class="card full"><h2>Sự kiện gần đây</h2><ul id="feed" class="feed"></ul></div>
 </main>
 <script>
@@ -101,5 +109,29 @@ async function refresh(){
  renderDecisions();
  renderEquipment();
 }
+function renderTactics(t){
+ if(!t)return;
+ const presets=(t.presets||[]).join(", ")||"—";
+ const notes=(t.notes||[]).map(n=>`<li>${n}</li>`).join("")||"<li class=muted>—</li>";
+ document.getElementById("tactics").innerHTML=
+   `Đội hình đang dùng: <b>${t.active||"(mặc định)"}</b> · Presets: ${presets}<ul>${notes}</ul>`;
+}
+function chatLine(who,text){
+ const log=document.getElementById("chatlog");
+ log.innerHTML+=`<li><b>${who}:</b> ${text}</li>`;log.scrollTop=log.scrollHeight;
+}
+async function sendChat(){
+ const inp=document.getElementById("chatin"),msg=inp.value.trim();if(!msg)return;
+ inp.value="";chatLine("Bạn",msg);
+ const btn=document.getElementById("chatsend");btn.disabled=true;
+ try{
+   const r=await fetch("/api/chat",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({message:msg})});
+   const o=await r.json();
+   if(!o.ok){chatLine("Brain","⚠️ "+(o.error||"lỗi"));}
+   else{chatLine("Brain",(o.rationale||"đã cập nhật")+" — "+JSON.stringify(o.applied));renderTactics(o);}
+ }catch(e){chatLine("Brain","⚠️ "+e);}finally{btn.disabled=false;}
+}
+document.getElementById("chatsend").onclick=sendChat;
+document.getElementById("chatin").addEventListener("keydown",e=>{if(e.key==="Enter")sendChat();});
 refresh();setInterval(refresh,2000);
 </script></body></html>"""
