@@ -75,8 +75,9 @@ class BuildOrder:
     name: str = "build_order"
     sequence: list[int] | None = None
     config: object | None = None
-    _pending: object = None  # (Building, BuildUpgrade) chosen in applies()
-    _blocked: set = field(default_factory=set)  # (uid, target_lv) the server rejected
+    _pending: object = None  # BuildAction chosen in applies()
+    _city: int = 0           # main-city index for construction
+    _blocked: set = field(default_factory=set)  # server-rejected steps (2 key shapes)
     _sig: tuple = ()  # last builds signature; changing it clears blocks (retry)
 
     def _cfg(self):
@@ -97,21 +98,28 @@ class BuildOrder:
         if sig != self._sig:
             self._sig = sig
             self._blocked.clear()
-        from nta_agent.execution.build_planner import next_upgrade
-        self._pending = next_upgrade(state, cfg, self.sequence, self._blocked)
+        from nta_agent.execution.build_planner import next_build_action
+        self._pending = next_build_action(state, cfg, self.sequence, self._blocked)
+        self._city = state.main_city_index
         return self._pending is not None
 
     def act(self, actions: Actions) -> None:
-        if not self._pending:
-            return
-        build, up = self._pending
+        action = self._pending
         self._pending = None
+        if action is None:
+            return
         try:
-            actions.upgrade_build(build.index, uid=build.uid)
+            if action.kind == "construct":
+                actions.add_build(self._city, action.build_id)
+            else:
+                actions.upgrade_build(action.build.index, uid=action.build.uid)
         except Exception:
             # Server rejected (a condition we can't verify locally) — back off this
-            # exact step until the situation changes, and surface the error.
-            self._blocked.add((build.uid, up.level))
+            # exact step until the builds signature changes, and surface the error.
+            if action.kind == "construct":
+                self._blocked.add(("construct", action.build_id))
+            else:
+                self._blocked.add((action.build.uid, action.up.level))
             raise
 
 
