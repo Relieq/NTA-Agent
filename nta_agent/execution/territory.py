@@ -119,3 +119,57 @@ def scan_owned(actions, main: int, uid, map_width: int = 600, focus=None):
         fetch(int(cid))
 
     return owned, cities
+
+
+def scan_map(actions, main: int, uid, map_width: int = 600, focus=None) -> dict:
+    """Fetch the near chunks and decode EVERY player in them.
+
+    Returns owned/cities (mine), enemy_cells/enemy_cities (all other players),
+    and frontier (in-bounds 4-neighbours of my cells owned by nobody in view).
+    Fetches the same chunks as ``scan_owned`` — no extra requests.
+    """
+    uid = str(uid)
+    owned: set[int] = set()
+    cities: dict[int, int] = {}
+    enemy_cells: set[int] = set()
+    enemy_cities: dict[int, int] = {}
+    seen: set[int] = set()
+
+    def fetch(cid: int) -> list[int]:
+        if cid in seen:
+            return []
+        seen.add(cid)
+        reply = actions.get_map_chunk(int(cid)) or {}
+        cells_map = reply.get("cells") or {}
+        ox, oy = chunk_origin(int(cid), map_width)
+        mine_here: list[int] = []
+        for u, info in cells_map.items():
+            if not info:
+                continue
+            cells, cmap = decode_player_cells(info, ox, oy, map_width)
+            if str(u) == uid:
+                owned.update(cells)
+                cities.update(cmap)
+                mine_here = cells
+            else:
+                enemy_cells.update(cells)
+                enemy_cities.update(cmap)
+        return mine_here
+
+    start = chunk_id(int(main), map_width)
+    start_cells = fetch(start)
+    for cid in _neighbor_chunks(start_cells, start, map_width):
+        fetch(cid)
+    for cid in (focus or []):
+        fetch(int(cid))
+
+    frontier: set[int] = set()
+    for c in owned:
+        x, y = c % map_width, c // map_width
+        for nx, ny in ((x + 1, y), (x - 1, y), (x, y + 1), (x, y - 1)):
+            if 0 <= nx < map_width and 0 <= ny < map_width:
+                n = ny * map_width + nx
+                if n not in owned and n not in enemy_cells:
+                    frontier.add(n)
+    return {"owned": owned, "cities": cities, "enemy_cells": enemy_cells,
+            "enemy_cities": enemy_cities, "frontier": frontier}
