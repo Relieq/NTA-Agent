@@ -153,6 +153,8 @@ class DashboardServer(ThreadingHTTPServer):
         self.cfg = cfg
         self.build_names = load_build_names()
         self.chat_history = []
+        from nta_agent.dashboard.supervisor import AgentSupervisor
+        self.supervisor = AgentSupervisor(cfg)
 
 
 class Handler(BaseHTTPRequestHandler):
@@ -201,6 +203,8 @@ class Handler(BaseHTTPRequestHandler):
             self._json(200, read_territory_view(cfg))
         elif parsed.path == "/api/forts":
             self._json(200, read_forts_view(cfg))
+        elif parsed.path == "/api/agent/status":
+            self._json(200, self.server.supervisor.status())
         elif parsed.path.startswith("/static/"):
             code, ctype, body = serve_static(parsed.path[len("/static/"):])
             self._send(code, body, ctype)
@@ -210,6 +214,22 @@ class Handler(BaseHTTPRequestHandler):
     def do_POST(self):
         parsed = urlparse(self.path)
         cfg = self.server.cfg
+        if parsed.path.startswith("/api/agent/"):
+            action = parsed.path[len("/api/agent/"):]
+            sup = self.server.supervisor
+            fn = {"start": sup.start, "stop": sup.stop,
+                  "pause": sup.pause, "resume": sup.resume}.get(action)
+            if fn is None:
+                self._json(404, {"ok": False, "error": "unknown agent action"})
+                return
+            try:  # drain and ignore any request body
+                length = int(self.headers.get("Content-Length", "0"))
+                if length:
+                    self.rfile.read(length)
+            except (ValueError, TypeError):
+                pass
+            self._json(200, fn())
+            return
         if parsed.path == "/api/chat":
             try:
                 length = int(self.headers.get("Content-Length", "0"))
