@@ -17,6 +17,28 @@ _VALID_TRACK = {"pawn", "policy", "equip"}
 _RES_KEYS = ("cereal", "timber", "stone", "iron", "gold", "stamina",
              "exp_book", "up_scroll", "fixator")
 
+_STATIC_DIR = (Path(__file__).parent / "static").resolve()
+_STATIC_TYPES = {".js": "text/javascript", ".mjs": "text/javascript",
+                 ".css": "text/css", ".map": "application/json"}
+
+
+def serve_static(relpath: str):
+    """Return (status, content_type, body_bytes) for a file under the static dir.
+
+    Guards against path traversal and non-whitelisted extensions. 404 on any miss.
+    """
+    ext = ("." + relpath.rsplit(".", 1)[-1]).lower() if "." in relpath else ""
+    ctype = _STATIC_TYPES.get(ext)
+    if not ctype:
+        return 404, "text/plain", b"not found"
+    try:
+        target = (_STATIC_DIR / relpath).resolve()
+        target.relative_to(_STATIC_DIR)  # raises if traversal escaped the dir
+        body = target.read_bytes()
+    except (ValueError, OSError):
+        return 404, "text/plain", b"not found"
+    return 200, ctype + "; charset=utf-8", body
+
 
 def _chat_state():
     """Minimal state object the digest can read (chat needs no live resources)."""
@@ -179,6 +201,9 @@ class Handler(BaseHTTPRequestHandler):
             self._json(200, read_territory_view(cfg))
         elif parsed.path == "/api/forts":
             self._json(200, read_forts_view(cfg))
+        elif parsed.path.startswith("/static/"):
+            code, ctype, body = serve_static(parsed.path[len("/static/"):])
+            self._send(code, body, ctype)
         else:
             self._json(404, {"error": "not found"})
 
