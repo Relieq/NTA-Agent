@@ -49,6 +49,21 @@ def test_territory_and_forts_panels():
     assert "TerritoryPanel" in app and "FortsPanel" in app
 
 
+def test_territory_map_has_rulers_and_decisions():
+    terr = _c("TerritoryPanel.js")
+    assert "fillText" in terr                 # coordinate ruler labels
+    assert "accepted" in terr                 # renders accepted forts
+    assert "/api/forts/decide" in terr        # click -> decide
+    assert "getBoundingClientRect" in terr    # canvas click hit-test
+
+
+def test_forts_panel_decision_buttons():
+    fp = _c("FortsPanel.js")
+    assert "/api/forts/decide" in fp
+    assert "Chấp thuận" in fp and "Từ chối" in fp
+    assert "accepted" in fp and "rejected" in fp
+
+
 def test_build_order_panel():
     bo = _c("BuildOrderPanel.js")
     assert "/api/profile" in bo
