@@ -28,3 +28,12 @@ def test_armies_and_events_panels():
     assert "[object Object]" not in ev and "rationale" in ev  # object detail formatting preserved
     app = _app()
     assert "ArmiesPanel" in app and "EventsPanel" in app
+
+
+def test_decisions_and_equipment_panels():
+    dec = _c("DecisionsPanel.js")
+    assert "/api/decisions" in dec and "/api/command" in dec and "reroll" in dec
+    eq = _c("EquipmentPanel.js")
+    assert "/api/equipment" in eq and "equip" in eq
+    app = _app()
+    assert "DecisionsPanel" in app and "EquipmentPanel" in app
