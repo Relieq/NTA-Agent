@@ -58,6 +58,38 @@ def test_tick_executes_reroll(tmp_path):
     assert act.calls == [("reroll", 2, 1)]
 
 
+class _EcodeConfig(FakeConfig):
+    def table(self, name):
+        if name == "ecode":
+            return {500053: {"vi": "Vàng không đủ"}}
+        return super().table(name)
+
+
+def test_ecode_reason_maps_code():
+    from nta_agent.runtime.decision_service import ecode_reason
+    assert ecode_reason(_EcodeConfig(), "game/HD_CeriResetSelect: ecode.500053") == "Vàng không đủ"
+    assert ecode_reason(_EcodeConfig(), "no code here") == ""
+    assert ecode_reason(None, "ecode.500053") == ""
+
+
+def test_decision_error_is_enriched(tmp_path):
+    cfg = _cfg(tmp_path)
+    events = []
+
+    class BadActions(FakeActions):
+        def study_select(self, lv, ceri_id, tp):
+            raise RuntimeError("game/HD_StudySelect: ecode.500053")
+
+    svc = DecisionService(BadActions(), _EcodeConfig(), cfg,
+                          on_event=lambda k, d=None: events.append((k, d)))
+    append_command(cfg.commands_path, {"action": "select", "track": "equip", "lv": 1, "ceri_id": 6015})
+    svc.tick(_state())
+    err = next(d for k, d in events if k == "decision_error")
+    assert err["reason"] == "Vàng không đủ"
+    assert err["action"] == "select" and err["track"] == "equip" and err["ceri_id"] == 6015
+    assert "ecode.500053" in err["error"]
+
+
 def test_profile_edit_command_applies_to_live_profile(tmp_path):
     from types import SimpleNamespace
 
