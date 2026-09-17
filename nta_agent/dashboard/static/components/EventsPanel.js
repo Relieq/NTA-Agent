@@ -1,6 +1,6 @@
 import { getJSON, usePolling, hms } from "../api.js";
 const { ref } = window.Vue;
-function fmt(d){ return d==null? "" : (typeof d==="object" ? (d.rationale||JSON.stringify(d)) : String(d)); }
+function fmt(d){ return d==null? "" : (typeof d==="object" ? (d.reason||d.rationale||JSON.stringify(d)) : String(d)); }
 function line(e){
  return e.kind==="tick"
   ? ("tick "+e.i+" · "+((e.fired||[]).join(", ")||"—"))

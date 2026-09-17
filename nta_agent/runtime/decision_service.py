@@ -3,6 +3,7 @@ from __future__ import annotations
 
 import json
 import os
+import re
 import sys
 from dataclasses import asdict
 from pathlib import Path
@@ -13,6 +14,21 @@ from nta_agent.execution.equipment import pawn_equipment
 from nta_agent.runtime.commands import mark_done, read_pending
 
 _TRACK_TP = {"pawn": 2, "policy": 1, "equip": 3}
+_ECODE_RE = re.compile(r"ecode\.(\d+)")
+
+
+def ecode_reason(config, err: str) -> str:
+    """Human-readable meaning of an ecode.NNN inside an error string ('' if none)."""
+    m = _ECODE_RE.search(err or "")
+    if not m or config is None:
+        return ""
+    code = int(m.group(1))
+    try:
+        tbl = config.table("ecode")
+    except Exception:
+        return ""
+    row = tbl.get(code) or tbl.get(str(code)) or {}
+    return row.get("vi") or row.get("en") or ""
 
 
 class DecisionService:
@@ -95,6 +111,13 @@ class DecisionService:
                 self._execute(cmd)
                 self._on_event("decision_done", {"id": cmd["id"], "action": cmd.get("action")})
             except Exception as e:
-                self._on_event("decision_error", {"id": cmd.get("id"), "error": str(e)})
+                detail = {"id": cmd.get("id"), "action": cmd.get("action"),
+                          "track": cmd.get("track"), "lv": cmd.get("lv"),
+                          "ceri_id": cmd.get("ceri_id"), "equip_uid": cmd.get("equip_uid"),
+                          "pawn_id": cmd.get("pawn_id"),
+                          "error": str(e), "reason": ecode_reason(self.config, str(e))}
+                detail = {k: v for k, v in detail.items() if v is not None and v != ""}
+                self._on_event("decision_error", detail)
+                sys.stderr.write(f"[decision] {cmd.get('action')} failed: {e}\n")
             finally:
                 mark_done(self.cfg.commands_done_path, cmd["id"])

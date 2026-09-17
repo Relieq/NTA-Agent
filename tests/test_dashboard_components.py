@@ -48,6 +48,7 @@ def test_armies_and_events_panels():
     ev = _c("EventsPanel.js")
     assert "/api/events" in ev
     assert "[object Object]" not in ev and "rationale" in ev  # object detail formatting preserved
+    assert "d.reason" in ev  # decision_error shows the human reason (ecode meaning)
     app = _app()
     assert "ArmiesPanel" in app and "EventsPanel" in app
 
