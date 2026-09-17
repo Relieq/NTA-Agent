@@ -5,20 +5,24 @@ from __future__ import annotations
 def _hp(pawn: dict) -> tuple[int, int]:
     """(current, max) hp for a raw pawn, or (0,0) when max is unknown.
 
-    The engine serializes pawns as ``{curHp, maxHp}`` (scalars); some contexts
-    use ``hp:[cur,max]``. Support both; unknown max -> (0,0) so we never route on
-    bad data (a pawn with no max reads as "not wounded").
+    Live ``HD_GetPlayerArmys`` pawns carry ``hp`` as a protobuf map
+    ``{0: current, 1: max}`` (verified live 2026-09-17). Also accept ``hp:[cur,max]``
+    and ``{curHp,maxHp}`` shapes. Unknown max -> (0,0) so we never route on bad
+    data (a pawn with no max reads as "not wounded").
     """
-    if "curHp" in pawn or "maxHp" in pawn:
+    hp = pawn.get("hp")
+    if isinstance(hp, dict):
+        # Live shape: protobuf map {0: current, 1: max} (keys may be int or str).
+        cur = int(hp.get(0, hp.get("0", 0)) or 0)
+        mx = int(hp.get(1, hp.get("1", 0)) or 0)
+    elif isinstance(hp, (list, tuple)):
+        cur = int(hp[0]) if len(hp) else 0
+        mx = int(hp[-1]) if len(hp) > 1 else 0
+    elif "curHp" in pawn or "maxHp" in pawn:
         cur = int(pawn.get("curHp", 0) or 0)
         mx = int(pawn.get("maxHp", 0) or 0)
     else:
-        hp = pawn.get("hp")
-        if isinstance(hp, (list, tuple)):
-            cur = int(hp[0]) if len(hp) else 0
-            mx = int(hp[-1]) if len(hp) > 1 else 0
-        else:
-            cur, mx = int(hp or 0), 0  # scalar current only -> max unknown
+        cur, mx = int(hp or 0), 0  # scalar current only -> max unknown
     return (cur, mx) if mx > 0 else (0, 0)
 
 

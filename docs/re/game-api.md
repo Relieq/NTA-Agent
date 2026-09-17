@@ -40,7 +40,7 @@ Response: envelope `S2C_RESULT{data,error}`; `error` rỗng = OK, ngược lại
 | `HD_GetMapChunk` | ✅ | `{chunkId}` | Chunk nén `cells: map<uid, PlayerCellBytesInfo{indexs1,indexs2,cities}>`. chunk=100², chunkId=cy*6+cx. `actions.get_map_chunk`. Decode ở `execution/mapchunk.py`. |
 | `HD_GetMarchs` | ✅ | `{}` | Danh sách hành quân đang chạy. `actions.get_marches`. |
 | `HD_GetSelectArmys` | ✅ | `{index, type}` | Đạo quân có thể điều từ `index`. `actions.get_select_armys`. |
-| `HD_GetPlayerArmys` | ✅ | `{}` | Mọi đạo quân + pawns. `actions.get_player_armys`. Pawn serialize `{uid,id,lv,attackSpeed,equip, curHp,maxHp}` (engine `getPlayerArmysPb`; `curHp/maxHp` cần live-confirm). |
+| `HD_GetPlayerArmys` | ✅ | `{}` | Mọi đạo quân + pawns. `actions.get_player_armys`. **Verify live 2026-09-17:** army `{uid,name,index,state,marchSpeed,pawns}`; pawn `{uid,id,lv,attackSpeed,equip, hp}` với **`hp` = map `{0:cur, 1:max}`** (không phải list/curHp). Đội đứng ở thành → `index`=mainCityIndex. |
 | `HD_GetTondenDist` | ❓ | — | Cự ly/thông tin đồn điền (Tonden). |
 | `HD_GetAvoidWarDist` / `HD_GetBattleDist` | ❓ | — | Cự ly né chiến / cự ly đánh. |
 | `HD_MapMarkPoint` / `HD_RemoveMapMark` | ❓ | — | Đánh dấu điểm trên map. |

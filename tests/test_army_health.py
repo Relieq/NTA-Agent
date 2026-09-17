@@ -24,6 +24,15 @@ def test_missing_or_empty_hp_is_safe():
     assert army_is_wounded({"pawns": [{"hp": 40}]}) is False  # scalar hp, max unknown
 
 
+def test_hp_map_shape_live():
+    # Live HD_GetPlayerArmys: hp is a protobuf map {0: cur, 1: max}.
+    assert army_is_wounded({"pawns": [{"hp": {0: 55, 1: 55}}]}) is False
+    assert army_is_wounded({"pawns": [{"hp": {0: 20, 1: 55}}]}) is True
+    # string keys (JSON round-trip) also work
+    assert army_is_wounded({"pawns": [{"hp": {"0": 20, "1": 55}}]}) is True
+    assert abs(army_wound_frac({"pawns": [{"hp": {0: 20, 1: 55}}]}) - (35 / 55)) < 1e-9
+
+
 def test_curhp_maxhp_shape():
     # Engine's real serialization: pawns carry scalar curHp/maxHp.
     healthy = {"pawns": [{"curHp": 100, "maxHp": 100}]}
