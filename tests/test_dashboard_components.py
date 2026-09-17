@@ -61,6 +61,7 @@ def test_territory_map_viewport():
     assert "Về thành chính" in terr                      # recenter control
     assert "/api/forts/decide" in terr                   # accept/reject on a rec
     assert "Math.min(60" in terr and "Math.max(6" in terr  # zoom clamp
+    assert "bán kính 6 ô" in terr                        # legend explains the dashed zone
 
 
 def test_forts_panel_decision_buttons():

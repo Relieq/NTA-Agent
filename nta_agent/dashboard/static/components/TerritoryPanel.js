@@ -155,5 +155,13 @@ export default {
      <button @click="decide('accept')">✓ Chấp thuận</button>
      <button @click="decide('reject')">✕ Từ chối</button></template>
     <button @click="sel=null">Đóng</button></div>
+  </div>
+  <div class="muted" style="margin-top:6px;font-size:12px;display:flex;gap:12px;flex-wrap:wrap">
+   <span><b style="color:#3987e5">■</b> thành chính</span>
+   <span><b style="color:#199e70">■</b> ô đã chiếm</span>
+   <span><b style="color:#d95926">■</b> Cứ Điểm / dự kiến</span>
+   <span><b style="color:#e66767">◯</b> gợi ý</span>
+   <span><b style="color:#c3c2b7">▢</b> quân trú</span>
+   <span><b style="color:#3b6ea5">⬚</b> nét đứt = bán kính 6 ô (đã tăng tốc — không cần xây Cứ Điểm bên trong)</span>
   </div></div>`
 };
