@@ -3,8 +3,24 @@
 from dataclasses import dataclass
 
 from nta_agent.data.config import BuildUpgrade
-from nta_agent.execution.build_planner import next_upgrade
+from nta_agent.execution.build_planner import _prep_ok, next_upgrade, parse_prep_cond
 from nta_agent.state.schema import Building, GameState
+
+
+def test_parse_prep_cond_multi_and_malformed():
+    assert parse_prep_cond("4,2001,7|4,2002,3|4,2003,3") == [
+        (4, 2001, 7), (4, 2002, 3), (4, 2003, 3)]
+    assert parse_prep_cond("4,2001,3") == [(4, 2001, 3)]
+    assert parse_prep_cond("") == []
+    assert parse_prep_cond("garbage|4,2001,3") == [(4, 2001, 3)]  # bad part skipped
+
+
+def test_prep_ok_requires_all_conditions():
+    cond = "4,2001,7|4,2002,3|4,2003,3"
+    assert _prep_ok(cond, {2001: 7, 2002: 3, 2003: 3}) is True
+    assert _prep_ok(cond, {2001: 7, 2002: 2, 2003: 3}) is False  # one short
+    assert _prep_ok(cond, {2001: 7}) is False                    # missing two
+    assert _prep_ok("", {}) is True                              # no conditions
 
 
 @dataclass
