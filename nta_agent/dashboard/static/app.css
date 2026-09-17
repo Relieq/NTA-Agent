@@ -34,3 +34,23 @@ input{background:#0d1117;color:var(--text);border:1px solid var(--border-hi);bor
 .bolist label{font-size:12px;color:var(--muted);cursor:pointer}
 canvas.terrmap{width:100%;max-width:640px;margin-top:10px;border:1px solid #1e2a3a;
  border-radius:var(--radius);background:#0b1320;display:block}
+.tiles{display:grid;grid-template-columns:repeat(auto-fit,minmax(110px,1fr));gap:var(--sp-2)}
+.tile{background:#0d1117;border:1px solid var(--border);border-radius:6px;padding:var(--sp-2) var(--sp-3)}
+.tile .tlabel{font-size:11px;color:var(--muted);text-transform:uppercase;letter-spacing:.04em}
+.tile .tval{font-size:22px;color:var(--text);font-variant-numeric:tabular-nums;line-height:1.2}
+.tile .tsub{font-size:11px}
+.shell{display:grid;grid-template-columns:var(--sidebar-w,180px) 1fr;align-items:start}
+.sidebar{display:flex;flex-direction:column;gap:2px;padding:var(--sp-3) var(--sp-2);
+ border-right:1px solid var(--border);position:sticky;top:0}
+.tabbtn{display:flex;align-items:center;gap:var(--sp-2);width:100%;text-align:left;margin:0;
+ background:transparent;border:1px solid transparent;border-radius:6px;padding:8px 10px;color:var(--text)}
+.tabbtn:hover{background:#161b22}
+.tabbtn.on{background:#161b22;border-color:var(--border-hi);border-left:3px solid var(--accent)}
+.tabbtn .ticon{width:18px;text-align:center}
+.content{padding:var(--sp-4);min-width:0}
+.content .grid{max-width:960px}
+@media (max-width:760px){
+ .shell{grid-template-columns:52px 1fr}
+ .tabbtn .tlbl{display:none}
+ .content .grid{grid-template-columns:1fr}
+}
