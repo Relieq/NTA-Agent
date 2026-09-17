@@ -56,6 +56,16 @@ def test_build_order_panel():
     assert "BuildOrderPanel" in _app()
 
 
+def test_control_bar_component():
+    cb = _c("ControlBar.js")
+    assert "/api/agent/status" in cb and '"/api/agent/"' in cb  # status poll + action base
+    for a in ("act('start')", "act('pause')", "act('resume')", "act('stop')"):
+        assert a in cb
+    for engine in ("RUNNING", "PAUSED", "STOPPED", "CRASHED"):
+        assert engine in cb
+    assert "ControlBar" in _c("StatusHeader.js")
+
+
 def test_brain_chat_panel_and_final_order():
     ch = _c("BrainChatPanel.js")
     assert "/api/chat" in ch and "Chiến thuật" in ch and "Gửi" in ch

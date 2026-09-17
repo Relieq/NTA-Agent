@@ -1,15 +1,16 @@
 import { getJSON, usePolling, ago } from "../api.js";
+import ControlBar from "./ControlBar.js";
 const { ref } = window.Vue;
 export default {
+ components:{ ControlBar },
  setup(){
-  const ok=ref(false), text=ref("…");
+  const snap=ref("…");
   usePolling(async ()=>{
    const s=await getJSON("/api/state");
-   if(!s||!s.ok){ ok.value=false; text.value="Đang chờ agent…"; }
-   else{ ok.value=true; text.value="đang chạy · "+ago(s.updated_at); }
+   snap.value=(s&&s.ok)? ("snapshot "+ago(s.updated_at)) : "chưa có snapshot";
   }, 2000);
-  return { ok, text };
+  return { snap };
  },
- template:`<header><h1>NTA Agent</h1>
-  <div><span class="dot" :class="ok?'on':'wait'"></span><span>{{ text }}</span></div></header>`
+ template:`<header><div><h1>NTA Agent</h1><div class="muted" style="font-size:12px">{{ snap }}</div></div>
+  <ControlBar/></header>`
 };
