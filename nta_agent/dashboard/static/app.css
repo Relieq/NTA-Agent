@@ -1,0 +1,36 @@
+:root{
+ --bg:#0f1216; --panel:#171b21; --border:#262c34; --border-hi:#3a4450;
+ --text:#e6e6e6; --muted:#8b949e; --accent:#58a6ff;
+ --ok:#3fb950; --warn:#d29922; --danger:#f85149;
+ --sp-1:4px; --sp-2:8px; --sp-3:12px; --sp-4:16px; --radius:8px;
+ --mono:ui-monospace,Consolas,monospace;
+}
+*{box-sizing:border-box}
+body{margin:0;font:14px system-ui,Segoe UI,Arial;background:var(--bg);color:var(--text)}
+header{display:flex;justify-content:space-between;align-items:center;
+ padding:var(--sp-3) var(--sp-4);background:var(--panel);border-bottom:1px solid var(--border)}
+header h1{font-size:16px;margin:0}
+.dot{display:inline-block;width:9px;height:9px;border-radius:50%;margin-right:6px;background:#666}
+.dot.on{background:var(--ok)}.dot.wait{background:var(--warn)}
+main.grid{padding:var(--sp-4);display:grid;gap:var(--sp-3);grid-template-columns:1fr 1fr;max-width:960px}
+.card{background:var(--panel);border:1px solid var(--border);border-radius:var(--radius);
+ padding:var(--sp-3);transition:border-color .15s}
+.card:hover{border-color:var(--border-hi)}
+.card h2{font-size:12px;text-transform:uppercase;letter-spacing:.05em;color:var(--accent);margin:0 0 var(--sp-2)}
+.full{grid-column:1/-1}
+.kv{display:flex;flex-wrap:wrap;gap:var(--sp-2) var(--sp-4)}.kv b{color:#fff}
+ul{list-style:none;margin:0;padding:0}li{padding:3px 0;border-bottom:1px solid #21262d}
+.feed{max-height:320px;overflow:auto;font-family:var(--mono);font-size:12px}
+.muted{color:var(--muted)}
+button{background:#21262d;color:var(--text);border:1px solid var(--border-hi);
+ border-radius:6px;padding:4px 10px;margin:2px;cursor:pointer}
+button:hover:not(:disabled){border-color:var(--accent)}button:disabled{opacity:.5;cursor:default}
+input{background:#0d1117;color:var(--text);border:1px solid var(--border-hi);border-radius:6px;padding:4px 8px}
+.bolist{list-style:none;padding:0;margin:var(--sp-2) 0;max-width:520px}
+.bolist li{display:flex;align-items:center;gap:var(--sp-2);padding:5px 8px;margin:3px 0;
+ background:#161b22;border:1px solid var(--border-hi);border-radius:6px;cursor:grab}
+.bolist li.drag{opacity:.4}.bolist li.skip{opacity:.5;text-decoration:line-through}
+.bolist .grip{color:var(--muted);cursor:grab}.bolist .nm{flex:1}
+.bolist label{font-size:12px;color:var(--muted);cursor:pointer}
+canvas.terrmap{width:100%;max-width:640px;margin-top:10px;border:1px solid #1e2a3a;
+ border-radius:var(--radius);background:#0b1320;display:block}
