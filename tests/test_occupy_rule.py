@@ -32,6 +32,24 @@ def test_discover_finds_defended_unowned_cells():
     assert center not in idxs and (center + W) not in idxs
 
 
+def test_discover_skips_cells_whose_probe_errors():
+    # A get_area that raises on some cells (edge/fog -> ecode.500000) must not
+    # crash discovery; those cells are simply skipped.
+    center = 182 * W + 526
+    world = {
+        center: _cell(owner="me", city=1001),           # my city (enables adjoin)
+        center - 1: _cell(owner="", pawns=[100, 100]),  # occupiable
+    }
+
+    def probe(i):
+        if i not in world:
+            raise RuntimeError("game/HD_GetAreaInfo: ecode.500000")
+        return world[i]
+
+    cands = discover_targets(probe, center, 1, my_uid="me")
+    assert {c.index for c in cands} == {center - 1}
+
+
 @dataclass
 class FakeActions:
     areas: dict
