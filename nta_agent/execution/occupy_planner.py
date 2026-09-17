@@ -44,7 +44,10 @@ def discover_targets(
     for dy in range(-radius, radius + 1):
         for dx in range(-radius, radius + 1):
             idx = (cy + dy) * map_width + (cx + dx)
-            area = get_area(idx) or {}
+            try:
+                area = get_area(idx) or {}
+            except Exception:
+                area = {}  # unreachable/fogged/forbidden cell (ecode.500000) -> skip below
             if str(area.get("owner", "")) == my_uid:
                 owned.add(idx)
                 continue
