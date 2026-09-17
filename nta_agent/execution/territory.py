@@ -28,12 +28,26 @@ class Territory:
         return (index % self.map_width, index // self.map_width)
 
     def dist(self, a: int, b: int) -> int:
+        # In-game movement is 4-directional: a diagonal step costs 2, so distance
+        # is Manhattan (|dx|+|dy|), not Chebyshev.
         ax, ay = self.pos(a)
         bx, by = self.pos(b)
-        return max(abs(ax - bx), abs(ay - by))  # Chebyshev
+        return abs(ax - bx) + abs(ay - by)
+
+    def dist_to_main(self, index: int) -> int:
+        """Manhattan distance from a cell to the 2x2 main-city block.
+
+        ``main_city`` is the block's corner (min x, min y); the block spans
+        [mx, mx+1] x [my, my+1]. Cells orthogonally adjacent to it are distance 1.
+        """
+        mx, my = self.pos(self.main_city)
+        x, y = self.pos(index)
+        dx = max(mx - x, 0, x - (mx + 1))
+        dy = max(my - y, 0, y - (my + 1))
+        return dx + dy
 
     def near_main(self, index: int, radius: int = 6) -> bool:
-        return self.dist(self.main_city, index) <= radius
+        return self.dist_to_main(index) <= radius
 
     def nodes(self) -> list:
         return [self.main_city] + [f.index for f in self.forts]

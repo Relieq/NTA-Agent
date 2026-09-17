@@ -25,7 +25,7 @@ export default {
    stateMap=new Map();
    const put=(x,y,label,index)=>{ const k=idx(x,y); if(!stateMap.has(k)) stateMap.set(k,{label,index:index??k}); };
    const mx=data.main%data.mw, my=Math.floor(data.main/data.mw);
-   put(mx,my,"thành chính");
+   [[mx,my],[mx+1,my],[mx,my+1],[mx+1,my+1]].forEach(([x,y])=>put(x,y,"thành chính"));
    data.forts.forEach(([x,y])=>put(x,y,"Cứ Điểm"));
    data.accepted.forEach(([x,y])=>put(x,y,"dự kiến xây"));
    data.recs.forEach(r=>put(r.x,r.y,"gợi ý",r.index));
@@ -36,7 +36,7 @@ export default {
   function fitView(cv){
    const mx=data.main%data.mw, my=Math.floor(data.main/data.mw), R=6;
    const pts=[[mx,my],...data.owned,...data.accepted,...data.forts,...data.garr,
-              ...data.recs.map(r=>[r.x,r.y]),[mx-R,my-R],[mx+R,my+R]];
+              ...data.recs.map(r=>[r.x,r.y]),[mx-R,my-R],[mx+1+R,my+1+R]];
    const minX=Math.min(...pts.map(p=>p[0]))-1, maxX=Math.max(...pts.map(p=>p[0]))+1;
    const minY=Math.min(...pts.map(p=>p[1]))-1, maxY=Math.max(...pts.map(p=>p[1]))+1;
    const cols=maxX-minX+1, rows=maxY-minY+1;
@@ -45,8 +45,9 @@ export default {
    originY = MT + Math.floor((cv.height-MT - rows*scale)/2) - rowOf(maxY)*scale;
   }
   function recenter(cv){ scale=16;
-   originX = cv.width/2 - (data.main%data.mw)*scale;
-   originY = cv.height/2 - rowOf(Math.floor(data.main/data.mw))*scale; }
+   const mx=data.main%data.mw, my=Math.floor(data.main/data.mw);  // 2x2 block center
+   originX = cv.width/2 - (mx+0.5)*scale;
+   originY = cv.height/2 - rowOf(my+0.5)*scale; }
   function zoomAt(px,py,f){ const s2=Math.max(6, Math.min(60, scale*f));
    originX = px-(px-originX)*s2/scale; originY = py-(py-originY)*s2/scale; scale=s2; render(); }
 
@@ -63,8 +64,15 @@ export default {
    ctx.save(); ctx.beginPath(); ctx.rect(ML,MT,W-ML,H-MT); ctx.clip();
    const box=(x,y,c)=>{ ctx.fillStyle=c; ctx.fillRect(sX(x)+1,sY(y)+1,scale-2,scale-2); };
    const mx=data.main%data.mw, my=Math.floor(data.main/data.mw), R=6;
-   ctx.strokeStyle="#3b6ea5"; ctx.lineWidth=1.5; ctx.setLineDash([4,3]);
-   ctx.strokeRect(sX(mx-R)+0.5, sY(my+R)+0.5, (2*R+1)*scale, (2*R+1)*scale); ctx.setLineDash([]);
+   // speed zone: Manhattan distance <= 6 from the 2x2 city block (diagonal costs
+   // 2) -> a rotated diamond / octagon, NOT an axis-aligned square.
+   const bx0=mx, bx1=mx+1, by0=my, by1=my+1;
+   const cc=(cx,cy)=>[sX(cx)+scale/2, sY(cy)+scale/2];
+   const zoneV=[[bx1+R,by0],[bx1+R,by1],[bx1,by1+R],[bx0,by1+R],
+                [bx0-R,by1],[bx0-R,by0],[bx0,by0-R],[bx1,by0-R]];
+   ctx.strokeStyle="#3b6ea5"; ctx.lineWidth=1.5; ctx.setLineDash([4,3]); ctx.beginPath();
+   zoneV.forEach((v,i)=>{ const [px,py]=cc(v[0],v[1]); if(i===0) ctx.moveTo(px,py); else ctx.lineTo(px,py); });
+   ctx.closePath(); ctx.stroke(); ctx.setLineDash([]);
    data.owned.forEach(([x,y])=>{ if(inView(x,y)) box(x,y,"#199e70"); });
    ctx.strokeStyle="#c3c2b7"; ctx.lineWidth=1.5;
    data.garr.forEach(([x,y])=>{ if(inView(x,y)) ctx.strokeRect(sX(x)+2,sY(y)+2,scale-4,scale-4); });
@@ -73,7 +81,7 @@ export default {
     ctx.fillStyle="#0b1320"; ctx.beginPath(); ctx.arc(sX(x)+scale/2,sY(y)+scale/2,Math.max(1.5,scale/6),0,7); ctx.fill(); } });
    data.recs.forEach(r=>{ if(inView(r.x,r.y)){ ctx.strokeStyle="#e66767"; ctx.lineWidth=2; ctx.beginPath();
     ctx.arc(sX(r.x)+scale/2,sY(r.y)+scale/2,Math.max(3,scale/2-1),0,7); ctx.stroke(); } });
-   if(inView(mx,my)) box(mx,my,"#3987e5");
+   [[mx,my],[mx+1,my],[mx,my+1],[mx+1,my+1]].forEach(([x,y])=>{ if(inView(x,y)) box(x,y,"#3987e5"); });
    if(hover && inView(hover.x,hover.y)){ ctx.strokeStyle="#58a6ff"; ctx.lineWidth=2;
     ctx.strokeRect(sX(hover.x)+1,sY(hover.y)+1,scale-2,scale-2); }
    ctx.restore();
@@ -162,6 +170,6 @@ export default {
    <span><b style="color:#d95926">■</b> Cứ Điểm / dự kiến</span>
    <span><b style="color:#e66767">◯</b> gợi ý</span>
    <span><b style="color:#c3c2b7">▢</b> quân trú</span>
-   <span><b style="color:#3b6ea5">⬚</b> nét đứt = bán kính 6 ô (đã tăng tốc — không cần xây Cứ Điểm bên trong)</span>
+   <span><b style="color:#3b6ea5">◇</b> vùng thoi nét đứt = bán kính 6 ô quanh thành 2×2 (Manhattan, đi chéo tốn 2 — đã tăng tốc, không cần xây Cứ Điểm bên trong)</span>
   </div></div>`
 };

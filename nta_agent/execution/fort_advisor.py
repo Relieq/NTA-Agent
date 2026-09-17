@@ -14,8 +14,20 @@ def _pos(index: int, map_width: int) -> tuple[int, int]:
     return index % map_width, index // map_width
 
 
-def _cheby(a: tuple[int, int], b: tuple[int, int]) -> int:
-    return max(abs(a[0] - b[0]), abs(a[1] - b[1]))
+def _manh(a: tuple[int, int], b: tuple[int, int]) -> int:
+    # 4-directional movement: diagonal costs 2 -> Manhattan distance.
+    return abs(a[0] - b[0]) + abs(a[1] - b[1])
+
+
+def _block_dist(cpos: tuple[int, int], mpos: tuple[int, int]) -> int:
+    """Manhattan distance from a cell to the 2x2 main-city block.
+
+    ``mpos`` is the block's corner (min x, min y); the block spans
+    [mx, mx+1] x [my, my+1]. Orthogonally-adjacent cells are distance 1.
+    """
+    dx = max(mpos[0] - cpos[0], 0, cpos[0] - (mpos[0] + 1))
+    dy = max(mpos[1] - cpos[1], 0, cpos[1] - (mpos[1] + 1))
+    return dx + dy
 
 
 def recommend_forts(
@@ -30,10 +42,10 @@ def recommend_forts(
     """Return up to ``max_forts`` fort recommendations, best first.
 
     Each rec is ``{index, x, y, reason}``. Candidates are owned cells with
-    Chebyshev distance from the main city greater than ``radius`` (the free
+    Manhattan distance from the 2x2 main-city block greater than ``radius`` (the free
     speed zone) and not already forts. Ranking is greedy: repeatedly pick the
     candidate maximising ``dist_from_main + spread`` where spread is the minimum
-    Chebyshev distance to the main city, existing forts, and already-picked recs
+    Manhattan distance to the main-city block, existing forts, and picked recs
     — pushing picks outward and into distinct directions.
     """
     if max_forts <= 0:
@@ -48,13 +60,13 @@ def recommend_forts(
         if int(c) not in fort_set
         and int(c) not in rej_set
         and int(c) != int(main)
-        and _cheby(_pos(int(c), map_width), mpos) > radius
+        and _block_dist(_pos(int(c), map_width), mpos) > radius
     ]
     if not candidates:
         return []
 
-    # Anchors that new picks should spread away from: main + existing forts.
-    anchors = [mpos] + [_pos(f, map_width) for f in fort_set]
+    # Anchors new picks spread away from: existing forts (main handled via block).
+    fort_pts = [_pos(f, map_width) for f in fort_set]
     picked: list[int] = []
     recs: list[dict] = []
 
@@ -63,9 +75,9 @@ def recommend_forts(
         best_score = None
         for c in candidates:
             cpos = _pos(c, map_width)
-            frontier = _cheby(cpos, mpos)
-            spread_pts = anchors + [_pos(p, map_width) for p in picked]
-            spread = min(_cheby(cpos, s) for s in spread_pts)
+            frontier = _block_dist(cpos, mpos)
+            spread = min([frontier] + [_manh(cpos, s)
+                         for s in fort_pts + [_pos(p, map_width) for p in picked]])
             score = (frontier + spread, frontier, -c)  # deterministic tiebreak
             if best_score is None or score > best_score:
                 best_score = score
@@ -75,7 +87,7 @@ def recommend_forts(
             "index": best,
             "x": cpos[0],
             "y": cpos[1],
-            "reason": f"biên giới cách thành chính {_cheby(cpos, mpos)} ô",
+            "reason": f"biên giới cách thành chính {_block_dist(cpos, mpos)} ô",
         })
         picked.append(best)
         candidates.remove(best)
