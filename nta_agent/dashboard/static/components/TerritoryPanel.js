@@ -65,15 +65,15 @@ export default {
    const mx=data.main%data.mw, my=Math.floor(data.main/data.mw), R=6;
    ctx.strokeStyle="#3b6ea5"; ctx.lineWidth=1.5; ctx.setLineDash([4,3]);
    ctx.strokeRect(sX(mx-R)+0.5, sY(my+R)+0.5, (2*R+1)*scale, (2*R+1)*scale); ctx.setLineDash([]);
-   data.owned.forEach(([x,y])=>{ if(inView(x,y)) box(x,y,"#2e7d5b"); });
-   ctx.strokeStyle="#c9a227"; ctx.lineWidth=1.5;
+   data.owned.forEach(([x,y])=>{ if(inView(x,y)) box(x,y,"#199e70"); });
+   ctx.strokeStyle="#c3c2b7"; ctx.lineWidth=1.5;
    data.garr.forEach(([x,y])=>{ if(inView(x,y)) ctx.strokeRect(sX(x)+2,sY(y)+2,scale-4,scale-4); });
-   data.forts.forEach(([x,y])=>{ if(inView(x,y)) box(x,y,"#e08a2b"); });
-   data.accepted.forEach(([x,y])=>{ if(inView(x,y)){ box(x,y,"#e08a2b");
+   data.forts.forEach(([x,y])=>{ if(inView(x,y)) box(x,y,"#d95926"); });
+   data.accepted.forEach(([x,y])=>{ if(inView(x,y)){ box(x,y,"#d95926");
     ctx.fillStyle="#0b1320"; ctx.beginPath(); ctx.arc(sX(x)+scale/2,sY(y)+scale/2,Math.max(1.5,scale/6),0,7); ctx.fill(); } });
-   data.recs.forEach(r=>{ if(inView(r.x,r.y)){ ctx.strokeStyle="#e5484d"; ctx.lineWidth=2; ctx.beginPath();
+   data.recs.forEach(r=>{ if(inView(r.x,r.y)){ ctx.strokeStyle="#e66767"; ctx.lineWidth=2; ctx.beginPath();
     ctx.arc(sX(r.x)+scale/2,sY(r.y)+scale/2,Math.max(3,scale/2-1),0,7); ctx.stroke(); } });
-   if(inView(mx,my)) box(mx,my,"#3b82f6");
+   if(inView(mx,my)) box(mx,my,"#3987e5");
    if(hover && inView(hover.x,hover.y)){ ctx.strokeStyle="#58a6ff"; ctx.lineWidth=2;
     ctx.strokeRect(sX(hover.x)+1,sY(hover.y)+1,scale-2,scale-2); }
    ctx.restore();
