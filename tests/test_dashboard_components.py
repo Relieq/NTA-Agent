@@ -42,19 +42,25 @@ def test_decisions_and_equipment_panels():
 def test_territory_and_forts_panels():
     terr = _c("TerritoryPanel.js")
     assert "/api/territory" in terr and "/api/forts" in terr
-    assert "owned_cells" in terr and "getContext" in terr and "bán kính" in terr
+    assert "owned_cells" in terr and "getContext" in terr and "setLineDash" in terr  # radius zone
     forts = _c("FortsPanel.js")
     assert "/api/forts" in forts and "Cứ Điểm" in forts
     app = _app()
     assert "TerritoryPanel" in app and "FortsPanel" in app
 
 
-def test_territory_map_has_rulers_and_decisions():
+def test_territory_map_viewport():
     terr = _c("TerritoryPanel.js")
-    assert "fillText" in terr                 # coordinate ruler labels
-    assert "accepted" in terr                 # renders accepted forts
-    assert "/api/forts/decide" in terr        # click -> decide
-    assert "getBoundingClientRect" in terr    # canvas click hit-test
+    # rendering
+    assert "fillText" in terr and "accepted" in terr
+    assert "labelStep" in terr and "[1, 2, 5, 10, 20, 25, 50, 100]" in terr
+    assert "map_width" in terr or "MAPW" in terr        # y-flip uses map width
+    # interaction
+    assert "@mousedown" in terr and "@mousemove" in terr and "@mouseup" in terr
+    assert "wheel" in terr and "getBoundingClientRect" in terr
+    assert "Về thành chính" in terr                      # recenter control
+    assert "/api/forts/decide" in terr                   # accept/reject on a rec
+    assert "Math.min(60" in terr and "Math.max(6" in terr  # zoom clamp
 
 
 def test_forts_panel_decision_buttons():
