@@ -12,9 +12,21 @@ from nta_agent.io.api.client import ServerConfig
 from nta_agent.io.api.session import GameSession
 from nta_agent.io.bootstrap import make_token_refresher
 from nta_agent.runtime.config import RuntimeConfig
+from nta_agent.runtime.control import read_mode
 from nta_agent.runtime.decision_service import DecisionService
 from nta_agent.runtime.eventlog import EventLog
 from nta_agent.runtime.snapshot import write_snapshot
+
+
+def run_services(state, cfg, service, brain, forts, safe) -> bool:
+    """Run the acting services unless paused. Returns True if it acted."""
+    if read_mode(cfg.control_path) == "pause":
+        return False  # observe only while paused
+    if service is not None:
+        safe(service.tick, state)
+    safe(brain.tick, state)
+    safe(forts.tick, state)
+    return True
 
 
 def build_session(cfg: RuntimeConfig) -> GameSession:
@@ -67,13 +79,11 @@ def run(cfg: RuntimeConfig, *, ticks: int = 0, session=None, engine=None) -> Non
     def on_tick(i, fired, state):
         _safe(write_snapshot, state, cfg.snapshot_path)
         _safe(log.tick, i, fired, state)
-        if service is not None:
-            _safe(service.tick, state)
-        _safe(brain.tick, state)
-        _safe(forts.tick, state)
+        run_services(state, cfg, service, brain, forts, _safe)
 
     try:
-        agent.run(ticks=ticks, interval=cfg.interval, on_tick=on_tick)
+        agent.run(ticks=ticks, interval=cfg.interval, on_tick=on_tick,
+                  control=lambda: read_mode(cfg.control_path))
     except KeyboardInterrupt:
         log.append("interrupted")
     finally:
