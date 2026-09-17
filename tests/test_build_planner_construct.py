@@ -85,9 +85,27 @@ def test_skip_excludes_from_construct_and_upgrade():
 
 def test_room_type_excludes_wrong_mode_market():
     c = GameConfig.load()
-    st = _state([_b(2001, 10)])
+    # 2006's unlock gate needs 2001>=7, 2002>=3, 2003>=3 -> satisfy it so this
+    # test isolates room-type gating from the prereq guard.
+    st = _state([_b(2001, 10), _b(2002, 3), _b(2003, 3)])
     # newbie (room_type=1): Chợ Tự Do (2006) is free-only -> never constructed
     assert next_build_action(st, c, sequence=[2006], room_type=1) is None
     # free (room_type=0): 2006 is valid -> constructed
+    act = next_build_action(st, c, sequence=[2006], room_type=0)
+    assert act is not None and act.kind == "construct" and act.build_id == 2006
+
+
+def test_skips_construct_when_base_prep_unmet():
+    c = GameConfig.load()
+    # 2006 (Chợ) unlock gate: 2001>=7 AND 2002>=3 AND 2003>=3. Storehouses at lv1
+    # leave two conditions unmet -> must NOT construct (would be server 500033).
+    st = _state([_b(2001, 10), _b(2002, 1), _b(2003, 1)])
+    assert next_build_action(st, c, sequence=[2006], room_type=0) is None
+
+
+def test_constructs_when_base_prep_met():
+    c = GameConfig.load()
+    # All three unlock conditions satisfied -> construct proceeds.
+    st = _state([_b(2001, 10), _b(2002, 3), _b(2003, 3)])
     act = next_build_action(st, c, sequence=[2006], room_type=0)
     assert act is not None and act.kind == "construct" and act.build_id == 2006

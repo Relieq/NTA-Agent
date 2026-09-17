@@ -25,22 +25,30 @@ class BuildAction:
 _PREP_NEED_BUILDING = 4  # prep_cond "4,<buildId>,<lv>": need that building at <lv>
 
 
-def parse_prep_cond(s: str) -> tuple[int, int, int] | None:
-    parts = (s or "").split(",")
-    if len(parts) >= 3:
-        return int(parts[0]), int(parts[1]), int(parts[2])
-    return None
+def parse_prep_cond(s: str) -> list[tuple[int, int, int]]:
+    """Parse a ``prep_cond`` string into its conditions.
+
+    The game encodes several unlock conditions ``|``-separated with AND
+    semantics, each ``<ctype>,<param>,<value>`` (matches the engine's
+    ``checkUnlcokBuildCond`` / ``stringToCTypes``). Malformed parts are skipped.
+    """
+    out: list[tuple[int, int, int]] = []
+    for part in (s or "").split("|"):
+        fields = part.split(",")
+        if len(fields) >= 3:
+            try:
+                out.append((int(fields[0]), int(fields[1]), int(fields[2])))
+            except ValueError:
+                continue
+    return out
 
 
 def _prep_ok(prep_cond: str, level_by_id: dict[int, int]) -> bool:
-    """True if the prerequisite is met. Only the building-level type (4) is checked
-    locally; other types default to True and rely on server validation."""
-    cond = parse_prep_cond(prep_cond)
-    if not cond:
-        return True
-    ctype, param, value = cond
-    if ctype == _PREP_NEED_BUILDING:
-        return level_by_id.get(param, 0) >= value
+    """True if every prerequisite is met (AND). Only the building-level type (4)
+    is checked locally; other types default to True and rely on server validation."""
+    for ctype, param, value in parse_prep_cond(prep_cond):
+        if ctype == _PREP_NEED_BUILDING and level_by_id.get(param, 0) < value:
+            return False
     return True
 
 
@@ -140,7 +148,13 @@ def next_build_action(
         if (counts.get(build_id, 0) < config.max_count(build_id)
                 and ("construct", build_id) not in blocked):
             up1 = config.build_upgrade(build_id, 1)
-            if (up1 is not None and _prep_ok(up1.prep_cond, level_by_id)
+            # The real unlock gate lives on the buildBase row (multi-condition,
+            # AND). The level-1 upgrade's prep_cond is usually empty, so checking
+            # only that lets locked buildings be constructed → server 500033.
+            base_prep = (config.build_base(build_id) or {}).get("prep_cond", "")
+            if (up1 is not None
+                    and _prep_ok(base_prep, level_by_id)
+                    and _prep_ok(up1.prep_cond, level_by_id)
                     and _affordable(up1.cost, state)
                     and (build_id == MAIN_HALL_ID or main_lv >= 1)):
                 return BuildAction(kind="construct", build_id=build_id, up=up1)
