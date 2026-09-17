@@ -37,3 +37,13 @@ def test_decisions_and_equipment_panels():
     assert "/api/equipment" in eq and "equip" in eq
     app = _app()
     assert "DecisionsPanel" in app and "EquipmentPanel" in app
+
+
+def test_territory_and_forts_panels():
+    terr = _c("TerritoryPanel.js")
+    assert "/api/territory" in terr and "/api/forts" in terr
+    assert "owned_cells" in terr and "getContext" in terr and "bán kính" in terr
+    forts = _c("FortsPanel.js")
+    assert "/api/forts" in forts and "Cứ Điểm" in forts
+    app = _app()
+    assert "TerritoryPanel" in app and "FortsPanel" in app

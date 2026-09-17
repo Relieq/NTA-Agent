@@ -5,11 +5,14 @@ import MiscPanel from "./MiscPanel.js";
 import ArmiesPanel from "./ArmiesPanel.js";
 import DecisionsPanel from "./DecisionsPanel.js";
 import EquipmentPanel from "./EquipmentPanel.js";
+import TerritoryPanel from "./TerritoryPanel.js";
+import FortsPanel from "./FortsPanel.js";
 import EventsPanel from "./EventsPanel.js";
 export default {
  components:{ StatusHeader, ResourcePanel, CityPanel, MiscPanel, ArmiesPanel,
-  DecisionsPanel, EquipmentPanel, EventsPanel },
+  DecisionsPanel, EquipmentPanel, TerritoryPanel, FortsPanel, EventsPanel },
  template:`<div><StatusHeader/><main class="grid">
-  <ResourcePanel/><CityPanel/><MiscPanel/><ArmiesPanel/><DecisionsPanel/><EquipmentPanel/><EventsPanel/>
+  <ResourcePanel/><CityPanel/><MiscPanel/><ArmiesPanel/><DecisionsPanel/><EquipmentPanel/>
+  <TerritoryPanel/><FortsPanel/><EventsPanel/>
  </main></div>`
 };
