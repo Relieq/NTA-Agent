@@ -54,3 +54,13 @@ def test_build_order_panel():
     assert "/api/profile" in bo
     assert "draggable" in bo and "Lưu thứ tự xây" in bo and "bỏ qua" in bo
     assert "BuildOrderPanel" in _app()
+
+
+def test_brain_chat_panel_and_final_order():
+    ch = _c("BrainChatPanel.js")
+    assert "/api/chat" in ch and "Chiến thuật" in ch and "Gửi" in ch
+    app = _app()
+    order = [app.index(c) for c in ("ResourcePanel", "CityPanel", "MiscPanel", "ArmiesPanel",
+        "DecisionsPanel", "EquipmentPanel", "TerritoryPanel", "FortsPanel", "BuildOrderPanel",
+        "BrainChatPanel", "EventsPanel")]
+    assert order == sorted(order)  # components appear in this order (template runs last)

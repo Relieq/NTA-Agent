@@ -8,12 +8,13 @@ import EquipmentPanel from "./EquipmentPanel.js";
 import TerritoryPanel from "./TerritoryPanel.js";
 import FortsPanel from "./FortsPanel.js";
 import BuildOrderPanel from "./BuildOrderPanel.js";
+import BrainChatPanel from "./BrainChatPanel.js";
 import EventsPanel from "./EventsPanel.js";
 export default {
- components:{ StatusHeader, ResourcePanel, CityPanel, MiscPanel, ArmiesPanel,
-  DecisionsPanel, EquipmentPanel, TerritoryPanel, FortsPanel, BuildOrderPanel, EventsPanel },
+ components:{ StatusHeader, ResourcePanel, CityPanel, MiscPanel, ArmiesPanel, DecisionsPanel,
+  EquipmentPanel, TerritoryPanel, FortsPanel, BuildOrderPanel, BrainChatPanel, EventsPanel },
  template:`<div><StatusHeader/><main class="grid">
   <ResourcePanel/><CityPanel/><MiscPanel/><ArmiesPanel/><DecisionsPanel/><EquipmentPanel/>
-  <TerritoryPanel/><FortsPanel/><BuildOrderPanel/><EventsPanel/>
+  <TerritoryPanel/><FortsPanel/><BuildOrderPanel/><BrainChatPanel/><EventsPanel/>
  </main></div>`
 };
