@@ -18,3 +18,13 @@ def test_state_panels_read_state_and_are_mounted():
     app = _app()
     for comp in ("ResourcePanel", "CityPanel", "MiscPanel"):
         assert comp in app
+
+
+def test_armies_and_events_panels():
+    assert "/api/armies" in _c("ArmiesPanel.js")
+    assert "tốc hành quân" in _c("ArmiesPanel.js")
+    ev = _c("EventsPanel.js")
+    assert "/api/events" in ev
+    assert "[object Object]" not in ev and "rationale" in ev  # object detail formatting preserved
+    app = _app()
+    assert "ArmiesPanel" in app and "EventsPanel" in app
