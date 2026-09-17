@@ -1,3 +1,66 @@
+# Territory Map Viewport (pan/zoom/hover/click) Implementation Plan
+
+> **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
+
+**Goal:** Rewrite the territory map as a pannable/zoomable viewport with game-y-up orientation, adaptive rulers, viewport culling, hover tooltips, and click-to-select (with accept/reject on recs) — porting the old bot's HardDigGridCanvas model.
+
+**Architecture:** `TerritoryPanel.js` keeps a viewport transform (`scale`, `originX/Y`) instead of auto-fitting each poll. World→screen uses `row = (map_width-1) - y` (y-up). Drag pans, wheel zooms at the cursor, buttons zoom/fit/recenter. Only visible cells are drawn. Data (territory+forts) refreshes on the 4s poll and redraws under the current transform without snapping the view.
+
+**Tech Stack:** Vue 3 (vendored, no-build); `<canvas>` 2D.
+
+**Spec:** `docs/superpowers/specs/2026-09-17-map-viewport-design.md`
+
+## Global Constraints
+
+- Game-y-up: `row(y) = (map_width-1) - y`. Y ruler labels read game-y.
+- Zoom clamped 6-60 px/cell. Auto-fit runs once on first data (and on the Fit button), never snapping back after the user pans/zooms.
+- Only cells within the viewport are drawn (culling).
+- Reuse endpoints only: `/api/territory`, `/api/forts`, `POST /api/forts/decide`.
+- Wheel zoom must not scroll the page (`passive:false` listener + `preventDefault`).
+- Tests: `.venv/Scripts/python.exe -m pytest -q`; lint `.venv/Scripts/python.exe -m ruff check nta_agent tests`.
+- Commit footer on every commit:
+  `Co-Authored-By: Claude Opus 4.8 <noreply@anthropic.com>` and
+  `Claude-Session: https://claude.ai/code/session_017SWX7TP9uSdjA1HbV883Tm`.
+
+---
+
+### Task 1: Rewrite TerritoryPanel as a pan/zoom viewport
+
+**Files:**
+- Rewrite: `nta_agent/dashboard/static/components/TerritoryPanel.js`
+- Test: `tests/test_dashboard_components.py` (update the territory assertions)
+
+**Interfaces:**
+- Consumes: `getJSON`, `postJSON`, `usePolling`, `window.Vue` (`ref`, `onMounted`, `onUnmounted`).
+- Produces: the same component id/mount (already in `App.js`); no API change.
+
+- [ ] **Step 1: Update the marker test**
+
+Replace `test_territory_map_has_rulers_and_decisions` in `tests/test_dashboard_components.py` with:
+```python
+def test_territory_map_viewport():
+    terr = _c("TerritoryPanel.js")
+    # rendering
+    assert "fillText" in terr and "accepted" in terr
+    assert "labelStep" in terr and "[1, 2, 5, 10, 20, 25, 50, 100]" in terr
+    assert "map_width" in terr or "MAPW" in terr        # y-flip uses map width
+    # interaction
+    assert "@mousedown" in terr and "@mousemove" in terr and "@mouseup" in terr
+    assert "wheel" in terr and "getBoundingClientRect" in terr
+    assert "Về thành chính" in terr                      # recenter control
+    assert "/api/forts/decide" in terr                   # accept/reject on a rec
+    assert "Math.min(60" in terr and "Math.max(6" in terr  # zoom clamp
+```
+
+- [ ] **Step 2: Run to verify it fails**
+
+Run: `.venv/Scripts/python.exe -m pytest tests/test_dashboard_components.py -q`
+Expected: FAIL on the new markers.
+
+- [ ] **Step 3: Rewrite the component**
+
+```js
+// nta_agent/dashboard/static/components/TerritoryPanel.js
 import { getJSON, postJSON, usePolling } from "../api.js";
 const { ref, onMounted, onUnmounted } = window.Vue;
 const MAPW = 600;
@@ -65,18 +128,19 @@ export default {
    const mx=data.main%data.mw, my=Math.floor(data.main/data.mw), R=6;
    ctx.strokeStyle="#3b6ea5"; ctx.lineWidth=1.5; ctx.setLineDash([4,3]);
    ctx.strokeRect(sX(mx-R)+0.5, sY(my+R)+0.5, (2*R+1)*scale, (2*R+1)*scale); ctx.setLineDash([]);
-   data.owned.forEach(([x,y])=>{ if(inView(x,y)) box(x,y,"#199e70"); });
-   ctx.strokeStyle="#c3c2b7"; ctx.lineWidth=1.5;
+   data.owned.forEach(([x,y])=>{ if(inView(x,y)) box(x,y,"#2e7d5b"); });
+   ctx.strokeStyle="#c9a227"; ctx.lineWidth=1.5;
    data.garr.forEach(([x,y])=>{ if(inView(x,y)) ctx.strokeRect(sX(x)+2,sY(y)+2,scale-4,scale-4); });
-   data.forts.forEach(([x,y])=>{ if(inView(x,y)) box(x,y,"#d95926"); });
-   data.accepted.forEach(([x,y])=>{ if(inView(x,y)){ box(x,y,"#d95926");
+   data.forts.forEach(([x,y])=>{ if(inView(x,y)) box(x,y,"#e08a2b"); });
+   data.accepted.forEach(([x,y])=>{ if(inView(x,y)){ box(x,y,"#e08a2b");
     ctx.fillStyle="#0b1320"; ctx.beginPath(); ctx.arc(sX(x)+scale/2,sY(y)+scale/2,Math.max(1.5,scale/6),0,7); ctx.fill(); } });
-   data.recs.forEach(r=>{ if(inView(r.x,r.y)){ ctx.strokeStyle="#e66767"; ctx.lineWidth=2; ctx.beginPath();
+   data.recs.forEach(r=>{ if(inView(r.x,r.y)){ ctx.strokeStyle="#e5484d"; ctx.lineWidth=2; ctx.beginPath();
     ctx.arc(sX(r.x)+scale/2,sY(r.y)+scale/2,Math.max(3,scale/2-1),0,7); ctx.stroke(); } });
-   if(inView(mx,my)) box(mx,my,"#3987e5");
+   if(inView(mx,my)) box(mx,my,"#3b82f6");
    if(hover && inView(hover.x,hover.y)){ ctx.strokeStyle="#58a6ff"; ctx.lineWidth=2;
     ctx.strokeRect(sX(hover.x)+1,sY(hover.y)+1,scale-2,scale-2); }
    ctx.restore();
+   // rulers
    ctx.fillStyle="#0b1320"; ctx.fillRect(0,0,W,MT); ctx.fillRect(0,0,ML,H);
    ctx.fillStyle="#8b949e"; ctx.font="10px ui-monospace,Consolas,monospace";
    const step=labelStep(scale);
@@ -157,3 +221,59 @@ export default {
     <button @click="sel=null">Đóng</button></div>
   </div></div>`
 };
+```
+
+- [ ] **Step 4: Run tests**
+
+Run: `.venv/Scripts/python.exe -m pytest tests/test_dashboard_components.py -q` → PASS.
+
+- [ ] **Step 5: Commit**
+
+```bash
+git add nta_agent/dashboard/static/components/TerritoryPanel.js tests/test_dashboard_components.py
+git commit -m "feat(dashboard): pannable/zoomable territory map (y-up, rulers, hover/click)"
+```
+
+---
+
+### Task 2: Palette validation + full suite + live verify
+
+**Files:** none (verification + optional color tweak in `TerritoryPanel.js`).
+
+- [ ] **Step 1: Validate the map's categorical colors (dataviz)**
+
+Run from the dataviz skill base dir:
+```bash
+node scripts/validate_palette.js "#2e7d5b,#e08a2b,#e5484d,#3b82f6,#c9a227" --mode dark
+```
+(owned, fort/accepted, rec, main, garrison). If any adjacent pair FAILs the CVD/normal-vision check, nudge the offending hex toward the dataviz ramps and re-run until PASS; update the colors in `TerritoryPanel.js` to match. Record the final PASS.
+
+- [ ] **Step 2: Full suite + lint**
+
+Run: `.venv/Scripts/python.exe -m pytest -q` → all pass. `ruff check nta_agent tests` → clean.
+
+- [ ] **Step 3: Live verify on machine A**
+
+Start the dashboard; `python -m nta_agent --once` (or Start from the UI) to populate owned cells. In the machine-A browser (browser "Quyền"), open the dashboard → Lãnh thổ:
+- **Drag** the map → the view pans. **Wheel** over a spot → zooms centred there (page does not scroll). **＋/－**, **Vừa khung**, **Về thành chính** work.
+- **Y axis increases upward** (larger y higher); ruler labels are round numbers and stay readable at different zooms.
+- **Hover** a cell → highlight + tooltip `(x, y) · state`.
+- **Click** a cell → popover shows its `(x, y)` + state; on a rec it offers Chấp thuận/Từ chối (which apply, as before).
+- No console errors. Screenshot for the user.
+
+- [ ] **Step 4: Commit any color tweak**
+
+```bash
+git add nta_agent/dashboard/static/components/TerritoryPanel.js
+git commit -m "chore(dashboard): validate map palette (dataviz)"
+```
+(Skip if no color change was needed.)
+
+---
+
+## Self-Review notes (author)
+
+- **Spec coverage**: drag-pan, wheel-zoom-at-cursor, +/-/fit/recenter, zoom clamp 6-60, y-up (`row=(mw-1)-y`), adaptive round rulers (`labelStep`), culling (visible range), hover tooltip+highlight, click select + coords + accept/reject, once-only auto-fit — all in Task 1. Palette validation + live verify in Task 2.
+- **Type consistency**: reuses `/api/territory`, `/api/forts`, `/api/forts/decide` unchanged; component id/mount unchanged (App.js needs no edit).
+- **No placeholders**: the full component is inline.
+- **Perf**: culling limits drawn cells to the viewport; redraw only on interaction + the 4s poll.
