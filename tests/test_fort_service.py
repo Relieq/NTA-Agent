@@ -19,11 +19,13 @@ def _state(land_count, main=100 * 600 + 100, uid="u1", forts=None):
 
 class Cfg:
     forts_path = None
+    fort_decisions_path = None
 
 
 def _make(tmp_path, **kw):
     cfg = Cfg()
     cfg.forts_path = tmp_path / "forts.json"
+    cfg.fort_decisions_path = tmp_path / "fort_decisions.json"
     return cfg, FortService(cfg=cfg, actions=object(), **kw)
 
 
@@ -70,6 +72,25 @@ def test_rescans_when_land_count_changes(tmp_path):
     svc.tick(_state(land_count=5))
     svc.tick(_state(land_count=6))
     assert len(calls) == 2
+
+
+def test_forts_json_respects_decisions(tmp_path):
+    from nta_agent.runtime import fort_decisions as fd
+    owned = {120 * 600 + 100, 100 * 600 + 120}
+
+    def scan(actions, main, uid, map_width=600, focus=None):
+        return set(owned), {}
+
+    cfg, svc = _make(tmp_path, scan=scan, max_count_fn=lambda bid: 3)
+    fd.update(cfg.fort_decisions_path, 120 * 600 + 100, "accept")
+    fd.update(cfg.fort_decisions_path, 100 * 600 + 120, "reject")
+    svc.tick(_state(land_count=2))
+    data = json.loads(cfg.forts_path.read_text(encoding="utf-8"))
+    rec_xy = [[r["x"], r["y"]] for r in data["recommendations"]]
+    assert [100, 120] not in rec_xy           # accepted (idx 120*600+100) excluded
+    assert [120, 100] not in rec_xy           # rejected (idx 100*600+120) excluded
+    assert [100, 120] in data["accepted"]     # accepted listed
+    assert [120, 100] in data["rejected"]     # rejected listed
 
 
 def test_fort_cap_limits_recommendations(tmp_path):

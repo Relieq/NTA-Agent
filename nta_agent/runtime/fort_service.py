@@ -10,8 +10,9 @@ from __future__ import annotations
 import json
 import sys
 
-from nta_agent.execution.fort_advisor import recommend_forts
+from nta_agent.execution.fort_advisor import plan_forts, recommend_forts
 from nta_agent.execution.territory import scan_owned
+from nta_agent.runtime import fort_decisions
 
 FORT_BUILD_ID = 2102  # Cứ Điểm
 
@@ -55,13 +56,17 @@ class FortService:
 
             fort_indices = [int(f.get("index", 0)) for f in
                             (player.get("fortAutoSupports") or []) if isinstance(f, dict)]
-            slots = max(0, self._max_forts() - len(fort_indices))
-            recs = self._recommend(main, owned, forts=fort_indices,
-                                   map_width=self.map_width, max_forts=slots,
-                                   radius=self.radius) if slots else []
-
-            cells = sorted([c % self.map_width, c // self.map_width] for c in owned)
+            decisions = fort_decisions.load(self.cfg.fort_decisions_path)
+            recs, accepted = plan_forts(main, owned, fort_indices, decisions,
+                                        self._max_forts(), map_width=self.map_width,
+                                        radius=self.radius)
+            mw = self.map_width
+            cells = sorted([c % mw, c // mw] for c in owned)
+            accepted_coords = sorted([i % mw, i // mw] for i in accepted)
+            rejected_coords = sorted([i % mw, i // mw] for i, d in decisions.items()
+                                     if d == "rejected")
             payload = {"owned_count": len(owned), "owned_cells": cells,
+                       "accepted": accepted_coords, "rejected": rejected_coords,
                        "recommendations": recs}
             path = self.cfg.forts_path
             path.parent.mkdir(parents=True, exist_ok=True)
