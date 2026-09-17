@@ -17,9 +17,11 @@ def test_read_forts_view_from_file(tmp_path):
     assert v["owned_count"] == 23
     assert v["owned_cells"] == [[100, 120], [101, 120]]
     assert v["recommendations"][0]["index"] == 72100
+    assert v["accepted"] == [] and v["rejected"] == []  # default empty
 
 
 def test_read_forts_view_missing_returns_empty(tmp_path):
     cfg = RuntimeConfig(distinct_id="x", log_dir=tmp_path)
     v = read_forts_view(cfg)
-    assert v == {"owned_count": 0, "owned_cells": [], "recommendations": []}
+    assert v == {"owned_count": 0, "owned_cells": [], "accepted": [],
+                 "rejected": [], "recommendations": []}

@@ -129,10 +129,45 @@ def read_forts_view(cfg) -> dict:
     try:
         data = json.loads(Path(cfg.forts_path).read_text(encoding="utf-8"))
     except (OSError, ValueError):
-        return {"owned_count": 0, "owned_cells": [], "recommendations": []}
+        return {"owned_count": 0, "owned_cells": [], "accepted": [],
+                "rejected": [], "recommendations": []}
     return {"owned_count": data.get("owned_count", 0),
             "owned_cells": data.get("owned_cells") or [],
+            "accepted": data.get("accepted") or [],
+            "rejected": data.get("rejected") or [],
             "recommendations": data.get("recommendations") or []}
+
+
+def recompute_forts(cfg) -> dict:
+    """Rewrite forts.json from its owned_cells + snapshot + decisions. No game I/O."""
+    from nta_agent.data.config import GameConfig
+    from nta_agent.execution.fort_advisor import plan_forts
+    from nta_agent.runtime import fort_decisions
+    try:
+        fdj = json.loads(Path(cfg.forts_path).read_text(encoding="utf-8"))
+    except (OSError, ValueError):
+        fdj = {}
+    cells = fdj.get("owned_cells") or []
+    terr = read_territory_view(cfg)
+    mw = int(terr.get("map_width") or 600)
+    owned = [int(y) * mw + int(x) for x, y in cells]
+    main = int(terr.get("main_city") or 0)
+    existing = [int(f["index"]) for f in terr.get("forts", [])]
+    decisions = fort_decisions.load(cfg.fort_decisions_path)
+    try:
+        cap = GameConfig.load().max_count(2102)
+    except Exception:
+        cap = 1
+    recs, accepted = plan_forts(main, owned, existing, decisions, cap, map_width=mw)
+    payload = {"owned_count": len(owned), "owned_cells": cells,
+               "accepted": sorted([i % mw, i // mw] for i in accepted),
+               "rejected": sorted([i % mw, i // mw] for i, d in decisions.items()
+                                  if d == "rejected"),
+               "recommendations": recs}
+    Path(cfg.forts_path).parent.mkdir(parents=True, exist_ok=True)
+    Path(cfg.forts_path).write_text(json.dumps(payload, ensure_ascii=False, indent=2),
+                                    encoding="utf-8")
+    return payload
 
 
 def handle_profile_edit(cfg, edits: dict) -> dict:
@@ -229,6 +264,19 @@ class Handler(BaseHTTPRequestHandler):
             except (ValueError, TypeError):
                 pass
             self._json(200, fn())
+            return
+        if parsed.path == "/api/forts/decide":
+            try:
+                length = int(self.headers.get("Content-Length", "0"))
+                body = json.loads(self.rfile.read(length) or b"{}")
+                idx = int(body["index"])
+                decision = str(body.get("decision", ""))
+            except (ValueError, TypeError, KeyError):
+                self._json(400, {"ok": False, "error": "need index + decision"})
+                return
+            from nta_agent.runtime import fort_decisions
+            fort_decisions.update(cfg.fort_decisions_path, idx, decision)
+            self._json(200, recompute_forts(cfg))
             return
         if parsed.path == "/api/chat":
             try:
