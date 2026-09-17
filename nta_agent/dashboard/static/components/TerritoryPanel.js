@@ -64,19 +64,15 @@ export default {
    ctx.save(); ctx.beginPath(); ctx.rect(ML,MT,W-ML,H-MT); ctx.clip();
    const box=(x,y,c)=>{ ctx.fillStyle=c; ctx.fillRect(sX(x)+1,sY(y)+1,scale-2,scale-2); };
    const mx=data.main%data.mw, my=Math.floor(data.main/data.mw), R=6;
-   // speed zone: Manhattan distance <= 6 from the 2x2 city block (diagonal costs
-   // 2) -> a rotated diamond / octagon, NOT an axis-aligned square.
+   // Protection/speed zone: cells within Manhattan distance <= 6 of the 2x2 city
+   // block (diagonal costs 2). Rendered like the game's protect overlay (yellow
+   // #F5E900): a light fill on in-zone cells + a crisp outline that follows the
+   // CELL EDGES (staircase), never a diagonal cut across cells.
    const bx0=mx, bx1=mx+1, by0=my, by1=my+1;
-   // vertices on CELL EDGES/CORNERS (outer edges of the boundary cells) so the
-   // dashed diamond hugs the grid; diagonal facets are 45° lines through corners.
-   const Lx=x=>sX(x), Rx=x=>sX(x)+scale, Ty=y=>sY(y), By=y=>sY(y)+scale;
-   const zoneV=[[Rx(bx1+R),By(by0)],[Rx(bx1+R),Ty(by1)],
-                [Rx(bx1),Ty(by1+R)],[Lx(bx0),Ty(by1+R)],
-                [Lx(bx0-R),Ty(by1)],[Lx(bx0-R),By(by0)],
-                [Lx(bx0),By(by0-R)],[Rx(bx1),By(by0-R)]];
-   ctx.strokeStyle="#3b6ea5"; ctx.lineWidth=1.5; ctx.setLineDash([4,3]); ctx.beginPath();
-   zoneV.forEach((v,i)=>{ if(i===0) ctx.moveTo(v[0],v[1]); else ctx.lineTo(v[0],v[1]); });
-   ctx.closePath(); ctx.stroke(); ctx.setLineDash([]);
+   const inZone=(x,y)=>{ const dx=Math.max(bx0-x,0,x-bx1), dy=Math.max(by0-y,0,y-by1); return dx+dy<=R; };
+   const zx0=Math.max(x0,bx0-R), zx1=Math.min(x1,bx1+R), zy0=Math.max(yLo,by0-R), zy1=Math.min(yHi,by1+R);
+   ctx.fillStyle="rgba(245,233,0,0.10)";
+   for(let y=zy0;y<=zy1;y++) for(let x=zx0;x<=zx1;x++) if(inZone(x,y)) ctx.fillRect(sX(x),sY(y),scale,scale);
    data.owned.forEach(([x,y])=>{ if(inView(x,y)) box(x,y,"#199e70"); });
    ctx.strokeStyle="#c3c2b7"; ctx.lineWidth=1.5;
    data.garr.forEach(([x,y])=>{ if(inView(x,y)) ctx.strokeRect(sX(x)+2,sY(y)+2,scale-4,scale-4); });
@@ -86,6 +82,17 @@ export default {
    data.recs.forEach(r=>{ if(inView(r.x,r.y)){ ctx.strokeStyle="#e66767"; ctx.lineWidth=2; ctx.beginPath();
     ctx.arc(sX(r.x)+scale/2,sY(r.y)+scale/2,Math.max(3,scale/2-1),0,7); ctx.stroke(); } });
    [[mx,my],[mx+1,my],[mx,my+1],[mx+1,my+1]].forEach(([x,y])=>{ if(inView(x,y)) box(x,y,"#3987e5"); });
+   // zone outline along CELL EDGES (staircase): draw each in-zone cell's edges that
+   // border an out-of-zone cell — matches the grid, no diagonal cut.
+   ctx.strokeStyle="#F5E900"; ctx.lineWidth=1.5; ctx.setLineDash([4,3]); ctx.beginPath();
+   for(let y=zy0;y<=zy1;y++) for(let x=zx0;x<=zx1;x++){
+    if(!inZone(x,y)) continue;
+    if(!inZone(x+1,y)){ ctx.moveTo(sX(x)+scale,sY(y)); ctx.lineTo(sX(x)+scale,sY(y)+scale); }
+    if(!inZone(x-1,y)){ ctx.moveTo(sX(x),sY(y)); ctx.lineTo(sX(x),sY(y)+scale); }
+    if(!inZone(x,y+1)){ ctx.moveTo(sX(x),sY(y)); ctx.lineTo(sX(x)+scale,sY(y)); }
+    if(!inZone(x,y-1)){ ctx.moveTo(sX(x),sY(y)+scale); ctx.lineTo(sX(x)+scale,sY(y)+scale); }
+   }
+   ctx.stroke(); ctx.setLineDash([]);
    if(hover && inView(hover.x,hover.y)){ ctx.strokeStyle="#58a6ff"; ctx.lineWidth=2;
     ctx.strokeRect(sX(hover.x)+1,sY(hover.y)+1,scale-2,scale-2); }
    ctx.restore();
@@ -174,6 +181,6 @@ export default {
    <span><b style="color:#d95926">■</b> Cứ Điểm / dự kiến</span>
    <span><b style="color:#e66767">◯</b> gợi ý</span>
    <span><b style="color:#c3c2b7">▢</b> quân trú</span>
-   <span><b style="color:#3b6ea5">◇</b> vùng thoi nét đứt = bán kính 6 ô quanh thành 2×2 (Manhattan, đi chéo tốn 2 — đã tăng tốc, không cần xây Cứ Điểm bên trong)</span>
+   <span><b style="color:#F5E900">◇</b> vùng bảo vệ/tăng tốc = bán kính 6 ô (Manhattan) quanh thành 2×2 — không cần xây Cứ Điểm bên trong</span>
   </div></div>`
 };
