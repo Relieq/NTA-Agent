@@ -67,11 +67,15 @@ export default {
    // speed zone: Manhattan distance <= 6 from the 2x2 city block (diagonal costs
    // 2) -> a rotated diamond / octagon, NOT an axis-aligned square.
    const bx0=mx, bx1=mx+1, by0=my, by1=my+1;
-   const cc=(cx,cy)=>[sX(cx)+scale/2, sY(cy)+scale/2];
-   const zoneV=[[bx1+R,by0],[bx1+R,by1],[bx1,by1+R],[bx0,by1+R],
-                [bx0-R,by1],[bx0-R,by0],[bx0,by0-R],[bx1,by0-R]];
+   // vertices on CELL EDGES/CORNERS (outer edges of the boundary cells) so the
+   // dashed diamond hugs the grid; diagonal facets are 45° lines through corners.
+   const Lx=x=>sX(x), Rx=x=>sX(x)+scale, Ty=y=>sY(y), By=y=>sY(y)+scale;
+   const zoneV=[[Rx(bx1+R),By(by0)],[Rx(bx1+R),Ty(by1)],
+                [Rx(bx1),Ty(by1+R)],[Lx(bx0),Ty(by1+R)],
+                [Lx(bx0-R),Ty(by1)],[Lx(bx0-R),By(by0)],
+                [Lx(bx0),By(by0-R)],[Rx(bx1),By(by0-R)]];
    ctx.strokeStyle="#3b6ea5"; ctx.lineWidth=1.5; ctx.setLineDash([4,3]); ctx.beginPath();
-   zoneV.forEach((v,i)=>{ const [px,py]=cc(v[0],v[1]); if(i===0) ctx.moveTo(px,py); else ctx.lineTo(px,py); });
+   zoneV.forEach((v,i)=>{ if(i===0) ctx.moveTo(v[0],v[1]); else ctx.lineTo(v[0],v[1]); });
    ctx.closePath(); ctx.stroke(); ctx.setLineDash([]);
    data.owned.forEach(([x,y])=>{ if(inView(x,y)) box(x,y,"#199e70"); });
    ctx.strokeStyle="#c3c2b7"; ctx.lineWidth=1.5;
