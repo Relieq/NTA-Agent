@@ -3,10 +3,22 @@ from __future__ import annotations
 
 
 def _hp(pawn: dict) -> tuple[int, int]:
-    hp = pawn.get("hp") or [0, 0]
-    cur = int(hp[0]) if len(hp) else 0
-    mx = int(hp[-1]) if len(hp) else 0
-    # No max known -> treat as full (never route on bad data).
+    """(current, max) hp for a raw pawn, or (0,0) when max is unknown.
+
+    The engine serializes pawns as ``{curHp, maxHp}`` (scalars); some contexts
+    use ``hp:[cur,max]``. Support both; unknown max -> (0,0) so we never route on
+    bad data (a pawn with no max reads as "not wounded").
+    """
+    if "curHp" in pawn or "maxHp" in pawn:
+        cur = int(pawn.get("curHp", 0) or 0)
+        mx = int(pawn.get("maxHp", 0) or 0)
+    else:
+        hp = pawn.get("hp")
+        if isinstance(hp, (list, tuple)):
+            cur = int(hp[0]) if len(hp) else 0
+            mx = int(hp[-1]) if len(hp) > 1 else 0
+        else:
+            cur, mx = int(hp or 0), 0  # scalar current only -> max unknown
     return (cur, mx) if mx > 0 else (0, 0)
 
 
