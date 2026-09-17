@@ -65,16 +65,26 @@ class Agent:
                 time.sleep(delay)
                 delay = min(delay * 2, self.max_backoff)
 
-    def run(self, ticks: int = 0, interval: float = 5.0, on_tick=None) -> None:
+    def run(self, ticks: int = 0, interval: float = 5.0, on_tick=None, control=None) -> None:
         """Run the loop. ``ticks=0`` means forever; ``interval`` seconds between ticks.
+
+        ``control`` is an optional zero-arg callable returning "run", "pause", or
+        "stop": pause keeps the session synced but skips acting; stop ends the loop.
 
         Raises :class:`TokenChainBroken` if the token chain breaks and no
         ``token_refresher`` is configured on the session.
         """
         i = 0
         while ticks == 0 or i < ticks:
+            mode = control() if control else "run"
+            if mode == "stop":
+                break
             try:
-                fired = self.tick()
+                if mode == "pause":
+                    self.session.sync()  # keep state fresh + session alive; do not act
+                    fired = []
+                else:
+                    fired = self.tick()
             except _TRANSIENT as e:
                 self._emit("connection_lost", e)
                 self._recover()
