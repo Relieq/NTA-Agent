@@ -69,6 +69,9 @@ def run(cfg: RuntimeConfig, *, ticks: int = 0, session=None, engine=None) -> Non
     for rule in getattr(agent.engine, "rules", []):
         if getattr(rule, "name", "") == "occupy_cell":
             rule.on_event = log.append
+            if config is not None:  # pace discovery by the cheapest occupy cost
+                from nta_agent.execution.occupy_planner import min_occupy_stamina
+                rule.min_stamina = min_occupy_stamina(config)
 
     def _safe(fn, *a):
         try:

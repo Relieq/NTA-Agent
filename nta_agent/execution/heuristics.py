@@ -614,6 +614,65 @@ class ClaimTasks:
 
 
 @dataclass
+class HealRouting:
+    """Route wounded armies to the nearest fort/city to heal (passive server-side).
+
+    Best-effort: keeps farming armies healthy so the occupy loop never stalls on
+    weakened troops. Heal itself is automatic while an army sits at a fort/city;
+    this rule only does the routing.
+    """
+    name: str = "heal_routing"
+    fort_capacity: int = 5      # armies a heal node holds (maxArmyCount; refine live)
+    check_every: int = 4        # ticks between get_player_armys() sweeps
+    max_route_per_tick: int = 1
+    on_event: object = None
+    _cooldown: int = 0
+    _pending: object = None
+
+    def applies(self, state: GameState, actions: Actions) -> bool:
+        if not state.main_city_index:
+            return False
+        if self._cooldown > 0:
+            self._cooldown -= 1
+            return False
+        from nta_agent.execution.army_health import (
+            army_is_wounded,
+            army_wound_frac,
+            nearest_heal_node,
+        )
+        from nta_agent.execution.territory import build_territory
+        armies = actions.get_player_armys()
+        self._cooldown = self.check_every
+        terr = build_territory(state)
+        nodes = {terr.main_city} | {f.index for f in terr.forts}
+        occupancy: dict[int, int] = {}
+        for a in armies:
+            idx = int(a.get("index", 0) or 0)
+            if idx in nodes:
+                occupancy[idx] = occupancy.get(idx, 0) + 1
+        candidates = [a for a in armies
+                      if army_is_wounded(a) and int(a.get("index", 0) or 0) not in nodes]
+        candidates.sort(key=army_wound_frac, reverse=True)
+        pending = []
+        for a in candidates[: self.max_route_per_tick]:
+            node = nearest_heal_node(int(a["index"]), terr, occupancy, self.fort_capacity)
+            if node is None:
+                continue
+            occupancy[node] = occupancy.get(node, 0) + 1  # reserve the slot
+            pending.append((a, node))
+        self._pending = pending
+        if pending and self.on_event:
+            self.on_event("heal_routing", {"count": len(pending),
+                                           "armies": [a.get("uid") for a, _ in pending]})
+        return bool(pending)
+
+    def act(self, actions: Actions) -> None:
+        for army, node in self._pending or []:
+            actions.move_cell_army([army], node)
+        self._pending = None
+
+
+@dataclass
 class RuleEngine:
     rules: list[Rule]
 
@@ -638,5 +697,6 @@ class RuleEngine:
     def default(cls, profile: object = None) -> RuleEngine:
         return cls(rules=[CollectCityOutput(), BuildOrder(profile=profile),
                           Recruit(profile=profile),
+                          HealRouting(),
                           OccupyCell(use_sim=True, profile=profile),
                           ClaimTreasures(), ClaimTasks()])

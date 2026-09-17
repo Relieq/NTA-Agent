@@ -77,6 +77,18 @@ def is_occupiable(config: GameConfig, land_id: int) -> bool:
     return bool(row.get("occupy"))
 
 
+def min_occupy_stamina(config: GameConfig) -> int:
+    """Cheapest occupy stamina cost across land tiers (``landAttr``), floor 1.
+
+    Lets ``OccupyCell`` skip discovery when stamina can't afford even the
+    cheapest occupy, without hard-coding the cost.
+    """
+    costs = [int(row.get("need_stamina", 0) or 0)
+             for row in config.table("landAttr").values()]
+    costs = [c for c in costs if c > 0]
+    return min(costs) if costs else 1
+
+
 @dataclass
 class TargetEval:
     target: int

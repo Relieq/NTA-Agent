@@ -269,3 +269,31 @@ def test_occupy_uses_active_preset_group():
     assert act.calls
     used = set(act.calls[0][2])
     assert used <= {"cung", "tank"} and "extra" not in used and used
+
+
+def test_occupy_skips_discovery_when_stamina_below_min():
+    """Pacing: no get_area probes when stamina can't afford an occupy."""
+    from nta_agent.state.schema import User
+
+    st = GameState(source="api")
+    st.user = User(uid="me")
+    st.main_city_index = 100 * W + 100
+    st.resources.stamina = 0
+
+    calls = []
+
+    class Acts:
+        def get_area(self, i, **kw):
+            calls.append(i)
+            return {"data": {}}
+
+    rule = OccupyCell(min_stamina=1)
+    assert rule.applies(st, Acts()) is False
+    assert calls == []          # no discovery probes when stamina is short
+
+
+def test_min_occupy_stamina_from_config():
+    from nta_agent.data.config import GameConfig
+    from nta_agent.execution.occupy_planner import min_occupy_stamina
+
+    assert min_occupy_stamina(GameConfig.load()) >= 1
