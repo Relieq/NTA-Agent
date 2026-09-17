@@ -5,6 +5,11 @@ Kế thừa ý tưởng chức năng từ [NTA-AutoBot](https://github.com/Relie
 vision) nhưng nâng cấp lên kiến trúc **hybrid API-first + vision fallback** với **LLM làm bộ não
 chiến lược**.
 
+> **File này = kiến trúc & triết lý (ổn định).** Trạng thái thực + trình tự phần còn lại (cập nhật
+> 2026-09-17): [superpowers/plans/2026-09-17-master-plan-remaining.md](superpowers/plans/2026-09-17-master-plan-remaining.md).
+> Catalog API: [re/game-api.md](re/game-api.md). *Lưu ý: dự án đã đi API-first thuần — vision (Phase 1)
+> cố ý hoãn.*
+
 ## 0. Bối cảnh kỹ thuật (đã xác minh 2026-09-01)
 
 | Hạng mục | Giá trị |
