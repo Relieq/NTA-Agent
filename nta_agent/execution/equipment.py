@@ -1,6 +1,11 @@
 """Build the per-pawn equipment view (human-reserved gear assignment)."""
 from __future__ import annotations
 
+import re
+
+# Cocos rich-text markup the game renders as color/format; strip for plain display.
+_MARKUP = re.compile(r"</?c(?:olor=[^>]*)?>", re.IGNORECASE)
+
 
 def _text(config, table_name: str, id_: int) -> str:
     row = config.table(table_name).get(f"name_{id_}") or {}
@@ -13,6 +18,12 @@ def pawn_name(config, pawn_id: int) -> str:
 
 def equip_name(config, equip_id: int) -> str:
     return _text(config, "equipText", equip_id)
+
+
+def equip_effect(config, equip_id: int) -> str:
+    """Human-readable effect/description of an equip (equipText.effect_<id>)."""
+    row = config.table("equipText").get(f"effect_{equip_id}") or {}
+    return _MARKUP.sub("", row.get("vi") or row.get("en") or "").strip()
 
 
 def _compatible(config, equip_id: int, pawn_id: int) -> bool:
@@ -38,8 +49,10 @@ def pawn_equipment(state, config) -> list[dict]:
         cur_uid = cfg.get("equipUid", "") or ""
         cur = by_uid.get(cur_uid)
         cur_name = equip_name(config, cur["id"]) if cur else ""
+        cur_desc = equip_effect(config, cur["id"]) if cur else ""
         options = [
-            {"uid": e["uid"], "id": e["id"], "name": equip_name(config, e["id"])}
+            {"uid": e["uid"], "id": e["id"], "name": equip_name(config, e["id"]),
+             "desc": equip_effect(config, e["id"])}
             for e in equips
             if isinstance(e, dict) and _compatible(config, e.get("id", 0), pid)
         ]
@@ -48,6 +61,7 @@ def pawn_equipment(state, config) -> list[dict]:
             "pawn_name": pawn_name(config, pid),
             "current_equip_uid": cur_uid,
             "current_equip_name": cur_name,
+            "current_equip_desc": cur_desc,
             "skin_id": int(cfg.get("skinId", 0) or 0),
             "attack_speed": int(cfg.get("attackSpeed", 0) or 0),
             "options": options,

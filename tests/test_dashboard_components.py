@@ -55,8 +55,12 @@ def test_armies_and_events_panels():
 def test_decisions_and_equipment_panels():
     dec = _c("DecisionsPanel.js")
     assert "/api/decisions" in dec and "/api/command" in dec and "reroll" in dec
+    assert "canReroll" in dec and "cần vàng" in dec       # gold guard on reroll
     eq = _c("EquipmentPanel.js")
     assert "/api/equipment" in eq and "equip" in eq
+    assert "o.desc" in eq and "current_equip_desc" in eq  # equip descriptions shown
+    arm = _c("ArmiesPanel.js")
+    assert "toggle" in arm and "v-show" in arm            # collapsible army lists
     app = _app()
     assert "DecisionsPanel" in app and "EquipmentPanel" in app
 
