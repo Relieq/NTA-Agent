@@ -11,6 +11,19 @@ def _app():
     return (STATIC / "components" / "App.js").read_text(encoding="utf-8")
 
 
+def test_shell_sidebar_and_tabs():
+    app = _c("App.js")
+    assert "activeTab" in app and "Sidebar" in app
+    assert "localStorage" in app
+    assert "v-show" in app  # territory kept mounted across tab switches
+    for label in ("Tổng quan", "Quân đội", "Lãnh thổ", "Xây dựng", "Nhật ký"):
+        assert label in app  # tab labels defined in the TABS array
+    sb = _c("Sidebar.js")
+    assert "sidebar" in sb and "$emit('select'" in sb
+    css = (STATIC / "app.css").read_text(encoding="utf-8")
+    assert ".shell" in css and ".sidebar" in css
+
+
 def test_stat_tile_and_resource_tiles():
     st = _c("StatTile.js")
     assert "label" in st and "value" in st
