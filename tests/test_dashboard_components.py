@@ -11,6 +11,15 @@ def _app():
     return (STATIC / "components" / "App.js").read_text(encoding="utf-8")
 
 
+def test_stat_tile_and_resource_tiles():
+    st = _c("StatTile.js")
+    assert "label" in st and "value" in st
+    rp = _c("ResourcePanel.js")
+    assert "StatTile" in rp and "/api/state" in rp
+    css = (STATIC / "app.css").read_text(encoding="utf-8")
+    assert ".tile" in css
+
+
 def test_state_panels_read_state_and_are_mounted():
     assert "/api/state" in _c("ResourcePanel.js")
     assert "hàng đợi" in _c("CityPanel.js")           # queue label
