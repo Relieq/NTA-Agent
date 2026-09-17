@@ -298,6 +298,27 @@ class Actions:
         self._apply_result(reply)
         return reply
 
+    def move_cell_army(
+        self,
+        armies: list[dict],
+        target: int,
+        *,
+        same_speed: bool = False,
+    ) -> dict:
+        """March ``armies`` to ``target`` without attacking (GAME_HD_MoveCellArmy).
+
+        Used to route wounded armies to a fort/city to heal. ``armies`` are
+        AreaArmyInfo dicts (need ``index`` and ``uid``).
+        """
+        indexs = [int(a["index"]) for a in armies]
+        uids = [str(a["uid"]) for a in armies]
+        reply = self.session.request("game/HD_MoveCellArmy", {
+            "indexs": indexs, "uids": uids, "target": int(target),
+            "isSameSpeed": bool(same_speed),
+        })
+        self._apply_result(reply)
+        return reply
+
     # ---- prediction ------------------------------------------------------ #
     def predict_occupy(self, cell_index: int, my_pawns: list[dict], predictor=None, *, use_sim=True):
         """Predict occupying ``cell_index`` with ``my_pawns``.
