@@ -44,41 +44,57 @@ so a crash never takes the dashboard down.
 - Backward compatible: `python -m nta_agent` run standalone (no `control.json`)
   behaves exactly as today.
 
+**Goals (cont.)**
+- **Status survives a dashboard restart** (pidfile-adopt): the supervisor records
+  the child PID to a file; on start it adopts a still-running agent, so a restarted
+  dashboard shows the true state and can Pause/Resume/Stop it — and Start never
+  spawns a second agent while one is alive.
+
 **Non-goals**
 - No interactive map / accept-reject recs (spec D).
-- No adopting an externally-started agent across a dashboard restart (v1 manages
-  only children it spawned; a restart shows `STOPPED` until Start is pressed).
 - No multi-agent/multi-account supervision.
 - No auth on the control endpoints (localhost-only, single operator).
+- No hardening against PID reuse beyond a `started_at` sanity marker (single-user
+  local; reuse window is tiny — documented, not fully solved).
 
 ## 4. Architecture & components
 
 | File | Responsibility |
 |---|---|
 | `nta_agent/runtime/control.py` (new) | `read_mode(path) -> "run"\|"pause"\|"stop"` (missing/invalid file → "run"); `write_control(path, *, paused=None, stop=None)` merges flags into the JSON (create dir); `reset(path)` writes `{paused:false, stop:false}`. Pure file I/O. |
-| `nta_agent/runtime/config.py` | Add `control_path` property → `log_dir/"control.json"`. |
+| `nta_agent/runtime/config.py` | Add `control_path` → `log_dir/"control.json"` and `agent_pid_path` → `log_dir/"agent.pid"`. |
+| `nta_agent/runtime/proc.py` (new) | `pid_alive(pid) -> bool` cross-platform (POSIX `os.kill(pid,0)`; Windows `ctypes` `OpenProcess`+`GetExitCodeProcess`==STILL_ACTIVE); `hard_kill(pid)` (POSIX `os.kill` SIGTERM/SIGKILL; Windows `taskkill /F /PID`). |
 | `nta_agent/execution/agent.py` | `run(..., control=None)`: `control` is a zero-arg callable returning the mode. Each iteration: `stop` → break; `pause` → `self.session.sync()` only (no `engine.tick`), `fired=[]`; else normal `tick()`. `on_tick` still called (so the snapshot stays fresh while paused). |
 | `nta_agent/runtime/runner.py` | Build `control=lambda: read_mode(cfg.control_path)`; pass to `agent.run`. In `on_tick`, when the mode is `pause`, run only snapshot + event log and **skip** the acting services (decision `service`, `brain`, `forts`). Always write the snapshot. |
-| `nta_agent/dashboard/supervisor.py` (new) | `AgentSupervisor(cfg)` manages one child via `subprocess.Popen([sys.executable, "-m", "nta_agent"])` (inherits env + cwd). Thread-safe (a `Lock`). Methods: `start()`, `stop(timeout=10)`, `pause()`, `resume()`, `status() -> dict`. |
+| `nta_agent/dashboard/supervisor.py` (new) | `AgentSupervisor(cfg)` manages one agent, whether spawned here (`subprocess.Popen([sys.executable, "-m", "nta_agent"])`, inherits env+cwd) or **adopted** from `agent_pid_path` on construction. Thread-safe (a `Lock`). Methods: `start()`, `stop(timeout=10)`, `pause()`, `resume()`, `status() -> dict`. Tracks `_proc` (Popen or None when adopted), `_pid`, `_started_at`, `_user_stopped`, `_last_exit`. |
 | `nta_agent/dashboard/server.py` | Create one `AgentSupervisor` on `DashboardServer`; routes: `POST /api/agent/start\|stop\|pause\|resume` → the matching method → return `status()`; `GET /api/agent/status`. |
 | `nta_agent/dashboard/static/components/ControlBar.js` (new) | Buttons + engine indicator; polls `/api/agent/status` (1000ms); posts control actions. Placed in the header row. |
 | `static/components/StatusHeader.js` + `App.js` | Header hosts `ControlBar`; a `RuntimeStatus` line (engine/pid/uptime/snapshot-age + combat/build from `/api/state`). |
 
 ### 4.1 Supervisor behavior
-- `start()`: if a child is alive → no-op, return status. Else `reset(control_path)`,
-  `Popen([...])`, record `started_at`, clear `_user_stopped`/`_last_exit`.
-- `stop(timeout)`: `write_control(stop=True)`; wait up to `timeout` for the child
-  to exit (poll loop); if still alive → `terminate()`, wait ~3s; if still alive →
-  `kill()`. Set `_user_stopped=True`, drop the handle.
-- `pause()`/`resume()`: `write_control(paused=True/False)` (only meaningful while
-  a child is alive; still written otherwise — harmless).
-- `status()`: 
-  - child is None → `{engine: "STOPPED" or "CRASHED", pid: null, uptime: 0}`
-    (`CRASHED` if the last observed exit was not a user stop and exit code ≠ 0).
-  - `poll() is None` (alive) → `RUNNING`, or `PAUSED` if `read_mode==pause`;
-    include `pid`, `uptime = now - started_at`.
-  - `poll()` returns a code (exited unexpectedly) → mark `_last_exit`, drop handle,
-    report `CRASHED` (code) unless `_user_stopped` → `STOPPED`.
+- `__init__(cfg)`: **adopt** — read `agent_pid_path` `{pid, started_at}`; if
+  `pid_alive(pid)` set `_pid`/`_started_at`, `_proc=None` (adopted); else delete a
+  stale pidfile.
+- `_alive()`: `_proc.poll() is None` when owned; else `pid_alive(_pid)` when adopted;
+  else `False`.
+- `start()`: if `_alive()` → no-op, return status (never a second agent). Else
+  `reset(control_path)`, `Popen([...])`, set `_pid=proc.pid`, `_started_at=now`,
+  write `agent_pid_path` `{pid, started_at}`, clear `_user_stopped`/`_last_exit`.
+- `stop(timeout)`: `write_control(stop=True)`; wait up to `timeout` for `_alive()`
+  to go false (the agent honors `stop` and exits); if still alive → owned:
+  `terminate()` then `kill()`; adopted: `hard_kill(_pid)`. Set `_user_stopped=True`,
+  delete the pidfile, clear handles.
+- `pause()`/`resume()`: `write_control(paused=True/False)`.
+- `status()`:
+  - `_alive()` → `RUNNING`, or `PAUSED` if `read_mode(control_path)=="pause"`;
+    include `pid`, `uptime = now - _started_at`.
+  - owned child exited unexpectedly (`poll()` returns a code) → record `_last_exit`,
+    delete pidfile, drop handle → `CRASHED` (code) unless `_user_stopped` → `STOPPED`.
+  - nothing alive → `STOPPED` (or `CRASHED` if the last observed exit was not a user
+    stop and code ≠ 0). `pid: null`, `uptime: 0`.
+- PID-reuse guard: the pidfile carries `started_at`; adoption is best-effort. Worst
+  case a reused live PID blocks Start — the user can Stop (writes the flag; if that
+  PID is not our agent, `hard_kill` clears it) then Start.
 
 ### 4.2 Concurrency / safety
 - All supervisor mutations under a `threading.Lock` (the HTTP server is threaded).
@@ -116,11 +132,11 @@ UI RuntimeStatus <- /api/agent/status (engine) + /api/state (combat/build/snapsh
 - Stop when nothing running → no-op, returns STOPPED.
 - Child dies on its own → next `status()` detects via `poll()`, reports CRASHED
   with the exit code; Start re-enabled.
-- Dashboard restart with a child still running → supervisor has no handle → shows
-  STOPPED; pressing Start would spawn a second agent. Mitigation: `stop()` also
-  writes `stop=True` so a truly-orphaned agent can be stopped by writing the flag
-  — but v1 documents "start the agent via the dashboard" as the workflow. (A
-  pidfile-based adopt is a noted future enhancement, out of scope here.)
+- Dashboard restart with a child still running → the new supervisor **adopts** it
+  via `agent_pid_path` (shows RUNNING/PAUSED, controllable); Start stays locked
+  while it is alive, so no second agent is spawned.
+- Stale pidfile (agent died without cleanup) → `pid_alive` is false → pidfile
+  deleted on construction/status; Start works normally.
 - Pause keeps the session alive (does not log out) so Resume is immediate and
   does not re-kick the game client.
 
@@ -133,10 +149,12 @@ UI RuntimeStatus <- /api/agent/status (engine) + /api/state (combat/build/snapsh
   `stop` → loop breaks promptly; `run` → normal.
 - `runner`: paused mode writes a snapshot but does not call the acting services
   (brain/forts/decision) — via fakes.
-- `supervisor`: with a fake/mini spawn target (e.g. a dummy `-c` script, or
-  monkeypatched `Popen`), assert start→RUNNING, pause→PAUSED (control.json flag),
-  stop→STOPPED (control.json stop flag + handle dropped), double-start no-op,
-  crashed detection when the fake exits nonzero.
+- `proc`: `pid_alive(os.getpid())` is True; `pid_alive(<unused pid>)` is False.
+- `supervisor`: with monkeypatched `Popen`/`pid_alive`, assert start→RUNNING,
+  pause→PAUSED (control.json flag), stop→STOPPED (stop flag + pidfile deleted),
+  double-start no-op, crashed detection when the fake exits nonzero, and **adopt**:
+  constructing a supervisor when `agent_pid_path` names a live PID → status RUNNING
+  without spawning; a stale pidfile → deleted, STOPPED.
 - `server`: POST `/api/agent/*` dispatches to supervisor (monkeypatched) and
   returns its status; GET `/api/agent/status` shape.
 - FE: `ControlBar.js` has the four actions + `/api/agent/status`; buttons gated by
