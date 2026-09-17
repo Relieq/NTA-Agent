@@ -33,7 +33,8 @@ def test_scans_and_writes_on_first_tick(tmp_path):
     owned = {100 * 600 + 100, 120 * 600 + 100}
 
     def scan(actions, main, uid, map_width=600, focus=None):
-        return set(owned), {}
+        return {"owned": set(owned), "cities": {}, "enemy_cells": {120 * 600 + 130},
+                "enemy_cities": {120 * 600 + 130: 1}, "frontier": {100 * 600 + 101}}
 
     cfg, svc = _make(tmp_path, scan=scan, max_count_fn=lambda bid: 2)
     svc.tick(_state(land_count=2))
@@ -45,6 +46,10 @@ def test_scans_and_writes_on_first_tick(tmp_path):
     assert [100, 100] in data["owned_cells"]
     assert [100, 120] in data["owned_cells"]
     assert len(data["owned_cells"]) == 2
+    # enemy + frontier layers written too
+    assert [130, 120] in data["enemy_cells"]
+    assert {"x": 130, "y": 120, "type": 1} in data["enemy_cities"]
+    assert [101, 100] in data["frontier"]
 
 
 def test_skips_when_land_count_unchanged(tmp_path):
@@ -52,7 +57,7 @@ def test_skips_when_land_count_unchanged(tmp_path):
 
     def scan(actions, main, uid, map_width=600, focus=None):
         calls.append(1)
-        return {100 * 600 + 100}, {}
+        return {"owned": {100 * 600 + 100}, "cities": {}, "enemy_cells": set(), "enemy_cities": {}, "frontier": set()}
 
     _cfg, svc = _make(tmp_path, scan=scan, max_count_fn=lambda bid: 2)
     st = _state(land_count=5)
@@ -66,7 +71,7 @@ def test_rescans_when_land_count_changes(tmp_path):
 
     def scan(actions, main, uid, map_width=600, focus=None):
         calls.append(1)
-        return {100 * 600 + 100}, {}
+        return {"owned": {100 * 600 + 100}, "cities": {}, "enemy_cells": set(), "enemy_cities": {}, "frontier": set()}
 
     _cfg, svc = _make(tmp_path, scan=scan, max_count_fn=lambda bid: 2)
     svc.tick(_state(land_count=5))
@@ -79,7 +84,7 @@ def test_forts_json_respects_decisions(tmp_path):
     owned = {120 * 600 + 100, 100 * 600 + 120}
 
     def scan(actions, main, uid, map_width=600, focus=None):
-        return set(owned), {}
+        return {"owned": set(owned), "cities": {}, "enemy_cells": set(), "enemy_cities": {}, "frontier": set()}
 
     cfg, svc = _make(tmp_path, scan=scan, max_count_fn=lambda bid: 3)
     fd.update(cfg.fort_decisions_path, 120 * 600 + 100, "accept")
@@ -97,7 +102,7 @@ def test_fort_cap_limits_recommendations(tmp_path):
     owned = {120 * 600 + 100, 100 * 600 + 120, 80 * 600 + 100}
 
     def scan(actions, main, uid, map_width=600, focus=None):
-        return set(owned), {}
+        return {"owned": set(owned), "cities": {}, "enemy_cells": set(), "enemy_cities": {}, "frontier": set()}
 
     # cap 2102 = 1, one fort already exists -> 0 slots -> no recs
     cfg, svc = _make(tmp_path, scan=scan, max_count_fn=lambda bid: 1)

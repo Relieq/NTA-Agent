@@ -91,6 +91,12 @@ def test_territory_map_viewport():
     assert "bán kính 6 ô" in terr                        # legend explains the dashed zone
 
 
+def test_territory_map_enemy_and_frontier():
+    terr = _c("TerritoryPanel.js")
+    assert "enemy_cells" in terr and "frontier" in terr
+    assert "địch" in terr and "biên giới" in terr        # state/legend text
+
+
 def test_forts_panel_decision_buttons():
     fp = _c("FortsPanel.js")
     assert "/api/forts/decide" in fp

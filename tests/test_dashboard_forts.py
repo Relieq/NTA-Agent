@@ -11,6 +11,8 @@ def test_read_forts_view_from_file(tmp_path):
     Path(cfg.forts_path).write_text(json.dumps({
         "owned_count": 23,
         "owned_cells": [[100, 120], [101, 120]],
+        "enemy_cells": [[130, 120]], "enemy_cities": [{"x": 130, "y": 120, "type": 1}],
+        "frontier": [[99, 120]],
         "recommendations": [{"index": 72100, "x": 100, "y": 120, "reason": "biên giới"}],
     }), encoding="utf-8")
     v = read_forts_view(cfg)
@@ -18,10 +20,12 @@ def test_read_forts_view_from_file(tmp_path):
     assert v["owned_cells"] == [[100, 120], [101, 120]]
     assert v["recommendations"][0]["index"] == 72100
     assert v["accepted"] == [] and v["rejected"] == []  # default empty
+    assert v["enemy_cells"] == [[130, 120]] and v["frontier"] == [[99, 120]]
+    assert v["enemy_cities"] == [{"x": 130, "y": 120, "type": 1}]
 
 
 def test_read_forts_view_missing_returns_empty(tmp_path):
     cfg = RuntimeConfig(distinct_id="x", log_dir=tmp_path)
     v = read_forts_view(cfg)
-    assert v == {"owned_count": 0, "owned_cells": [], "accepted": [],
-                 "rejected": [], "recommendations": []}
+    assert v == {"owned_count": 0, "owned_cells": [], "accepted": [], "rejected": [],
+                 "enemy_cells": [], "enemy_cities": [], "frontier": [], "recommendations": []}

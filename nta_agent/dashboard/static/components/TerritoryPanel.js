@@ -31,11 +31,15 @@ export default {
    data.recs.forEach(r=>put(r.x,r.y,"gợi ý",r.index));
    data.garr.forEach(([x,y])=>put(x,y,"quân trú"));
    data.owned.forEach(([x,y])=>put(x,y,"đã chiếm"));
+   data.enemy.forEach(([x,y])=>put(x,y,"địch"));
+   data.frontier.forEach(([x,y])=>put(x,y,"biên giới trống"));
   }
 
   function fitView(cv){
    const mx=data.main%data.mw, my=Math.floor(data.main/data.mw), R=6;
-   const pts=[[mx,my],...data.owned,...data.accepted,...data.forts,...data.garr,
+   // Fit to MY territory + speed zone only (enemies/frontier can be far/large;
+   // they still render where they are — pan/zoom to see them).
+   const pts=[[mx,my],...data.owned,...data.accepted,...data.forts,...data.garr,...data.frontier,
               ...data.recs.map(r=>[r.x,r.y]),[mx-R,my-R],[mx+1+R,my+1+R]];
    const minX=Math.min(...pts.map(p=>p[0]))-1, maxX=Math.max(...pts.map(p=>p[0]))+1;
    const minY=Math.min(...pts.map(p=>p[1]))-1, maxY=Math.max(...pts.map(p=>p[1]))+1;
@@ -74,11 +78,18 @@ export default {
    ctx.fillStyle="rgba(245,233,0,0.10)";
    for(let y=zy0;y<=zy1;y++) for(let x=zx0;x<=zx1;x++) if(inZone(x,y)) ctx.fillRect(sX(x),sY(y),scale,scale);
    data.owned.forEach(([x,y])=>{ if(inView(x,y)) box(x,y,"#199e70"); });
+   data.enemy.forEach(([x,y])=>{ if(inView(x,y)){ box(x,y,"#da3633");        // ô địch (đỏ)
+    ctx.strokeStyle="#0b1320"; ctx.lineWidth=1; ctx.strokeRect(sX(x)+1.5,sY(y)+1.5,scale-3,scale-3); } });
+   data.enemyCities.forEach(c=>{ if(inView(c.x,c.y)){ ctx.strokeStyle="#0b1320"; ctx.lineWidth=2;
+    ctx.strokeRect(sX(c.x)+3,sY(c.y)+3,scale-6,scale-6); } });             // thành/fort địch
    ctx.strokeStyle="#c3c2b7"; ctx.lineWidth=1.5;
    data.garr.forEach(([x,y])=>{ if(inView(x,y)) ctx.strokeRect(sX(x)+2,sY(y)+2,scale-4,scale-4); });
    data.forts.forEach(([x,y])=>{ if(inView(x,y)) box(x,y,"#d95926"); });
    data.accepted.forEach(([x,y])=>{ if(inView(x,y)){ box(x,y,"#d95926");
     ctx.fillStyle="#0b1320"; ctx.beginPath(); ctx.arc(sX(x)+scale/2,sY(y)+scale/2,Math.max(1.5,scale/6),0,7); ctx.fill(); } });
+   ctx.strokeStyle="#8b949e"; ctx.lineWidth=1; ctx.setLineDash([2,2]);   // biên giới trống
+   data.frontier.forEach(([x,y])=>{ if(inView(x,y)) ctx.strokeRect(sX(x)+2,sY(y)+2,scale-4,scale-4); });
+   ctx.setLineDash([]);
    data.recs.forEach(r=>{ if(inView(r.x,r.y)){ ctx.strokeStyle="#e66767"; ctx.lineWidth=2; ctx.beginPath();
     ctx.arc(sX(r.x)+scale/2,sY(r.y)+scale/2,Math.max(3,scale/2-1),0,7); ctx.stroke(); } });
    [[mx,my],[mx+1,my],[mx,my+1],[mx+1,my+1]].forEach(([x,y])=>{ if(inView(x,y)) box(x,y,"#3987e5"); });
@@ -112,6 +123,7 @@ export default {
    data={ main:t.main_city||0, mw, owned:f.owned_cells||[], accepted:f.accepted||[],
     forts:(t.forts||[]).map(x=>[x.x,x.y]),
     garr:(t.garrisons||[]).map(i=>[i%mw, Math.floor(i/mw)]),
+    enemy:f.enemy_cells||[], enemyCities:f.enemy_cities||[], frontier:f.frontier||[],
     recs:f.recommendations||[] };
    buildStateMap();
    const cv=canvas.value;
@@ -181,6 +193,8 @@ export default {
    <span><b style="color:#d95926">■</b> Cứ Điểm / dự kiến</span>
    <span><b style="color:#e66767">◯</b> gợi ý</span>
    <span><b style="color:#c3c2b7">▢</b> quân trú</span>
+   <span><b style="color:#da3633">■</b> ô địch</span>
+   <span><b class="muted">▢</b> biên giới trống (xấp xỉ)</span>
    <span><b style="color:#F5E900">◇</b> vùng bảo vệ/tăng tốc = bán kính 6 ô (Manhattan) quanh thành 2×2 — không cần xây Cứ Điểm bên trong</span>
   </div></div>`
 };
