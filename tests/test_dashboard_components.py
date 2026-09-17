@@ -47,3 +47,10 @@ def test_territory_and_forts_panels():
     assert "/api/forts" in forts and "Cứ Điểm" in forts
     app = _app()
     assert "TerritoryPanel" in app and "FortsPanel" in app
+
+
+def test_build_order_panel():
+    bo = _c("BuildOrderPanel.js")
+    assert "/api/profile" in bo
+    assert "draggable" in bo and "Lưu thứ tự xây" in bo and "bỏ qua" in bo
+    assert "BuildOrderPanel" in _app()
