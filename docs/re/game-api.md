@@ -1,0 +1,189 @@
+# NTA — Catalog API game (`game/HD_*`)
+
+Danh mục endpoint request/response của game *Ninety Thousand Acres* (`twgame.global.acers`
+v4.4.0). Bổ trợ cho [PROTOCOL.md](../PROTOCOL.md) (transport MQTT/protobuf) và
+[RE_FINDINGS.md](../RE_FINDINGS.md) (đường RE). Đây là **tài liệu sống** — cập nhật khi crack thêm.
+
+## Nguồn & cách đọc shape
+- **Transport:** MQTT over WSS, route `"module/HD_Action"`, message `MODULE_HD_ACTION_C2S`/`_S2C`
+  (protobuf). Chi tiết ở [PROTOCOL.md](../PROTOCOL.md).
+- **Engine đã giải mã:** `tools/re/decrypted/index.js` (gitignored). Shape lấy từ call-site
+  `netHelper.reqXxx({...})` trong engine, hoặc từ chính code ta đã chạy thật.
+- **134 endpoint** `game/HD_*` tồn tại trong engine (liệt kê §Phụ lục). Tài liệu này chi tiết
+  các cái đã dùng/đã RE; phần còn lại ghi mục đích + shape `TODO`.
+
+**Ký hiệu trạng thái:**
+| | Nghĩa |
+|---|---|
+| ✅ | Shape xác minh **live** (ta đã gửi thật, server chấp nhận) — xem `nta_agent/execution/actions.py` |
+| 🔶 | Shape **đọc từ engine** (call-site), chưa gửi thật |
+| ❓ | Chỉ biết mục đích, **shape chưa xác minh** |
+
+Response: envelope `S2C_RESULT{data,error}`; `error` rỗng = OK, ngược lại là chuỗi `ecode.<n>`
+(xem `nta_agent/data/config/ecode.json`). Các field response ghi khi đã biết.
+
+---
+
+## 1. Session / entry
+| Endpoint | Trạng thái | Request | Ghi chú |
+|---|---|---|---|
+| `HD_Entry` | ❓ | — | Vào game, trả snapshot `player` đầy đủ (mainCityIndex, builds, resources, injuryPawns, curingQueues, fortAutoSupports, armyDists…). |
+| `HD_Spectate` | ❓ | `{index}` | Xem 1 ô/thành. |
+| `HD_SettleGame` | ❓ | — | Kết toán ván (mùa). |
+| `HD_SyncCellInfo` | ❓ | — | Đồng bộ thông tin ô. |
+| `HD_WatchArea` / `HD_UnsubscribeChunk` | ❓ | — | Đăng ký/huỷ nhận cập nhật vùng/chunk. |
+
+## 2. Đọc map / lãnh thổ
+| Endpoint | Trạng thái | Request | Ghi chú |
+|---|---|---|---|
+| `HD_GetAreaInfo` | ✅ | `{index, noRecord:bool}` | 1 ô: owner, cityId, landId, hp, armys[].pawns. `actions.get_area`. |
+| `HD_GetMapChunk` | ✅ | `{chunkId}` | Chunk nén `cells: map<uid, PlayerCellBytesInfo{indexs1,indexs2,cities}>`. chunk=100², chunkId=cy*6+cx. `actions.get_map_chunk`. Decode ở `execution/mapchunk.py`. |
+| `HD_GetMarchs` | ✅ | `{}` | Danh sách hành quân đang chạy. `actions.get_marches`. |
+| `HD_GetSelectArmys` | ✅ | `{index, type}` | Đạo quân có thể điều từ `index`. `actions.get_select_armys`. |
+| `HD_GetPlayerArmys` | ✅ | `{}` | Mọi đạo quân + pawns. `actions.get_player_armys`. |
+| `HD_GetTondenDist` | ❓ | — | Cự ly/thông tin đồn điền (Tonden). |
+| `HD_GetAvoidWarDist` / `HD_GetBattleDist` | ❓ | — | Cự ly né chiến / cự ly đánh. |
+| `HD_MapMarkPoint` / `HD_RemoveMapMark` | ❓ | — | Đánh dấu điểm trên map. |
+| `HD_GetFallMainCityIndexs` | ❓ | — | Vị trí thành chính có thể hạ. |
+| `HD_GetWorldEvent` / `HD_GetWorldRandomInfo` / `HD_GetTransits` | ❓ | — | Sự kiện thế giới / info ngẫu nhiên / trung chuyển. |
+| `HD_GetPlayerLandCountByUids` / `HD_GetPlayerRankList` / `HD_GetPlayerScoreList` | ❓ | — | Bảng xếp hạng / số ô người chơi. |
+
+## 3. Chiến đấu / hành quân
+| Endpoint | Trạng thái | Request | Ghi chú |
+|---|---|---|---|
+| `HD_OccupyCell` | ✅ | `{indexs:[int], uids:[str], target, autoBackType, isSameSpeed:bool}` | March chiếm/đánh ô. `actions.occupy_cell`. Server chỉ cho đánh ô **kề** ô đang sở hữu. |
+| `HD_MoveCellArmy` | ❓ | — | Di chuyển đạo quân giữa ô (→ dùng để đưa quân vào **Cứ Điểm hồi máu**). |
+| `HD_LeaveArea` | 🔶 | `{index}` | Rút quân khỏi ô. |
+| `HD_CancelMarch` | ❓ | — | Huỷ hành quân. |
+| `HD_MoveAreaPawns` | ✅ | `{index, armyUid, pawns:[{uid,point{x,y}}]}` | Đặt vị trí pawn trong đội hình (thứ tự tank). `actions.move_area_pawns`. |
+| `HD_ExchangePawnArmy` | ✅ | `{index, armyUid1, uid1, armyUid2, uid2}` | Đổi chỗ 2 pawn (trong/giữa đội). `actions.exchange_pawn_army`. |
+| `HD_SetArmySpeed` | ❓ | — | Đặt tốc độ hành quân (isSameSpeed). |
+| `HD_ForceRevokeArmy` | ❓ | — | Ép thu hồi đạo quân. |
+| `HD_SendCellEmoji` / `HD_BattlePlayBack` | ❓ | — | Emoji ô / phát lại trận. |
+
+## 4. Tonden (đồn điền — sản lượng từ ô đã chiếm)
+Army có state `TONDEN` (屯田): trú trên ô để **sản xuất tài nguyên**. `getArmyTondenInfo(index,uid)`.
+> ⚠️ **Chưa xác minh cơ chế đầy đủ** — cần verify live (điều kiện, sản lượng, cách thu).
+
+| Endpoint | Trạng thái | Request | Ghi chú |
+|---|---|---|---|
+| `HD_CellTonden` | ❓ | — | Bắt đầu đồn điền trên ô. |
+| `HD_CancelCellTonden` | ❓ | — | Dừng đồn điền. |
+| `HD_GetTondenDist` | ❓ | — | Thông tin/cự ly đồn điền. |
+
+## 5. Rương (treasure — loot từ chiếm ô)
+| Endpoint | Trạng thái | Request | Ghi chú |
+|---|---|---|---|
+| `HD_OpenArmyTreasure` | ✅ | `{index, auid}` | Mở rương của 1 đạo quân. `actions.open_army_treasure`. |
+| `HD_ClaimArmyTreasure` | ✅ | `{index, auid}` | Nhận rương đã mở. `actions.claim_army_treasure`. |
+| `HD_OpenArmysTreasure` | ✅ | `{targets:[{index,auid}]}` | Mở hàng loạt. `actions.open_armys_treasure`. |
+| `HD_ClaimArmysTreasure` | ✅ | `{targets:[{index,auid}]}` | Nhận hàng loạt. `actions.claim_armys_treasure`. |
+| `HD_OpenTreasure` / `HD_ClaimTreasure` | ❓ | — | Rương chung (không theo army). |
+
+Mô hình chi phí rương/loot: `execution/treasure_model.py`, cơ chế: [treasure-mechanic.md](treasure-mechanic.md).
+
+## 6. Hồi sinh lính chết (cure/revive — tốn SLOT)
+> Đây là **hồi sinh lính CHẾT** (`deadTime`), **không phải** hồi máu lính bị thương.
+> Hồi máu lính bị thương = **tự động server-side khi trú Cứ Điểm** (giới hạn `maxArmyCount`≈5 đội/ô,
+> lượng hồi không giới hạn) — **không có endpoint client**. State: `injuryPawns[]`, `curingQueues[]`.
+
+| Endpoint | Trạng thái | Request | Ghi chú |
+|---|---|---|---|
+| `HD_CureInjuryPawn` | 🔶 | `{index, armyUid, armyName, pawnUid}` | Hồi sinh 1 pawn chết. Vào `curingQueues` (có slot). |
+| `HD_CancelCurePawn` | 🔶 | `{index, uid}` | Huỷ 1 lượt hồi sinh. |
+| `HD_GiveupInjuryPawn` | ❓ | — | Bỏ hẳn lính (không hồi sinh). |
+| `HD_SpeedUpCuringPawn` | ❓ | — | Tăng tốc hồi sinh (tốn tài nguyên/vật phẩm). |
+
+## 7. Xây dựng / thành / output
+| Endpoint | Trạng thái | Request | Ghi chú |
+|---|---|---|---|
+| `HD_ClaimCityOutput` | ✅ | `{index}` | Thu sản lượng thành. `actions.collect_city_output`. |
+| `HD_AddAreaBuild` | ✅ | `{index, id}` | Xây công trình mới (server tự chọn vị trí). `actions.add_build`. |
+| `HD_UpAreaBuild` | ✅ | `{index, uid?}` | Nâng cấp công trình. `actions.upgrade_build`. |
+| `HD_MoveAreaBuild` | ❓ | — | Di dời công trình. |
+| `HD_CancelBT` / `HD_InDoneBt` / `HD_GetBTCityQueues` | ❓ | — | Huỷ / hoàn tất tức thì / đọc hàng đợi xây (BuildTask). |
+| `HD_BuyAddOutput` | ❓ | — | Mua tăng sản lượng. |
+| `HD_CreateCity` / `HD_ReCreateMainCity` / `HD_DismantleCity` | ❓ | — | Lập/tái lập/phá thành. |
+| `HD_ChangeCitySkin` / `HD_GetCitySkins` | ❓ | — | Skin thành. |
+
+## 8. Pawn / army (tuyển, quản lý)
+| Endpoint | Trạng thái | Request | Ghi chú |
+|---|---|---|---|
+| `HD_DrillPawn` | ✅ | `{index, buildUid, id, armyUid, armyName}` | Tuyển lính. `armyUid` rỗng + `armyName` → tạo đội mới. `actions.drill_pawn`. |
+| `HD_ChangeConfigPawnEquip` | ✅ | `{id, equipUid, skinId, attackSpeed}` | Gắn trang bị cho pawn config. `actions.change_pawn_equip`. |
+| `HD_CancelDrillPawn` / `HD_DismissPawn` / `HD_DismissArmy` | ❓ | — | Huỷ tuyển / giải tán lính / giải tán đội. |
+| `HD_ChangePawnArmy` / `HD_CheckArmyName` / `HD_ModifyAmryName` | ❓ | — | Chuyển đội / kiểm tên / đổi tên. |
+| `HD_ChangePawnAttr` / `HD_ChangePawnPortrayal` / `HD_UsePawnSkin` | ❓ | — | Đổi thuộc tính / hoạ tượng / skin pawn. |
+| `HD_PawnLving` / `HD_CancelPawnLving` / `HD_UseUpScrollUpPawnLv` / `HD_GetPawnDeadLvMap` | ❓ | — | Lên cấp lính (Lving) / cuộn nâng cấp / map cấp-khi-chết. |
+
+## 9. Ceri (mở khoá binh chủng/policy/equip — người chơi quyết)
+| Endpoint | Trạng thái | Request | Ghi chú |
+|---|---|---|---|
+| `HD_StudySelect` | ✅ | `{lv, id, tp}` | Chọn option ceri. `tp`: 1=policy,2=pawn,3=equip → cập nhật `{policy,pawn,equip}Slots`. `actions.study_select`. |
+| `HD_CeriResetSelect` | ✅ | `{lv, tp}` | Reroll option (tốn vàng). Reply có `selectIds`/`resetCount`. `actions.ceri_reset`. |
+
+## 10. Trang bị / rèn
+`HD_ForgeEquip`, `HD_InDoneForge`, `HD_RestoreForge`, `HD_SmeltingEquip`, `HD_RestoreSmeltEquip`,
+`HD_LockEquipEffect` — ❓ rèn/nung/khoá hiệu ứng trang bị. Shape TODO.
+
+## 11. Nhiệm vụ
+| Endpoint | Trạng thái | Request |
+|---|---|---|
+| `HD_ClaimTaskReward` | ✅ | `{id}` |
+| `HD_ClaimOtherTaskReward` | ✅ | `{id, treasureIndex, selectIndex}` |
+| `HD_ClaimTodayTaskReward` | ✅ | `{id, treasureIndex, selectIndex}` |
+
+## 12. Bazaar / giao thương
+`HD_BazaarBuyRes`, `HD_BazaarSellRes`, `HD_BazaarSellToSys`, `HD_BazaarCancelSell`,
+`HD_BazaarGiveRes`, `HD_GetBazaarRecords`, `HD_GetTradingRess` — ❓ mua/bán/tặng tài nguyên. Shape TODO.
+
+## 13. Liên minh (alliance)
+Nhóm lớn (~30 endpoint) — chưa cần cho agent giai đoạn này. `HD_CreateAlliance`, `HD_GetAlliance(s)`,
+`HD_ApplyJoinAlliance`, `HD_AgreeJoinAlliance`, `HD_ExitAlliance`, `HD_KickoutAlliance`,
+`HD_ChangeAlliMemberJob`, `HD_VoteAlliLeader`, `HD_AlliLeaderConfirm`, `HD_AlliMapFlag`,
+`HD_AlliSelectPolicy`, `HD_*AlliChatChannel`, `HD_GetAlli*` (logs/rank/battle records)… — ❓ Shape TODO.
+
+## 14. Kinh đô cổ / prison / hero
+`HD_AncientContribute`, `HD_GetAncientInfo`, `HD_GetAncientDonateAcc`, `HD_GetAncientLogs`,
+`HD_GetPrisonHeroes`, `HD_ReleasePrisonHero`, `HD_WorshipHero` — ❓ Shape TODO.
+
+## 15. Chat / mail
+`HD_SendChat`, `HD_GetChats`, `HD_AddPChat`, `HD_RemovePChat`, `HD_AreaSendChat`, `HD_SendMail` — ❓.
+
+## 16. Anti-cheat (captcha)
+| Endpoint | Trạng thái | Request | Ghi chú |
+|---|---|---|---|
+| `HD_GetAntiCheatQuestion` | ✅ | `{}` | Lấy captcha. `actions.get_anticheat_question`. |
+| `HD_AntiCheatAnswer` | ✅ | `{answer}` | Trả lời. `actions.answer_anticheat`. |
+
+> Ecode anti-cheat làm `RuleEngine.tick` raise `CaptchaRequired` → dừng loop chờ người.
+
+---
+
+## Phụ lục — 134 endpoint (đã liệt kê từ engine 2026-09-17)
+Nguồn: `grep game/HD_ tools/re/decrypted/index.js`. Cập nhật khi engine đổi version.
+
+AddAreaBuild, AddPChat, AgreeJoinAlliance, AlliLeaderConfirm, AlliMapFlag, AlliSelectPolicy,
+AncientContribute, AntiCheatAnswer, ApplyJoinAlliance, AreaSendChat, BattlePlayBack, BazaarBuyRes,
+BazaarCancelSell, BazaarGiveRes, BazaarSellRes, BazaarSellToSys, BuyAddOutput, CancelBT,
+CancelCellTonden, CancelCurePawn, CancelDrillPawn, CancelJoinAlliance, CancelMarch, CancelPawnLving,
+CellTonden, CeriResetSelect, ChangeAlliApplyDesc, ChangeAlliMemberJob, ChangeAllianceNotice,
+ChangeCitySkin, ChangeConfigPawnEquip, ChangePawnArmy, ChangePawnAttr, ChangePawnPortrayal,
+CheckArmyName, ClaimArmyTreasure, ClaimArmysTreasure, ClaimCityOutput, ClaimOtherTaskReward,
+ClaimTaskReward, ClaimTodayTaskReward, ClaimTreasure, CreateAlliChatChannel, CreateAlliance,
+CreateCity, CureInjuryPawn, DelAlliChatChannel, DelAlliMapFlag, DismantleCity, DismissArmy,
+DismissPawn, DrillPawn, Entry, ExchangePawnArmy, ExitAlliance, ForceRevokeArmy, ForgeEquip,
+GetAllAlliBaseInfo, GetAlliBattleRecord, GetAlliLogs, GetAlliMemberBattleRecord, GetAlliRankList,
+GetAlliance, GetAlliances, GetAncientDonateAcc, GetAncientInfo, GetAncientLogs, GetAntiCheatQuestion,
+GetAreaInfo, GetArmyRecords, GetArmyRecordsByUids, GetAvoidWarDist, GetBTCityQueues, GetBattleDist,
+GetBattleRecord, GetBattleRecordsList, GetBazaarRecords, GetChats, GetCitySkins,
+GetFallMainCityIndexs, GetMapChunk, GetMarchs, GetPawnDeadLvMap, GetPlayerArmys,
+GetPlayerLandCountByUids, GetPlayerRankList, GetPlayerScoreList, GetPrisonHeroes, GetSelectArmys,
+GetTondenDist, GetTradingRess, GetTransits, GetWorldEvent, GetWorldRandomInfo, GiveupInjuryPawn,
+InDoneBt, InDoneForge, KickoutAlliance, LeaveArea, LockEquipEffect, MapMarkPoint, ModifyAmryName,
+MoveAreaBuild, MoveAreaPawns, MoveCellArmy, OccupyCell, OpenArmyTreasure, OpenArmysTreasure,
+OpenTreasure, PawnLving, ReCreateMainCity, ReleasePrisonHero, RemoveMapMark, RemovePChat,
+RestoreForge, RestoreSmeltEquip, SendCellEmoji, SendChat, SendMail, SetArmySpeed, SettleGame,
+SmeltingEquip, Spectate, SpeedUpCuringPawn, StudySelect, SyncCellInfo, UnsubscribeChunk,
+UpAreaBuild, UpdateAlliChatChannel, UsePawnSkin, UseUpScrollUpPawnLv, VoteAlliLeader, WatchArea,
+WorshipHero.
