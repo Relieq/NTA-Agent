@@ -79,7 +79,10 @@ tick → state(hp đội) → HealRouting: đội thương? → MoveCellArmy v�
 - Regression: full suite xanh + ruff.
 
 ## 8. Câu hỏi mở — verify live (chạy thật trên emulator)
-1. **Pawn hp field** đúng key/shape trong raw (Entry vs GetPlayerArmys)?
+1. **Pawn hp field** — ĐÃ RE (engine `getPlayerArmysPb` serialize pawn dạng `{curHp, maxHp}` scalar).
+   `army_health._hp` đọc `curHp/maxHp` (fallback `hp:[cur,max]`). **Còn cần live-confirm** các field này
+   thực sự có mặt trong reply `HD_GetPlayerArmys` (một số reply có thể chỉ gửi `curHp`, max tính qua
+   `getMaxHp()` — nếu vậy phải bổ sung nguồn maxHp).
 2. **`autoBackType`** giá trị nào = tự về thành sau đánh? Nếu occupy đã auto-về-thành-hồi thì
    HealRouting chỉ cần lo đội **trú ngoài** (fort xa). Điều chỉnh phạm vi theo kết quả.
 3. Thành chính có hồi máu như Cứ Điểm không (để chọn đích gần nhất hợp lý)?
