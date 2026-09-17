@@ -15,6 +15,15 @@ def test_excludes_cells_within_radius_and_existing_forts():
     assert recs == []
 
 
+def test_diagonal_cell_is_outside_manhattan_radius():
+    # (105,105): Chebyshev-to-main is 5 (would be "inside"), but Manhattan to the
+    # 2x2 block is 8 -> outside radius 6 (diagonal costs 2), so it is recommendable.
+    main = idx(100, 100)
+    owned = {idx(105, 105)}
+    recs = recommend_forts(main, owned, forts=[], map_width=W, max_forts=1, radius=6)
+    assert len(recs) == 1 and recs[0]["index"] == idx(105, 105)
+
+
 def test_recommends_frontier_cell_outside_radius():
     main = idx(100, 100)
     owned = {idx(120, 100), idx(102, 100)}  # 120 is far (frontier), 102 is near
