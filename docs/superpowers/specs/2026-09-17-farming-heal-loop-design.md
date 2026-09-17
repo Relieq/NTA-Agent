@@ -83,13 +83,15 @@ tick → state(hp đội) → HealRouting: đội thương? → MoveCellArmy v�
    `{0:cur, 1:max}`** (protobuf map, không phải list/curHp). `army_health._hp` đọc đúng shape này.
    Đội đứng ở thành → `army.index` = mainCityIndex. Chưa quan sát được đội THƯƠNG thật (lúc verify mọi
    đội full HP, ở nhà) → firing thực tế + move sẽ tự lộ khi farm gây thương (user test).
-2. **`autoBackType`** giá trị nào = tự về thành sau đánh? Nếu occupy đã auto-về-thành-hồi thì
-   HealRouting chỉ cần lo đội **trú ngoài** (fort xa). Điều chỉnh phạm vi theo kết quả.
-3. Thành chính có hồi máu như Cứ Điểm không (để chọn đích gần nhất hợp lý)?
-4. Khi nào coi là "đã hồi xong" — hp về đầy tức thì hay theo thời gian? (ảnh hưởng nhịp re-dispatch.)
+2. **`autoBackType`** — ✅ **VERIFY LIVE:** `autoBackType=0` → đội **Ở LẠI** ô vừa chiếm (không tự về).
+   ⇒ HealRouting THỰC SỰ cần (đội thương nằm ngoài, không tự về hồi).
+3. **Thành chính có hồi máu?** — ✅ **VERIFY LIVE:** có. Đội thương điều về 109726 → tới nơi hồi đầy máu.
+4. **Timing** — ✅ **VERIFY LIVE:** wound hiện trong roster **~38s sau trận** (độ trễ settle); hồi đầy ~ngay
+   khi tới heal node. Ô đã chiếm (owned, trong zone) **KHÔNG tự hồi** (giữ 12s vẫn thương).
 
-> Verify live nằm **trong** đợt này (user chọn). Kết quả có thể tinh chỉnh 4.2/4.3 trước khi code
-> phần phụ thuộc; phần thuần (helpers, action shape) làm TDD ngay.
+> **KẾT QUẢ VERIFY LIVE (2026-09-17):** đánh ô dễ (dự loss 6.1%) → pawn `hp {0:122,1:135}` (thương, không
+> chết) → `HealRouting.applies=True` → `MoveCellArmy` về thành → +35s tới nhà, hết thương. End-to-end OK.
+> ("loss" của predictor = lính CHẾT; bị thương xảy ra ở mọi trận — user chỉ đúng.)
 
 ## 9. Files (dự kiến — chốt ở implementation plan)
 - `nta_agent/state/schema.py` — đảm bảo pawn hp.
