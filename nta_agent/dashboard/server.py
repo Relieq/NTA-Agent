@@ -129,12 +129,15 @@ def read_forts_view(cfg) -> dict:
     try:
         data = json.loads(Path(cfg.forts_path).read_text(encoding="utf-8"))
     except (OSError, ValueError):
-        return {"owned_count": 0, "owned_cells": [], "accepted": [],
-                "rejected": [], "recommendations": []}
+        return {"owned_count": 0, "owned_cells": [], "accepted": [], "rejected": [],
+                "enemy_cells": [], "enemy_cities": [], "frontier": [], "recommendations": []}
     return {"owned_count": data.get("owned_count", 0),
             "owned_cells": data.get("owned_cells") or [],
             "accepted": data.get("accepted") or [],
             "rejected": data.get("rejected") or [],
+            "enemy_cells": data.get("enemy_cells") or [],
+            "enemy_cities": data.get("enemy_cities") or [],
+            "frontier": data.get("frontier") or [],
             "recommendations": data.get("recommendations") or []}
 
 
@@ -163,6 +166,10 @@ def recompute_forts(cfg) -> dict:
                "accepted": sorted([i % mw, i // mw] for i in accepted),
                "rejected": sorted([i % mw, i // mw] for i, d in decisions.items()
                                   if d == "rejected"),
+               # map layers are re-scanned by FortService, not here — carry them over
+               "enemy_cells": fdj.get("enemy_cells") or [],
+               "enemy_cities": fdj.get("enemy_cities") or [],
+               "frontier": fdj.get("frontier") or [],
                "recommendations": recs}
     Path(cfg.forts_path).parent.mkdir(parents=True, exist_ok=True)
     Path(cfg.forts_path).write_text(json.dumps(payload, ensure_ascii=False, indent=2),

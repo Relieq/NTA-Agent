@@ -11,7 +11,7 @@ import json
 import sys
 
 from nta_agent.execution.fort_advisor import plan_forts, recommend_forts
-from nta_agent.execution.territory import scan_owned
+from nta_agent.execution.territory import scan_map
 from nta_agent.runtime import fort_decisions
 
 FORT_BUILD_ID = 2102  # Cứ Điểm
@@ -23,7 +23,7 @@ class FortService:
         self.cfg = cfg
         self.actions = actions
         self._on_event = on_event or (lambda *a: None)
-        self._scan = scan or scan_owned
+        self._scan = scan or scan_map
         self._recommend = recommend or recommend_forts
         self._max_count_fn = max_count_fn
         self.map_width = map_width
@@ -52,7 +52,8 @@ class FortService:
             if not main or not uid:
                 return
 
-            owned, _cities = self._scan(self.actions, main, uid, map_width=self.map_width)
+            m = self._scan(self.actions, main, uid, map_width=self.map_width)
+            owned = m["owned"]
 
             fort_indices = [int(f.get("index", 0)) for f in
                             (player.get("fortAutoSupports") or []) if isinstance(f, dict)]
@@ -65,9 +66,14 @@ class FortService:
             accepted_coords = sorted([i % mw, i // mw] for i in accepted)
             rejected_coords = sorted([i % mw, i // mw] for i, d in decisions.items()
                                      if d == "rejected")
+            enemy_cells = sorted([i % mw, i // mw] for i in m.get("enemy_cells", ()))
+            enemy_cities = [{"x": i % mw, "y": i // mw, "type": t}
+                            for i, t in (m.get("enemy_cities") or {}).items()]
+            frontier = sorted([i % mw, i // mw] for i in m.get("frontier", ()))
             payload = {"owned_count": len(owned), "owned_cells": cells,
                        "accepted": accepted_coords, "rejected": rejected_coords,
-                       "recommendations": recs}
+                       "enemy_cells": enemy_cells, "enemy_cities": enemy_cities,
+                       "frontier": frontier, "recommendations": recs}
             path = self.cfg.forts_path
             path.parent.mkdir(parents=True, exist_ok=True)
             path.write_text(json.dumps(payload, ensure_ascii=False, indent=2),

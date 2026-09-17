@@ -14,8 +14,15 @@ def _setup(tmp_path):
         "forts": [], "garrisons": []}), encoding="utf-8")
     Path(cfg.forts_path).write_text(json.dumps({
         "owned_count": 2, "owned_cells": [[120, 100], [100, 120]],
-        "accepted": [], "rejected": [], "recommendations": []}), encoding="utf-8")
+        "accepted": [], "rejected": [], "enemy_cells": [[99, 99]],
+        "recommendations": []}), encoding="utf-8")
     return cfg
+
+
+def test_recompute_carries_over_enemy_layer(tmp_path):
+    cfg = _setup(tmp_path)
+    out = recompute_forts(cfg)
+    assert out["enemy_cells"] == [[99, 99]]  # map layer preserved across recompute
 
 
 def test_recompute_reflects_reject(tmp_path):
