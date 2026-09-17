@@ -22,6 +22,7 @@ def recommend_forts(
     main: int,
     owned,
     forts=None,
+    rejected=None,
     map_width: int = 600,
     max_forts: int = 1,
     radius: int = 6,
@@ -38,12 +39,14 @@ def recommend_forts(
     if max_forts <= 0:
         return []
     fort_set = {int(f) for f in (forts or [])}
+    rej_set = {int(r) for r in (rejected or [])}
     mpos = _pos(int(main), map_width)
 
     candidates = [
         int(c)
         for c in owned
         if int(c) not in fort_set
+        and int(c) not in rej_set
         and int(c) != int(main)
         and _cheby(_pos(int(c), map_width), mpos) > radius
     ]
@@ -78,3 +81,20 @@ def recommend_forts(
         candidates.remove(best)
 
     return recs
+
+
+def plan_forts(main, owned, existing_forts, decisions, cap,
+               map_width: int = 600, radius: int = 6):
+    """Turn owned cells + user decisions into (recommendations, accepted indices).
+
+    ``decisions`` maps a cell index to "accepted" or "rejected". Accepted cells are
+    planned forts: excluded from candidates, used as spread anchors, and counted
+    against ``cap``. Rejected cells are never recommended.
+    """
+    accepted = [int(i) for i, d in decisions.items() if d == "accepted"]
+    rejected = [int(i) for i, d in decisions.items() if d == "rejected"]
+    anchors = [int(f) for f in (existing_forts or [])] + accepted
+    slots = max(0, int(cap) - len(anchors))
+    recs = recommend_forts(main, owned, forts=anchors, rejected=rejected,
+                           map_width=map_width, max_forts=slots, radius=radius)
+    return recs, accepted
