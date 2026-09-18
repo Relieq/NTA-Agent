@@ -144,6 +144,12 @@ def read_forts_view(cfg) -> dict:
             "threat_summary": data.get("threat_summary") or {"count": 0}}
 
 
+def read_intel(cfg) -> dict:
+    """Assemble the intel & advisory report (Phase I) from snapshot + forts.json."""
+    from nta_agent.execution.intel import build_report
+    return build_report(read_state(cfg.snapshot_path), read_forts_view(cfg))
+
+
 def recompute_forts(cfg) -> dict:
     """Rewrite forts.json from its owned_cells + snapshot + decisions. No game I/O."""
     from nta_agent.data.config import GameConfig
@@ -250,6 +256,8 @@ class Handler(BaseHTTPRequestHandler):
             self._json(200, read_territory_view(cfg))
         elif parsed.path == "/api/forts":
             self._json(200, read_forts_view(cfg))
+        elif parsed.path == "/api/intel":
+            self._json(200, read_intel(cfg))
         elif parsed.path == "/api/agent/status":
             self._json(200, self.server.supervisor.status())
         elif parsed.path.startswith("/static/"):
