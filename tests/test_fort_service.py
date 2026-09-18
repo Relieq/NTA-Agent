@@ -110,3 +110,21 @@ def test_fort_cap_limits_recommendations(tmp_path):
     svc.tick(st)
     data = json.loads(cfg.forts_path.read_text(encoding="utf-8"))
     assert data["recommendations"] == []
+
+
+def test_writes_threats_and_alerts_on_incursion(tmp_path):
+    # 2x2 owned block; an enemy cell adjacent to the east edge -> incursion.
+    owned = {100 * 600 + 100, 100 * 600 + 101, 101 * 600 + 100, 101 * 600 + 101}
+
+    def scan(actions, main, uid, map_width=600, focus=None):
+        return {"owned": set(owned), "cities": {}, "enemy_cells": {100 * 600 + 102},
+                "enemy_cities": {}, "frontier": set()}
+
+    events = []
+    cfg, svc = _make(tmp_path, scan=scan, max_count_fn=lambda bid: 2,
+                     on_event=lambda k, d: events.append((k, d)))
+    svc.tick(_state(land_count=4, main=100 * 600 + 100))
+    data = json.loads(cfg.forts_path.read_text(encoding="utf-8"))
+    assert data["threat_summary"]["count"] >= 1
+    assert data["threats"][0]["adjacent"] is True
+    assert any(k == "threat_alert" for k, d in events)

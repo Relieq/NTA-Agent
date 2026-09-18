@@ -130,7 +130,8 @@ def read_forts_view(cfg) -> dict:
         data = json.loads(Path(cfg.forts_path).read_text(encoding="utf-8"))
     except (OSError, ValueError):
         return {"owned_count": 0, "owned_cells": [], "accepted": [], "rejected": [],
-                "enemy_cells": [], "enemy_cities": [], "frontier": [], "recommendations": []}
+                "enemy_cells": [], "enemy_cities": [], "frontier": [], "recommendations": [],
+                "threats": [], "threat_summary": {"count": 0}}
     return {"owned_count": data.get("owned_count", 0),
             "owned_cells": data.get("owned_cells") or [],
             "accepted": data.get("accepted") or [],
@@ -138,7 +139,9 @@ def read_forts_view(cfg) -> dict:
             "enemy_cells": data.get("enemy_cells") or [],
             "enemy_cities": data.get("enemy_cities") or [],
             "frontier": data.get("frontier") or [],
-            "recommendations": data.get("recommendations") or []}
+            "recommendations": data.get("recommendations") or [],
+            "threats": data.get("threats") or [],
+            "threat_summary": data.get("threat_summary") or {"count": 0}}
 
 
 def recompute_forts(cfg) -> dict:
@@ -170,6 +173,8 @@ def recompute_forts(cfg) -> dict:
                "enemy_cells": fdj.get("enemy_cells") or [],
                "enemy_cities": fdj.get("enemy_cities") or [],
                "frontier": fdj.get("frontier") or [],
+               "threats": fdj.get("threats") or [],
+               "threat_summary": fdj.get("threat_summary") or {"count": 0},
                "recommendations": recs}
     Path(cfg.forts_path).parent.mkdir(parents=True, exist_ok=True)
     Path(cfg.forts_path).write_text(json.dumps(payload, ensure_ascii=False, indent=2),
