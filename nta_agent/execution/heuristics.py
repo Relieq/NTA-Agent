@@ -175,6 +175,8 @@ class OccupyCell:
     profile: object = None     # Profile: group + occupy/loot policy (farming)
     config: object = None      # GameConfig for treasure model (lazy)
     _sim_off: bool = False     # sidecar checked and unavailable -> stop retrying
+    threats_source: object = None  # callable -> enemy index set (P2 defense); wired in runner
+    contest_range: int = 1     # a winnable candidate within this of an enemy is contested
     _pending: object = None    # (armies_list, target_index)
     _cooldown: int = 0
     _state_ref: object = None  # stashed for act()'s formation optimization
@@ -261,6 +263,31 @@ class OccupyCell:
         scored.sort(key=lambda t: t[0])
         return scored[0][1]
 
+    def _defensive_select(self, cands, plans_for, predict, enemy):
+        """P2: when an enemy is contesting a border cell, claim the winnable cell
+        nearest the enemy to wall it off (deny the silent creep). Returns a plan or
+        None if nothing is contested/winnable."""
+        from nta_agent.execution.advisor import best_plan
+        w = 600
+        epos = [(e % w, e // w) for e in enemy]
+        if not epos:
+            return None
+        best = None
+        best_key = None
+        for c in cands:
+            cx, cy = c.index % w, c.index // w
+            edist = min(abs(cx - ex) + abs(cy - ey) for ex, ey in epos)
+            if edist > self.contest_range:
+                continue  # not contested by an enemy
+            plan = best_plan([c], plans_for, predict)
+            if plan is None or not plan.prediction.win:
+                continue
+            key = (edist, plan.prediction.loss_percent)  # closest-to-enemy, then safest
+            if best_key is None or key < best_key:
+                best_key = key
+                best = plan
+        return best
+
     def applies(self, state: GameState, actions: Actions) -> bool:
         if state.resources.stamina < self.min_stamina or not state.main_city_index:
             return False
@@ -307,13 +334,17 @@ class OccupyCell:
             pawns = [p for a in plan.armies for p in (a.get("pawns") or [])]
             return predictor.predict(pawns, c.defenders)
 
-        # Selection priority: expansion preset (spiral/octopus/hybrid) > farming
-        # loot budget > plain safest-win.
+        # Selection priority: DEFENSE (claim a border cell an enemy is contesting)
+        # > expansion preset > farming loot budget > plain safest-win.
         from nta_agent.execution import expansion as _exp
         mode = (self.profile.occupy.get("expansion") if self.profile else None) or "none"
         loot_on = (self.profile is not None
                    and (self.profile.occupy.get("loot") or {}).get("enabled", True))
-        if mode in _exp.MODES:
+        enemy = set(self.threats_source() or ()) if self.threats_source else set()
+        plan = self._defensive_select(cands, plans_for, predict, enemy) if enemy else None
+        if plan is not None:
+            kind = "defend_border"
+        elif mode in _exp.MODES:
             plan = self._expansion_select(cands, plans_for, predict, mode)
             kind = f"expansion:{mode}"
         elif loot_on:

@@ -26,6 +26,14 @@ có đe dọa thật. KHÔNG khởi chiến — phòng thủ thụ động trong
   địch. Tái dùng occupy/discover; cap/tick; best-effort; ưu tiên điểm xâm nhập sâu/nguy hiểm nhất.
 - (v1 có thể chỉ chiếm ô trung lập kề địch để bịt đường; đánh trực diện ô địch = "phần chơi" → để P3 báo.)
 
+**Cài đặt thực tế (P2 v1):** làm dưới dạng **ưu tiên phòng thủ trong OccupyCell** (`_defensive_select`,
+ưu tiên cao nhất > expansion > farm > safest), không thêm rule mới → tái dùng toàn bộ máy occupy an toàn
+(winnable/stamina/cap/formation), chỉ đổi thứ tự chọn. `threats_source` (enemy indices từ forts.json, wired
+ở runner). Khi có ô **occupiable** (có defenders) trong `contest_range` của địch → chiếm ô gần địch nhất
+(bịt đường). **Giới hạn (verify live 2026-09-18):** chỉ chặn được ô **có thể chiếm**; ô đệm **đất trống**
+không occupy qua chiến đấu nên không "xây tường" ở đó được — trường hợp đó P3 cảnh báo để người xử lý.
+Live hiện tại: địch cách 2 với ô đệm trống → P2 inert đúng (không hành động sai), rơi về farm thường.
+
 ### P3 — Cảnh báo người chơi
 - Threat thật (thành địch tiến vào / cụm mạnh áp sát) → ghi vào forts.json/snapshot + event `threat_alert`
   → dashboard hiển thị nổi bật. Agent KHÔNG tự khởi chiến; người quyết đánh/thủ.
