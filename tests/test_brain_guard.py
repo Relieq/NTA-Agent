@@ -65,3 +65,13 @@ def test_build_edits_filtered_to_valid_ids():
 def test_build_edits_dropped_without_valid_ids():
     out = sanitize_edits({"build": {"order": [2002]}}, _prof(), set())
     assert "build" not in out
+
+
+def test_expansion_whitelist_and_revive():
+    ok = sanitize_edits({"occupy": {"expansion": "spiral"},
+                         "revive": {"enabled": "no"}}, _prof(), set())
+    assert ok["occupy"]["expansion"] == "spiral"
+    assert ok["revive"]["enabled"] is False
+    # invalid expansion is dropped
+    bad = sanitize_edits({"occupy": {"expansion": "zigzag"}}, _prof(), set())
+    assert "occupy" not in bad or "expansion" not in bad.get("occupy", {})

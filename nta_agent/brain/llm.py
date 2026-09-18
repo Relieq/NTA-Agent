@@ -17,9 +17,18 @@ _SYSTEM = (
     '{"army":{"group":[armyUid],"roles":{armyUid:"archer|tank"},"onetile":bool,'
     '"composition":{armyUid:{pawnId:count}}},'
     '"occupy":{"max_loss":0-100,"max_march_ms":int>=0,'
-    '"loot":{"enabled":bool,"min_reward_per_chest":number>=0}}}\n'
+    '"expansion":"none|spiral|octopus|hybrid",'
+    '"loot":{"enabled":bool,"min_reward_per_chest":number>=0}},'
+    '"revive":{"enabled":bool}}\n'
     "Only include fields you want to change. max_loss is the max acceptable "
     "predicted troop-loss % for occupying a cell (0 = never lose troops).\n"
+    "occupy.expansion picks the territory-growth pattern: 'spiral' = each new cell "
+    "touches one owned cell (single-file, low exposure, easy to defend — use when "
+    "the enemy is near); 'octopus' = grab easy cells / reach toward resource-rich "
+    "land fast; 'hybrid' = mix; 'none' = plain loot-first. Use territory.enemy_cells "
+    "/ territory.nearest_enemy_dist to decide (near enemy -> spiral, safe -> octopus).\n"
+    "revive.enabled toggles auto-reviving dead pawns (costs resources); disable it "
+    "when resources are tight (see digest.injured for dead-pawn count).\n"
     "army.presets is a map of named formations you can create/recall; set "
     "army.active to a preset name to make it the active formation. notes is a "
     "list of durable free-form strategy reminders you should keep and consider.\n"

@@ -30,6 +30,26 @@ class BrainService:
         self._off = False
         self._build_ids = None  # lazily-loaded valid build ids
 
+    def _territory(self, state):
+        """Compact owned/enemy/frontier summary from forts.json for the brain."""
+        try:
+            import json
+            data = json.loads(self.cfg.forts_path.read_text(encoding="utf-8"))
+        except Exception:
+            return None
+        main = int(getattr(state, "main_city_index", 0) or 0)
+        mx, my = main % 600, main // 600
+        enemy = data.get("enemy_cells") or []
+        nearest = min((abs(x - mx) + abs(y - my) for x, y in enemy), default=None)
+        return {
+            "owned": data.get("owned_count", 0),
+            "enemy_cells": len(enemy),
+            "enemy_cities": len(data.get("enemy_cities") or []),
+            "frontier": len(data.get("frontier") or []),
+            "nearest_enemy_dist": nearest,
+            "fort_recommendations": len(data.get("recommendations") or []),
+        }
+
     def _valid_build_ids(self):
         if self._build_ids is None:
             try:
@@ -45,7 +65,7 @@ class BrainService:
             return
         try:
             armies = self.actions.get_player_armys() if self.actions else []
-            dg = digest(state, self.profile, armies)
+            dg = digest(state, self.profile, armies, territory=self._territory(state))
             edits = self._propose(dg, self.profile)
             valid = {str(a.get("uid")) for a in armies}
             clean = sanitize_edits(edits, self.profile, valid,

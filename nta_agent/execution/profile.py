@@ -7,7 +7,7 @@ from __future__ import annotations
 
 import copy
 import json
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from pathlib import Path
 
 DEFAULT_PROFILE = {
@@ -15,6 +15,7 @@ DEFAULT_PROFILE = {
              "active": "", "presets": {}},
     "occupy": {"max_loss": 0.0, "max_march_ms": 0, "expansion": "none",
                "loot": {"enabled": True, "min_reward_per_chest": 0.0}},
+    "revive": {"enabled": True},
     "notes": [],
     "build": {"order": [], "skip": []},
 }
@@ -38,6 +39,7 @@ class Profile:
     occupy: dict
     notes: list
     build: dict
+    revive: dict = field(default_factory=lambda: {"enabled": True})
 
 
 def load_profile(path) -> Profile:
@@ -48,14 +50,15 @@ def load_profile(path) -> Profile:
         data = {}
     merged = _merge(DEFAULT_PROFILE, data if isinstance(data, dict) else {})
     return Profile(army=merged["army"], occupy=merged["occupy"], notes=merged["notes"],
-                   build=merged["build"])
+                   build=merged["build"], revive=merged["revive"])
 
 
 def save_profile(profile: Profile, path) -> None:
     p = Path(path)
     p.parent.mkdir(parents=True, exist_ok=True)
     p.write_text(json.dumps({"army": profile.army, "occupy": profile.occupy,
-                             "notes": profile.notes, "build": profile.build},
+                             "notes": profile.notes, "build": profile.build,
+                             "revive": getattr(profile, "revive", {"enabled": True})},
                             ensure_ascii=False, indent=1), encoding="utf-8")
 
 
@@ -95,6 +98,14 @@ def apply_edits(profile: Profile, clean: dict) -> bool:
         for k, v in clean["build"].items():
             if profile.build.get(k) != v:
                 profile.build[k] = list(v)
+                changed = True
+    if isinstance(clean.get("revive"), dict):
+        rev = getattr(profile, "revive", None)
+        if rev is None:
+            profile.revive = rev = {}
+        for k, v in clean["revive"].items():
+            if rev.get(k) != v:
+                rev[k] = v
                 changed = True
     active = profile.army.get("active") or ""
     preset = (profile.army.get("presets") or {}).get(active)

@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 _ROLES = {"archer", "tank"}
+_EXPANSION = {"none", "spiral", "octopus", "hybrid"}
 
 
 def _num(v, lo, hi, default):
@@ -43,6 +44,8 @@ def sanitize_edits(edits: dict, profile, valid_army_uids, valid_build_ids=None) 
             occ["max_loss"] = _num(occ_in["max_loss"], 0, 100, profile.occupy["max_loss"])
         if "max_march_ms" in occ_in:
             occ["max_march_ms"] = int(_num(occ_in["max_march_ms"], 0, 10 ** 9, 0))
+        if "expansion" in occ_in and str(occ_in["expansion"]) in _EXPANSION:
+            occ["expansion"] = str(occ_in["expansion"])
         loot_in = occ_in.get("loot")
         if isinstance(loot_in, dict):
             loot: dict = {}
@@ -72,6 +75,12 @@ def sanitize_edits(edits: dict, profile, valid_army_uids, valid_build_ids=None) 
                 army["active"] = name
         if army:
             out["army"] = army
+
+    rev_in = edits.get("revive") if isinstance(edits, dict) else None
+    if isinstance(rev_in, dict) and "enabled" in rev_in:
+        v = rev_in["enabled"]
+        out["revive"] = {"enabled": (v.lower() in ("1", "true", "yes")
+                                     if isinstance(v, str) else bool(v))}
 
     if isinstance(edits.get("notes"), list):
         out["notes"] = [str(s).strip()[:200] for s in edits["notes"] if str(s).strip()][:20]

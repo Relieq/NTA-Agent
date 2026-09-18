@@ -79,3 +79,17 @@ def test_apply_edits_merges_build_lists():
     assert p.build["order"] == [2002, 2004]
     assert p.build["skip"] == [2000]
     assert apply_edits(p, {"build": {"order": [2002, 2004], "skip": [2000]}}) is False
+
+
+def test_apply_edits_expansion_and_revive(tmp_path):
+    from nta_agent.execution.profile import apply_edits, load_profile, save_profile
+    p = load_profile("nonexistent")
+    assert apply_edits(p, {"occupy": {"expansion": "octopus"}, "revive": {"enabled": False}})
+    assert p.occupy["expansion"] == "octopus"
+    assert p.revive["enabled"] is False
+    # round-trip through disk
+    path = tmp_path / "profile.json"
+    save_profile(p, path)
+    p2 = load_profile(path)
+    assert p2.occupy["expansion"] == "octopus"
+    assert p2.revive["enabled"] is False

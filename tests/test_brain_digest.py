@@ -46,3 +46,16 @@ def test_digest_includes_build():
                               "exp_book", "up_scroll", "fixator")}),
                          raw={})
     assert digest(st, p, [])["profile"]["build"]["order"] == [2002]
+
+
+def test_digest_includes_injured_and_territory():
+    st = SimpleNamespace(
+        main_city_index=7,
+        resources=SimpleNamespace(cereal=1, timber=1, stone=1, iron=0, gold=0,
+                                  stamina=0, exp_book=0, up_scroll=0, fixator=0),
+        raw={"player": {"injuryPawns": [{"uid": "d1"}, {"uid": "d2"}]}})
+    terr = {"owned": 23, "enemy_cells": 100, "nearest_enemy_dist": 4}
+    d = digest(st, load_profile("none"), [], territory=terr)
+    assert d["injured"] == 2
+    assert d["territory"]["nearest_enemy_dist"] == 4
+    assert "revive" in d["profile"]
