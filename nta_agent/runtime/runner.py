@@ -1,6 +1,7 @@
 """Wire config + bootstrap + session + Agent into a runnable, observable spine."""
 from __future__ import annotations
 
+import json
 import sys
 
 from nta_agent.data.config import GameConfig
@@ -65,10 +66,19 @@ def run(cfg: RuntimeConfig, *, ticks: int = 0, session=None, engine=None) -> Non
     brain = BrainService(profile, cfg, on_event=log.append, actions=agent.actions)
     from nta_agent.runtime.fort_service import FortService
     forts = FortService(cfg, agent.actions, on_event=log.append)
+    def _enemy_from_forts():
+        # P2: enemy cell indices from the (throttled) FortService output — no request.
+        try:
+            data = json.loads(cfg.forts_path.read_text(encoding="utf-8"))
+        except Exception:
+            return set()
+        return {int(y) * 600 + int(x) for x, y in (data.get("enemy_cells") or [])}
+
     # Surface the occupy planner's reasoning (chosen army + predicted loss) to the log.
     for rule in getattr(agent.engine, "rules", []):
         if getattr(rule, "name", "") == "occupy_cell":
             rule.on_event = log.append
+            rule.threats_source = _enemy_from_forts  # defend contested border cells (P2)
             if config is not None:  # pace discovery by the cheapest occupy cost
                 from nta_agent.execution.occupy_planner import min_occupy_stamina
                 rule.min_stamina = min_occupy_stamina(config)

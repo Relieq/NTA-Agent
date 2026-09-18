@@ -110,6 +110,28 @@ def test_occupy_rule_spiral_prefers_least_exposed():
     assert act.calls[0][1] == center - 1  # spiral chose the least-exposed (1-neighbour) cell
 
 
+def test_occupy_rule_defends_contested_border_first():
+    # A weak far cell (high loot) vs a weak cell next to an enemy (contested).
+    # With a threat present, defense wins: claim the cell adjacent to the enemy.
+    center = 182 * W + 526
+    st = GameState(source="api")
+    st.user.uid = "me"
+    st.main_city_index = center
+    st.resources.stamina = 10
+    areas = {
+        center: _cell(owner="me", city=1001),
+        center - 1: _cell(owner="", pawns=[50]),   # contested: enemy sits at center-2
+        center + 1: _cell(owner="", pawns=[50]),   # safe expansion cell
+    }
+    my_army = [{"index": center, "uid": "A", "pawns": [{"hp": 500}, {"hp": 500}], "state": None}]
+    act = FakeActions(areas=areas, armies=my_army)
+    rule = OccupyCell(radius=1, predictor=BattlePredictor(),
+                      threats_source=lambda: {center - 2})  # enemy adjacent to center-1
+    assert rule.applies(st, act) is True
+    rule.act(act)
+    assert act.calls[0][1] == center - 1  # defended the contested border cell
+
+
 def test_occupy_rule_skips_when_no_stamina():
     st = GameState(source="api"); st.user.uid = "me"; st.main_city_index = 1
     st.resources.stamina = 0
