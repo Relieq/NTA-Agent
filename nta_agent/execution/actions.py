@@ -214,6 +214,19 @@ class Actions:
             "skinId": int(skin_id), "attackSpeed": int(attack_speed),
         })
 
+    def forge_equip(self, equip_uid: str) -> dict:
+        """Forge/recast an equip (GAME_HD_ForgeEquip). Costs iron unless a free
+        recast is available (only from policy). Reply carries the new equip
+        attrs + iron + nextForgeFree/recastCount."""
+        reply = self.session.request("game/HD_ForgeEquip", {"uid": str(equip_uid)})
+        self._apply_result(reply)
+        return reply
+
+    def lock_equip_effect(self, equip_uid: str, effect: int) -> dict:
+        """Lock an equip effect (GAME_HD_LockEquipEffect). Costs fixator."""
+        return self.session.request("game/HD_LockEquipEffect",
+                                    {"uid": str(equip_uid), "effect": int(effect)})
+
     # ---- army reads ----------------------------------------------------- #
     def get_player_armys(self) -> list[dict]:
         """All of the player's armies with their pawns (GAME_HD_GetPlayerArmys)."""

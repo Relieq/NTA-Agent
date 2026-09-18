@@ -23,3 +23,12 @@ def test_cure_injury_pawn_request_and_optimistic_remove():
     assert params == {"index": 72100, "armyUid": "A", "armyName": "D1", "pawnUid": "d1"}
     # cured pawn dropped locally so it isn't retried
     assert [p["uid"] for p in player["injuryPawns"]] == ["d2"]
+
+
+def test_forge_and_lock_action_shapes():
+    s = FakeSession({})
+    a = Actions(session=s)
+    a.forge_equip("e1")
+    a.lock_equip_effect("e1", 2)
+    assert s.sent[-2] == ("game/HD_ForgeEquip", {"uid": "e1"})
+    assert s.sent[-1] == ("game/HD_LockEquipEffect", {"uid": "e1", "effect": 2})
