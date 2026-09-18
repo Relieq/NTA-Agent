@@ -102,3 +102,34 @@ def test_plan_forts_no_decisions_matches_recommend():
     base = recommend_forts(main, owned, forts=[], map_width=W, max_forts=5, radius=6)
     assert [r["index"] for r in recs] == [r["index"] for r in base]
     assert accepted == []
+
+
+def test_prefers_candidate_far_from_enemy():
+    # Two candidates equal in frontier & spread (same distance east/west from main);
+    # enemy sits near the east one -> the west one is safer and wins (C1).
+    main = idx(100, 100)
+    owned = {idx(120, 100), idx(80, 100)}
+    enemy = {idx(122, 100)}  # right next to the east candidate
+    recs = recommend_forts(main, owned, forts=[], map_width=W, max_forts=1,
+                           radius=6, enemy=enemy)
+    assert recs[0]["index"] == idx(80, 100)  # away from enemy
+    assert "địch" in recs[0]["reason"]
+
+
+def test_danger_radius_drops_exposed_candidates():
+    main = idx(100, 100)
+    owned = {idx(120, 100)}          # only candidate, but enemy is adjacent
+    enemy = {idx(121, 100)}
+    recs = recommend_forts(main, owned, forts=[], map_width=W, max_forts=1,
+                           radius=6, enemy=enemy, danger_radius=2)
+    assert recs == []               # too exposed -> no recommendation
+
+
+def test_no_enemy_matches_previous_ranking():
+    # enemy=None must not change the pick vs. the frontier-only ranking.
+    main = idx(100, 100)
+    owned = {idx(120, 100), idx(102, 100)}
+    base = recommend_forts(main, owned, forts=[], map_width=W, max_forts=1, radius=6)
+    with_none = recommend_forts(main, owned, forts=[], map_width=W, max_forts=1,
+                                radius=6, enemy=None)
+    assert base[0]["index"] == with_none[0]["index"] == idx(120, 100)
