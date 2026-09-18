@@ -88,7 +88,10 @@ hội** cho người (không tự đánh).
 **Phụ thuộc:** Tier B (có), C1/fort advisor (có), move/occupy (có). **Kiểm chứng:** unit test hình học bao
 chứa + phát hiện lấn; live khi có địch sát biên (hoặc dựng kịch bản).
 
-### Giai đoạn I — Thông tin & Cố vấn (vai trò trung tâm của trợ thủ)
+### Giai đoạn I — Thông tin & Cố vấn — ✅ **XONG (PR#48, 2026-09-18)**
+
+`execution/intel.py` `build_report` (status/threats/kinh-tế-dự-báo/cơ-hội/khuyến-nghị-kèm-lý-do) + server
+`GET /api/intel` + dashboard `IntelPanel` (tab "Cố vấn"). Gộp I1/I2/I3 v1. *Thiết kế gốc giữ bên dưới.*
 
 **Mục tiêu:** biến agent thành nguồn thông tin đáng tin để người chơi ra quyết định — "mắt và cố vấn".
 
