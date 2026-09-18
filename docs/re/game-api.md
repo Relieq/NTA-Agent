@@ -67,9 +67,15 @@ Army có state `TONDEN` (屯田): trú trên ô để **sản xuất tài nguyê
 
 | Endpoint | Trạng thái | Request | Ghi chú |
 |---|---|---|---|
-| `HD_CellTonden` | ❓ | — | Bắt đầu đồn điền trên ô. |
-| `HD_CancelCellTonden` | ❓ | — | Dừng đồn điền. |
-| `HD_GetTondenDist` | ❓ | — | Thông tin/cự ly đồn điền. |
+| `HD_CellTonden` | 🔶 | `{index, uid, target}` | Điều đội (`index`/`uid` = ô+uid đội) đồn điền ô `target`. Chặn bởi `getCellTondenCount()` (limit **policy-driven** `CELL_TONDEN`) → `CELL_TONDEN_LIMIT`. |
+| `HD_CancelCellTonden` | 🔶 | `{index}` | Dừng đồn điền tại ô. |
+| `HD_GetTondenDist` | 🔶 | `{}` | Thông tin/cự ly đồn điền. |
+
+> `tonden_time` (landAttr per ô) giảm theo policy `CELL_TONDEN_CD`; `getArmyTondenInfo(index,uid)` =
+> trạng thái đồn điền của đội. **Sản lượng = TREASURES** (rương): xong `tonden_time` → notify
+> `UPDATE_TONDEN`/panel `TondenEnd(treasures)` → thu bằng hệ thống rương sẵn có (`ClaimTreasures`).
+> Tức Tonden = đỗ quân trên ô theo thời gian lấy rương, **KHÔNG chiến đấu** (không thương vong) — đánh đổi
+> với occupy (nhanh hơn nhưng có thương vong). Thời gian/sản lượng cụ thể cần thí nghiệm live (có chờ).
 
 ## 5. Rương (treasure — loot từ chiếm ô)
 | Endpoint | Trạng thái | Request | Ghi chú |
