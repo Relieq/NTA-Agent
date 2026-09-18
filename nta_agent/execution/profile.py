@@ -113,6 +113,14 @@ def apply_edits(profile: Profile, clean: dict) -> bool:
             if rev.get(k) != v:
                 rev[k] = v
                 changed = True
+    if isinstance(clean.get("leveling"), dict):
+        lv = getattr(profile, "leveling", None)
+        if lv is None:
+            profile.leveling = lv = {}
+        for k, v in clean["leveling"].items():
+            if lv.get(k) != v:
+                lv[k] = v
+                changed = True
     active = profile.army.get("active") or ""
     preset = (profile.army.get("presets") or {}).get(active)
     if preset:

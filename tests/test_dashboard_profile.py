@@ -39,3 +39,14 @@ def test_handle_profile_edit_drops_invalid_ids(tmp_path):
     Path(cfg.profile_path).parent.mkdir(parents=True, exist_ok=True)
     out = handle_profile_edit(cfg, {"build": {"order": [2016, 999999], "skip": []}})
     assert out["applied"]["build"]["order"] == [2016]  # unknown id dropped by guard
+
+
+def test_profile_edit_sets_leveling(tmp_path):
+    from nta_agent.dashboard.server import handle_profile_edit, read_profile_view
+    from nta_agent.runtime.config import RuntimeConfig
+    cfg = RuntimeConfig(distinct_id="x", log_dir=tmp_path)
+    out = handle_profile_edit(cfg, {"leveling": {"enabled": True, "target_lv": 8,
+                                                 "farm_uid": "F", "army_uid": "L"}})
+    assert out["ok"] is True
+    v = read_profile_view(cfg)
+    assert v["leveling"] == {"enabled": True, "target_lv": 8, "army_uid": "L", "farm_uid": "F"}
