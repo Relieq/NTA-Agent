@@ -46,7 +46,7 @@ def test_profile_edit_sets_leveling(tmp_path):
     from nta_agent.runtime.config import RuntimeConfig
     cfg = RuntimeConfig(distinct_id="x", log_dir=tmp_path)
     out = handle_profile_edit(cfg, {"leveling": {"enabled": True, "target_lv": 8,
-                                                 "farm_uid": "F", "army_uid": "L"}})
+                                                 "max_leveling": 2}})
     assert out["ok"] is True
     v = read_profile_view(cfg)
-    assert v["leveling"] == {"enabled": True, "target_lv": 8, "army_uid": "L", "farm_uid": "F"}
+    assert v["leveling"] == {"enabled": True, "target_lv": 8, "max_leveling": 2}

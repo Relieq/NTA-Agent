@@ -796,13 +796,14 @@ class ReviveInjured:
 
 @dataclass
 class Leveling:
-    """Run the exp-book pawn-leveling cycle over a dedicated leveling army + the
-    fixed farm army (both user-designated in profile.leveling). Best-effort.
+    """Run the exp-book leveling cycle over the FARM GROUP (profile.army.group,
+    up to ~5 armies) + an agent-created LEVELING army (buffer). Best-effort.
 
-    Inert until configured (enabled + target_lv + both army uids). Levels the
-    lowest under-target pawn in the leveling army (PawnLving), and when the farm
-    army is home swaps a ready pawn into it. Verified live: PawnLving costs
-    exp_book + queues ~240s -> lv+1."""
+    Inert until configured (enabled + target_lv). The agent pulls under-target
+    pawns from the farm group into a new leveling army, levels them (PawnLving),
+    and swaps ready pawns back into the farm group when it is home. Verified live:
+    PawnLving costs exp_book + queues ~240s -> lv+1. (Create/dismiss army params
+    to re-confirm live once a workable multi-army state exists.)"""
     name: str = "leveling"
     check_every: int = 4
     on_event: object = None
@@ -828,24 +829,29 @@ class Leveling:
             self._cooldown -= 1
             return False
         target = int(cfg.get("target_lv", 0) or 0)
-        farm_uid, lv_uid = str(cfg.get("farm_uid", "")), str(cfg.get("army_uid", ""))
-        if not target or not farm_uid or not lv_uid:
+        if not target:
             return False
-        from nta_agent.execution.leveling import next_level_action
+        from nta_agent.execution.leveling import find_leveling_army, next_level_action
+        from nta_agent.execution.profile import active_formation
+        group = {str(u) for u in (active_formation(self.profile).get("group") or [])}
+        if not group:
+            return False  # no fixed farm group designated
         armies = actions.get_player_armys()
         self._cooldown = self.check_every
-        by_uid = {str(a.get("uid")): a for a in armies}
-        farm, lv_army = by_uid.get(farm_uid), by_uid.get(lv_uid)
-        if farm is None or lv_army is None:
+        farm_armies = [a for a in armies if str(a.get("uid")) in group]
+        level_army = find_leveling_army(armies)
+        if not farm_armies:
             return False
         main = actions.main_city_index()
-        farm_home = int(farm.get("index", 0) or 0) == main
-        act = next_level_action(farm, lv_army, target, farm_home=farm_home,
+        farm_home = all(int(a.get("index", 0) or 0) == main for a in farm_armies)
+        act = next_level_action(farm_armies, level_army, target, farm_home=farm_home,
                                 queue_uids=self._queue_uids(state),
-                                exp_book=state.resources.exp_book)
+                                exp_book=state.resources.exp_book,
+                                max_leveling=int(cfg.get("max_leveling", 1) or 1))
         self._pending = act
         if act and self.on_event:
-            self.on_event("leveling", {"kind": act.kind, "pawn": act.pawn_uid or act.ready_uid})
+            self.on_event("leveling", {"kind": act.kind,
+                                       "pawn": act.pawn_uid or act.ready_uid})
         return act is not None
 
     def act(self, actions: Actions) -> None:
@@ -854,10 +860,20 @@ class Leveling:
         if a is None:
             return
         if a.kind == "level":
-            actions.pawn_lving(a.index, a.army_uid, a.pawn_uid)
+            actions.pawn_lving(a.index, a.level_uid, a.pawn_uid)
         elif a.kind == "swap":
             actions.exchange_pawn_army(a.index, a.farm_uid, a.low_uid, a.ready_uid,
-                                       army_uid2=a.army_uid)
+                                       army_uid2=a.level_uid)
+        elif a.kind == "pull":
+            from nta_agent.execution.leveling import LEVEL_ARMY_NAME
+            if a.create:
+                actions.change_pawn_army(a.index, a.src_uid, a.pawn_uid, "",
+                                         is_new_create=True, army_name=LEVEL_ARMY_NAME)
+            else:
+                actions.change_pawn_army(a.index, a.src_uid, a.pawn_uid, a.level_uid,
+                                         only_change=True)
+        elif a.kind == "dismiss":
+            actions.dismiss_army(a.index, a.level_uid, 0)
 
 
 @dataclass

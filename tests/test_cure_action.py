@@ -39,3 +39,18 @@ def test_pawn_lving_action_shape():
     a = Actions(session=s)
     a.pawn_lving(72100, "A", "p1")
     assert s.sent[-1] == ("game/HD_PawnLving", {"index": 72100, "auid": "A", "puid": "p1"})
+
+
+def test_change_pawn_army_and_dismiss_shapes():
+    s = FakeSession({})
+    a = Actions(session=s)
+    a.change_pawn_army(72100, "F", "p1", "", is_new_create=True, army_name="Nâng Cấp")
+    assert s.sent[-1] == ("game/HD_ChangePawnArmy",
+                          {"index": 72100, "armyUid": "F", "uid": "p1", "newArmyUid": "",
+                           "isNewCreate": True, "armyName": "Nâng Cấp"})
+    a.change_pawn_army(72100, "F", "p1", "L", only_change=True)
+    assert s.sent[-1] == ("game/HD_ChangePawnArmy",
+                          {"index": 72100, "armyUid": "F", "uid": "p1", "newArmyUid": "L",
+                           "onlyChangeArmy": True})
+    a.dismiss_army(72100, "L", 0)
+    assert s.sent[-1] == ("game/HD_DismissArmy", {"index": 72100, "armyUid": "L", "id": 0})
