@@ -54,3 +54,13 @@ def test_skips_army_already_at_heal_node():
     acts = FakeActions(armies)
     rule = HealRouting(check_every=0)
     assert rule.applies(st, acts) is False
+
+
+def test_skips_wounded_army_that_is_busy():
+    main = 100 * 600 + 100
+    st = _state(main, forts=[])
+    # wounded but MARCHING (state=1) -> cannot be moved -> not routed
+    armies = [{"index": 105 * 600 + 100, "uid": "hurt", "state": 1,
+               "pawns": [{"hp": [10, 100]}]}]
+    acts = FakeActions(armies)
+    assert HealRouting(check_every=0).applies(st, acts) is False

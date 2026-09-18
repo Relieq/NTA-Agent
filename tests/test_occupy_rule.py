@@ -361,3 +361,15 @@ def test_min_occupy_stamina_from_config():
     from nta_agent.execution.occupy_planner import min_occupy_stamina
 
     assert min_occupy_stamina(GameConfig.load()) >= 1
+
+
+def test_occupy_skips_busy_army():
+    # The only reachable army is FIGHTING (state=2) -> can't be sent -> no plan.
+    center = 182 * W + 526
+    st = GameState(source="api"); st.user.uid = "me"; st.main_city_index = center
+    st.resources.stamina = 10
+    areas = {center: _cell(owner="me", city=1001), center - 1: _cell(owner="", pawns=[50])}
+    busy = [{"index": center, "uid": "A", "pawns": [{"hp": 500}], "state": 2}]
+    act = FakeActions(areas=areas, armies=busy)
+    rule = OccupyCell(radius=1, predictor=BattlePredictor())
+    assert rule.applies(st, act) is False
