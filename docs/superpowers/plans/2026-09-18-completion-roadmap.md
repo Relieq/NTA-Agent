@@ -24,9 +24,10 @@ Sản phẩm hoàn thiện khi thỏa **tất cả**:
    giao, mở khóa binh chủng, chính sách) do người quyết; agent chỉ thực thi lệnh và giải thích.
 6. **Bảo trì được:** game update chỉ cần sửa adapter/config; có regression phát hiện protocol/asset đổi.
 
-**Ngoài phạm vi (agent KHÔNG làm — người chơi tự làm):** tấn công đất/thành người chơi khác, vây kinh đô cổ,
-phối hợp quân đánh PvP, hành động liên minh (join/đóng góp/chính sách/cờ). Agent chỉ **đọc** các thứ này để
-báo cáo, không tự hành động.
+**Ngoài phạm vi (agent KHÔNG làm — người chơi tự làm):** mọi thứ **liên quan người chơi khác** — tấn công
+đất/thành, vây kinh đô cổ, phối hợp quân đánh PvP, hành động liên minh (join/đóng góp/chính sách/cờ),
+**chợ người chơi** (rao bán/mua theo giá) và **tặng tài nguyên**. Agent chỉ **đọc** để báo cáo (Phase I),
+và chỉ giao dịch với **hệ thống** (không qua người chơi).
 
 ---
 
@@ -116,15 +117,27 @@ báo cáo với dữ liệu live; người chơi thấy đúng và hữu ích.
 **Vì sao cần:** đây là lõi "trợ thủ lo việc lặp". Hiện thu/xây/tuyển đã có nhưng chưa cân bằng tài nguyên,
 dễ tràn kho, chưa tối ưu tech dài hạn.
 
-**Phạm vi:**
-- **E1 — Giao thương Bazaar** (M): `HD_BazaarBuyRes/SellRes/SellToSys/...` — bán dư, mua thiếu phục vụ
-  build/recruit; rule ROI + guard giá.
-- **E2 — Quản trần kho & chống tràn** (S): theo dõi granaryCap/warehouseCap; thu/tiêu đúng nhịp để không
-  tràn; cảnh báo khi sắp đầy (nối I3).
-- **E3 — Tối ưu tech/mở khóa (người duyệt)** (M): agent tính thứ tự ceri/policy/binh chủng tối ưu và
-  **đề xuất**; người chơi duyệt (giữ nguyên human-in-loop cho các mục taste-driven/không đảo ngược).
+**Ranh giới (user chốt 2026-09-18):** agent **KHÔNG đụng gì liên quan người chơi khác** — bỏ **chợ người
+chơi** (`BazaarSellRes` định giá; `BazaarBuyRes` nếu là mua từ listing người chơi) và **tặng tài nguyên**
+(`BazaarGiveRes`). Chỉ giao dịch với **HỆ THỐNG**. Các thứ liên quan người chơi, nếu hữu ích, chỉ **hiển
+thị thông tin** (Phase I), không hành động.
 
-**Phụ thuộc:** none lớn. **Kiểm chứng:** unit ROI; live quan sát cân bằng tài nguyên nhiều tick.
+**Phạm vi:**
+- **E1 — Quản trần kho & chống tràn** (S–M, chore chính, giá trị ngay): dùng dự báo đầy kho (Phase I:
+  nhịp opHour vs `granary_cap`/`warehouse_cap`) → **tiêu trước khi tràn** (ưu tiên xây/nâng/tuyển loại sắp
+  đầy) + **bán dư cho HỆ THỐNG** (`BazaarSellToSys`) đổi lấy gold thay vì mất trắng; canh nhịp thu; cảnh
+  báo nếu không tiêu kịp. Chỉ giao dịch hệ thống, guard trần bán. *An toàn, không đụng người chơi.*
+- **E2 — Mua bù gỡ nghẽn (CHỈ nếu có kênh hệ thống)** (S, có điều kiện): nếu game cho **mua từ hệ thống**
+  (verify RE), mua đúng loại đang **chặn một build/tuyển cụ thể** với trần chi gold. Nếu chỉ có chợ người
+  chơi → **BỎ** (người chơi tự làm). Xác định qua RE trước khi làm.
+- **E3 — Tối ưu tech/mở khóa (đề xuất + người duyệt)** (M): agent tính thứ tự ceri/policy/binh chủng tối ưu
+  và **đề xuất kèm lý do**; người chơi duyệt (giữ human-in-loop cho mục taste-driven/không đảo ngược). Agent
+  chỉ thực thi lựa chọn của người (`StudySelect`), không tự mở.
+
+**Phụ thuộc:** E1 nối Phase I (dự báo). E2 cần RE Bazaar (loại chợ + tỉ giá/phí). **Kiểm chứng:** unit
+(chống tràn + SellToSys guard); live quan sát không còn phí tài nguyên do tràn qua nhiều tick.
+**Cần RE + verify live:** shape `BazaarSellToSys`/`GetTradingRess` + tỉ giá hệ thống + xác định có mua-hệ-
+thống hay không (đừng đoán — chạy thật mới chốt).
 
 ### Giai đoạn B — Bộ não hỗ trợ (điều phối tự động + sinh cố vấn)
 
