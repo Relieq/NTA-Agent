@@ -141,7 +141,11 @@ thời gian tới đầy, tài nguyên cần cho các công trình khác, và **
 (thu/xây/tuyển sẵn có). Phase E còn lại chủ yếu là **cố vấn** (E1 gộp Phase I) + **đề xuất-người-duyệt**
 (E3) — hợp vai trợ thủ. **Phụ thuộc:** Phase I. **Kiểm chứng:** unit phân tích đánh đổi; review khuyến nghị.
 
-### Giai đoạn B — Bộ não hỗ trợ (điều phối tự động + sinh cố vấn)
+### Giai đoạn B — Bộ não hỗ trợ — ✅ **XONG (PR#55, 2026-09-18)** (gồm E3)
+
+B1 (BrainService gọi theo sự kiện: threat/thương-vong/decision chờ + min-gap), B2 (LLM trả `advice` →
+`brain_advice.json` → intel + tab "Cố vấn"), E3 (digest mang options unlock/policy → brain khuyến nghị chọn
++ lý do; người duyệt). Verify live. B3 (học từ trận) để tùy chọn tương lai. *Thiết kế gốc bên dưới.*
 
 **Mục tiêu:** brain điều chỉnh chính sách tự-động (kinh tế/mở rộng/phòng thủ) theo tình thế, và **sinh
 khuyến nghị** cho người — không quyết PvP.
