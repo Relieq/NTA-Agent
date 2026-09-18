@@ -13,7 +13,7 @@ from pathlib import Path
 DEFAULT_PROFILE = {
     "army": {"group": [], "roles": {}, "onetile": True, "composition": {},
              "active": "", "presets": {}},
-    "occupy": {"max_loss": 0.0, "max_march_ms": 0,
+    "occupy": {"max_loss": 0.0, "max_march_ms": 0, "expansion": "none",
                "loot": {"enabled": True, "min_reward_per_chest": 0.0}},
     "notes": [],
     "build": {"order": [], "skip": []},

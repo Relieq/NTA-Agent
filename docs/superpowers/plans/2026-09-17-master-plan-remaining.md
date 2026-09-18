@@ -41,15 +41,18 @@ Ký hiệu quy mô: **S** (≤1 buổi), **M** (1–3 buổi), **L** (nhiều bu
 LIVE = cần verify trên emulator.
 
 ### A. Hoàn thiện vòng đánh/farm
-- **A1 — Hồi sinh lính chết** (S–M, LIVE). `HD_CureInjuryPawn{index,armyUid,armyName,pawnUid}` +
-  `curingQueues` (slot) + `SpeedUpCuringPawn`/`GiveupInjuryPawn`. Parse `injuryPawns`/`curingQueues`
-  vào state → rule tự hồi sinh khi có slot, ưu tiên lính giá trị cao. *Deps: none.* Bổ sung tự nhiên cho
-  HealRouting (thương vong đang tích lũy sau mỗi trận).
-- **A2 — Tonden (đồn điền)** (M, RE+LIVE). `HD_CellTonden`/`CancelCellTonden`/`GetTondenDist`, army
-  state `TONDEN`, `landAttr.tonden_time`. RE cơ chế (điều kiện, sản lượng, cách thu) → rule đặt/thu đồn
-  điền. *Deps: RE trước.*
-- **A3 — Preset chính sách farm/occupy + điều khiển dashboard** (S). Đưa `profile.occupy` (max_loss,
-  min_reward_per_chest, group) lên UI chỉnh tay/brain. *Deps: none.*
+- **A1 — Hồi sinh lính chết** (S–M, LIVE). ✅ **XONG (PR#37, 2026-09-18).** `HD_CureInjuryPawn` + rule
+  `ReviveInjured` (cost-aware, best-effort). Verify live end-to-end.
+- **A2 — ~~Tonden (đồn điền)~~** — ❌ **BỎ (user quyết 2026-09-18).** Tonden = đỗ quân ô đã chiếm lấy
+  rương theo thời gian, không đánh; nhưng chỉ hữu ích cho người chơi ÍT THỜI GIAN (agent đã giải quyết) +
+  không lấy được scroll/đinh. RE giữ ở `docs/re/game-api.md`. Xem [[nta-agent-strategy]].
+- **A3 — Chiến lược MỞ RỘNG LÃNH THỔ (expansion presets)** (M) — *định nghĩa lại* (không phải toggle UI).
+  Profile `expansion: spiral|octopus|hybrid` → **bias chọn mục tiêu** cho `OccupyCell`/`discover_targets`:
+  - **Xoắn ốc (spiral):** ưu tiên ứng viên **kề đúng 1 ô owned** (single-file, phơi bày tối thiểu, dễ dựng
+    hàng phòng thủ khi bị đánh) — dùng khi không bật chế độ bảo vệ.
+  - **Bạch tuộc (octopus):** ưu tiên ô **dễ** (loss thấp) + hướng tới / khóa ô **giàu tài nguyên lv5** (chỉ
+    chiếm được ô liền kề nên vươn "vòi" để chặn địch).
+  - **Hybrid:** kết hợp. *Deps: none (dựa dữ liệu owned + land config sẵn có).* Chi tiết: [[nta-agent-strategy]].
 
 ### B. Bộ não chiến lược (LLM) — khoảng trống lớn nhất vs mục tiêu dự án
 - **B1 — Thư viện chiến thuật** (L). Intent schema cấp cao (chọn mục tiêu đánh, phân bổ quân theo mặt
