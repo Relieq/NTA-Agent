@@ -310,7 +310,9 @@ class OccupyCell:
 
         def plans_for(i):
             # Candidate selection-orders from the active formation group (or all reachable).
-            avail = actions.select_armies(i)
+            # Only IDLE armies can be sent (skip marching/fighting/recruiting/leveling).
+            from nta_agent.execution.army_health import is_idle
+            avail = [a for a in actions.select_armies(i) if is_idle(a)]
             grp = []
             if self.profile is not None:
                 from nta_agent.execution.profile import active_formation
@@ -701,6 +703,7 @@ class HealRouting:
         from nta_agent.execution.army_health import (
             army_is_wounded,
             army_wound_frac,
+            is_idle,
             nearest_heal_node,
         )
         from nta_agent.execution.territory import build_territory
@@ -713,8 +716,11 @@ class HealRouting:
             idx = int(a.get("index", 0) or 0)
             if idx in nodes:
                 occupancy[idx] = occupancy.get(idx, 0) + 1
+        # Only route IDLE wounded armies — a marching/fighting/recruiting/leveling
+        # army can't be moved (server rejects: ecode.500020/500036/...).
         candidates = [a for a in armies
-                      if army_is_wounded(a) and int(a.get("index", 0) or 0) not in nodes]
+                      if army_is_wounded(a) and is_idle(a)
+                      and int(a.get("index", 0) or 0) not in nodes]
         candidates.sort(key=army_wound_frac, reverse=True)
         pending = []
         for a in candidates[: self.max_route_per_tick]:

@@ -40,3 +40,11 @@ def test_curhp_maxhp_shape():
     assert army_is_wounded(healthy) is False
     assert army_is_wounded(wounded) is True
     assert abs(army_wound_frac(wounded) - 0.7) < 1e-9
+
+
+def test_is_idle_by_state():
+    from nta_agent.execution.army_health import is_idle
+    assert is_idle({"state": 0}) is True
+    assert is_idle({}) is True                 # missing -> idle
+    for busy in (1, 2, 3, 4, 5, 6):            # MARCH/FIGHT/DRILL/LVING/TONDEN/CURING
+        assert is_idle({"state": busy}) is False

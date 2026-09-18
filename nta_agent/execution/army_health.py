@@ -26,6 +26,14 @@ def _hp(pawn: dict) -> tuple[int, int]:
     return (cur, mx) if mx > 0 else (0, 0)
 
 
+# ArmyState (engine): 0 NONE(rảnh) 1 MARCH 2 FIGHT 3 DRILL(chiêu mộ) 4 LVING(nâng cấp)
+# 5 TONDEN 6 CURING. Chỉ state 0 mới điều/gửi được; mọi state khác đội đang bận.
+def is_idle(army: dict) -> bool:
+    """True if the army is free to move/send (ArmyState NONE). Marching, fighting,
+    recruiting (DRILL), leveling (LVING), tonden and curing all lock it."""
+    return int((army or {}).get("state", 0) or 0) == 0
+
+
 def army_is_wounded(army: dict) -> bool:
     for p in army.get("pawns") or []:
         cur, mx = _hp(p)
