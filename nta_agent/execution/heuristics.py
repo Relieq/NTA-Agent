@@ -795,6 +795,72 @@ class ReviveInjured:
 
 
 @dataclass
+class Leveling:
+    """Run the exp-book pawn-leveling cycle over a dedicated leveling army + the
+    fixed farm army (both user-designated in profile.leveling). Best-effort.
+
+    Inert until configured (enabled + target_lv + both army uids). Levels the
+    lowest under-target pawn in the leveling army (PawnLving), and when the farm
+    army is home swaps a ready pawn into it. Verified live: PawnLving costs
+    exp_book + queues ~240s -> lv+1."""
+    name: str = "leveling"
+    check_every: int = 4
+    on_event: object = None
+    profile: object = None
+    _cooldown: int = 0
+    _pending: object = None
+
+    def _queue_uids(self, state) -> set:
+        q = ((state.raw or {}).get("player") or {}).get("pawnLvingQueues")
+        if isinstance(q, dict):
+            uids = set(q.get("pawnUIDMap") or {})
+            for item in (q.get("map") or {}).values():
+                if isinstance(item, dict) and item.get("puid"):
+                    uids.add(str(item["puid"]))
+            return {str(u) for u in uids}
+        return set()
+
+    def applies(self, state: GameState, actions: Actions) -> bool:
+        cfg = getattr(self.profile, "leveling", None) or {}
+        if not cfg.get("enabled"):
+            return False
+        if self._cooldown > 0:
+            self._cooldown -= 1
+            return False
+        target = int(cfg.get("target_lv", 0) or 0)
+        farm_uid, lv_uid = str(cfg.get("farm_uid", "")), str(cfg.get("army_uid", ""))
+        if not target or not farm_uid or not lv_uid:
+            return False
+        from nta_agent.execution.leveling import next_level_action
+        armies = actions.get_player_armys()
+        self._cooldown = self.check_every
+        by_uid = {str(a.get("uid")): a for a in armies}
+        farm, lv_army = by_uid.get(farm_uid), by_uid.get(lv_uid)
+        if farm is None or lv_army is None:
+            return False
+        main = actions.main_city_index()
+        farm_home = int(farm.get("index", 0) or 0) == main
+        act = next_level_action(farm, lv_army, target, farm_home=farm_home,
+                                queue_uids=self._queue_uids(state),
+                                exp_book=state.resources.exp_book)
+        self._pending = act
+        if act and self.on_event:
+            self.on_event("leveling", {"kind": act.kind, "pawn": act.pawn_uid or act.ready_uid})
+        return act is not None
+
+    def act(self, actions: Actions) -> None:
+        a = self._pending
+        self._pending = None
+        if a is None:
+            return
+        if a.kind == "level":
+            actions.pawn_lving(a.index, a.army_uid, a.pawn_uid)
+        elif a.kind == "swap":
+            actions.exchange_pawn_army(a.index, a.farm_uid, a.low_uid, a.ready_uid,
+                                       army_uid2=a.army_uid)
+
+
+@dataclass
 class RuleEngine:
     rules: list[Rule]
 
@@ -821,4 +887,5 @@ class RuleEngine:
                           Recruit(profile=profile),
                           HealRouting(),
                           OccupyCell(use_sim=True, profile=profile),
-                          ClaimTreasures(), ReviveInjured(profile=profile), ClaimTasks()])
+                          ClaimTreasures(), ReviveInjured(profile=profile),
+                          Leveling(profile=profile), ClaimTasks()])

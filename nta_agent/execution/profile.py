@@ -16,6 +16,9 @@ DEFAULT_PROFILE = {
     "occupy": {"max_loss": 0.0, "max_march_ms": 0, "expansion": "none",
                "loot": {"enabled": True, "min_reward_per_chest": 0.0}},
     "revive": {"enabled": True},
+    # leveling: dedicated exp-book leveling army + fixed farm army (user-designated
+    # via dashboard). Disabled until configured. See memory nta-agent-forge-leveling.
+    "leveling": {"enabled": False, "target_lv": 0, "army_uid": "", "farm_uid": ""},
     "notes": [],
     "build": {"order": [], "skip": []},
 }
@@ -40,6 +43,8 @@ class Profile:
     notes: list
     build: dict
     revive: dict = field(default_factory=lambda: {"enabled": True})
+    leveling: dict = field(default_factory=lambda: {"enabled": False, "target_lv": 0,
+                                                    "army_uid": "", "farm_uid": ""})
 
 
 def load_profile(path) -> Profile:
@@ -50,7 +55,7 @@ def load_profile(path) -> Profile:
         data = {}
     merged = _merge(DEFAULT_PROFILE, data if isinstance(data, dict) else {})
     return Profile(army=merged["army"], occupy=merged["occupy"], notes=merged["notes"],
-                   build=merged["build"], revive=merged["revive"])
+                   build=merged["build"], revive=merged["revive"], leveling=merged["leveling"])
 
 
 def save_profile(profile: Profile, path) -> None:
@@ -58,7 +63,8 @@ def save_profile(profile: Profile, path) -> None:
     p.parent.mkdir(parents=True, exist_ok=True)
     p.write_text(json.dumps({"army": profile.army, "occupy": profile.occupy,
                              "notes": profile.notes, "build": profile.build,
-                             "revive": getattr(profile, "revive", {"enabled": True})},
+                             "revive": getattr(profile, "revive", {"enabled": True}),
+                             "leveling": getattr(profile, "leveling", {})},
                             ensure_ascii=False, indent=1), encoding="utf-8")
 
 
