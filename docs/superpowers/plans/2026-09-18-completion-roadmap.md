@@ -59,7 +59,11 @@ mở khóa/chính sách. Chưa validate chạy nền dài, chưa auto-recover/re
 Thứ tự = ưu tiên. Mỗi giai đoạn nêu **mục tiêu**, **vì sao cần**, **phạm vi**, **phụ thuộc**, **quy mô**
 (S ≤1 buổi, M 1–3 buổi, L nhiều buổi/nhiều PR), **cách kiểm chứng**.
 
-### Giai đoạn P — Bảo vệ lãnh thổ khỏi xâm nhập âm thầm (trụ cột thiếu lớn nhất)
+### Giai đoạn P — Bảo vệ lãnh thổ khỏi xâm nhập âm thầm — ✅ **XONG (PR#45/#46, 2026-09-18)**
+
+P1 (threat model: convex hull + detect_incursions), P3 (fort_service ghi threats + `threat_alert` +
+dashboard passthrough), P2 (OccupyCell `_defensive_select` chiếm ô biên tranh chấp trước). Giới hạn: chỉ
+chặn ô occupiable; ô đệm đất trống → P3 báo người. *Nội dung thiết kế gốc giữ bên dưới để tham chiếu.*
 
 **Mục tiêu:** agent tự phát hiện và chặn khi địch lặng lẽ lấn ô vào phạm vi lãnh thổ ta, để người chơi không
 bị "gặm" đất lúc không để ý.
