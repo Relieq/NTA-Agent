@@ -34,3 +34,9 @@ def test_fort_recs_included():
              "threat_summary": {"count": 0}}
     r = build_report({}, forts)
     assert any(x["type"] == "fort" and "(5,6)" in x["text"] for x in r["recommendations"])
+
+
+def test_brain_advice_included():
+    advice = [{"text": "Chọn Cung", "why": "tầm xa mạnh"}]
+    r = build_report({}, {}, brain_advice=advice)
+    assert r["brain_advice"] == advice

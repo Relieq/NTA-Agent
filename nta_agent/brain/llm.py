@@ -19,9 +19,15 @@ _SYSTEM = (
     '"occupy":{"max_loss":0-100,"max_march_ms":int>=0,'
     '"expansion":"none|spiral|octopus|hybrid",'
     '"loot":{"enabled":bool,"min_reward_per_chest":number>=0}},'
-    '"revive":{"enabled":bool}}\n'
+    '"revive":{"enabled":bool},'
+    '"advice":[{"text":"...","why":"..."}]}\n'
     "Only include fields you want to change. max_loss is the max acceptable "
     "predicted troop-loss % for occupying a cell (0 = never lose troops).\n"
+    "advice is human-facing recommendations the PLAYER acts on (you do not): "
+    "which pending unlock/policy option to pick (see digest.decisions — reserved "
+    "for the human), whether to upgrade storage/tech, attack/defend calls, etc. "
+    "Keep each short with a concrete reason; omit advice when nothing is worth "
+    "raising.\n"
     "occupy.expansion picks the territory-growth pattern: 'spiral' = each new cell "
     "touches one owned cell (single-file, low exposure, easy to defend — use when "
     "the enemy is near); 'octopus' = grab easy cells / reach toward resource-rich "

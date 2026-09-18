@@ -82,6 +82,15 @@ def sanitize_edits(edits: dict, profile, valid_army_uids, valid_build_ids=None) 
         out["revive"] = {"enabled": (v.lower() in ("1", "true", "yes")
                                      if isinstance(v, str) else bool(v))}
 
+    if isinstance(edits.get("advice"), list):
+        advice = []
+        for a in edits["advice"]:
+            if isinstance(a, dict) and str(a.get("text", "")).strip():
+                advice.append({"text": str(a["text"]).strip()[:200],
+                               "why": str(a.get("why", "")).strip()[:200]})
+        if advice:
+            out["advice"] = advice[:10]
+
     if isinstance(edits.get("notes"), list):
         out["notes"] = [str(s).strip()[:200] for s in edits["notes"] if str(s).strip()][:20]
 

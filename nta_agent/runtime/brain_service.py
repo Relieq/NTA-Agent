@@ -27,8 +27,11 @@ class BrainService:
         self._propose = llm_propose
         self._tick = 0
         self._calls = 0
+        self._last_call = -10**9
         self._off = False
         self._build_ids = None  # lazily-loaded valid build ids
+        # B1: minimum ticks between event-triggered (urgent) calls, to bound tokens.
+        self.min_gap = int(getattr(cfg, "brain_min_gap", 15))
 
     def _territory(self, state):
         """Compact owned/enemy/frontier summary from forts.json for the brain."""
@@ -50,6 +53,40 @@ class BrainService:
             "fort_recommendations": len(data.get("recommendations") or []),
         }
 
+    def _decisions(self, state):
+        """Pending reserved unlock/policy picks (from decisions.json) for E3 advice."""
+        try:
+            import json
+            return json.loads(self.cfg.decisions_path.read_text(encoding="utf-8")) or []
+        except Exception:
+            return []
+
+    def _urgent(self, state) -> bool:
+        """B1: an event that warrants calling the brain promptly (not just cadence)."""
+        try:
+            import json
+            forts = json.loads(self.cfg.forts_path.read_text(encoding="utf-8"))
+        except Exception:
+            forts = {}
+        if (forts.get("threat_summary") or {}).get("count"):
+            return True  # enemy touching our border
+        player = (getattr(state, "raw", None) or {}).get("player") or {}
+        if len(player.get("injuryPawns") or []) >= 5:
+            return True  # heavy casualties
+        return bool(self._decisions(state))  # a reserved decision awaits a recommendation
+
+    def _write_advice(self, advice) -> None:
+        try:  # best-effort: never let advice I/O break the brain tick
+            import json
+            import os
+            path = self.cfg.brain_advice_path
+            path.parent.mkdir(parents=True, exist_ok=True)
+            tmp = path.with_suffix(path.suffix + ".tmp")
+            tmp.write_text(json.dumps(advice, ensure_ascii=False), encoding="utf-8")
+            os.replace(tmp, path)
+        except Exception as e:
+            sys.stderr.write(f"[brain] advice write failed: {e}\n")
+
     def _valid_build_ids(self):
         if self._build_ids is None:
             try:
@@ -59,13 +96,22 @@ class BrainService:
                 self._build_ids = set()
         return self._build_ids or None
 
+    def _should_fire(self, state) -> bool:
+        if self._off or self._calls >= self.policy.max_calls:
+            return False
+        if self.policy.should_call(self._tick, self._calls):
+            return True  # regular cadence
+        # B1: event-driven — fire on urgency, but no more than once per min_gap.
+        return (self._tick - self._last_call) >= self.min_gap and self._urgent(state)
+
     def tick(self, state) -> None:
         self._tick += 1
-        if self._off or not self.policy.should_call(self._tick, self._calls):
+        if not self._should_fire(state):
             return
         try:
             armies = self.actions.get_player_armys() if self.actions else []
-            dg = digest(state, self.profile, armies, territory=self._territory(state))
+            dg = digest(state, self.profile, armies, territory=self._territory(state),
+                        decisions=self._decisions(state))
             edits = self._propose(dg, self.profile)
             valid = {str(a.get("uid")) for a in armies}
             clean = sanitize_edits(edits, self.profile, valid,
@@ -73,8 +119,11 @@ class BrainService:
             changed = apply_edits(self.profile, clean)
             if changed:
                 save_profile(self.profile, self.cfg.profile_path)
+            advice = clean.get("advice") or []
+            self._write_advice(advice)  # B2: human-facing recommendations
             self._calls += 1
-            self._on_event("brain_plan", {"changed": changed,
+            self._last_call = self._tick
+            self._on_event("brain_plan", {"changed": changed, "advice": len(advice),
                                           "rationale": (edits or {}).get("rationale", "")})
         except BrainUnavailable as e:
             self._off = True  # stop retrying this run

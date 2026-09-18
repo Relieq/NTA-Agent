@@ -68,3 +68,44 @@ def test_territory_none_when_no_file(tmp_path):
     cfg = SimpleNamespace(profile_path=tmp_path / "p.json", forts_path=tmp_path / "missing.json")
     svc = BrainService(load_profile("none"), cfg)
     assert svc._territory(SimpleNamespace(main_city_index=1)) is None
+
+
+def _cfg2(tmp_path):
+    return SimpleNamespace(profile_path=tmp_path / "profile.json",
+                           forts_path=tmp_path / "forts.json",
+                           decisions_path=tmp_path / "decisions.json",
+                           brain_advice_path=tmp_path / "brain_advice.json")
+
+
+def test_writes_brain_advice(tmp_path):
+    import json
+    actions = SimpleNamespace(get_player_armys=list)
+    svc = BrainService(load_profile("none"), _cfg2(tmp_path), actions=actions,
+                       policy=BrainPolicy(every_ticks=1, max_calls=5),
+                       llm_propose=lambda dg, p: {"advice": [{"text": "Nâng kho", "why": "sắp tràn"}]})
+    svc.tick(_state())
+    adv = json.loads((tmp_path / "brain_advice.json").read_text(encoding="utf-8"))
+    assert adv == [{"text": "Nâng kho", "why": "sắp tràn"}]
+
+
+def test_event_trigger_fires_on_threat_off_cadence(tmp_path):
+    import json
+    cfg = _cfg2(tmp_path)
+    cfg.forts_path.write_text(json.dumps({"threat_summary": {"count": 2}}), encoding="utf-8")
+    calls = []
+    actions = SimpleNamespace(get_player_armys=list)
+    svc = BrainService(load_profile("none"), cfg, actions=actions,
+                       policy=BrainPolicy(every_ticks=9999, max_calls=5),
+                       llm_propose=lambda dg, p: (calls.append(1) or {}))
+    svc.tick(_state())  # cadence not due, but a threat -> urgent -> fires
+    assert calls == [1]
+
+
+def test_no_fire_when_quiet_off_cadence(tmp_path):
+    calls = []
+    actions = SimpleNamespace(get_player_armys=list)
+    svc = BrainService(load_profile("none"), _cfg2(tmp_path), actions=actions,
+                       policy=BrainPolicy(every_ticks=9999, max_calls=5),
+                       llm_propose=lambda dg, p: (calls.append(1) or {}))
+    svc.tick(_state())  # no threat / no decisions -> not urgent -> no call
+    assert calls == []

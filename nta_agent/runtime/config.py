@@ -39,6 +39,10 @@ class RuntimeConfig:
         return self.log_dir / "commands.jsonl"
 
     @property
+    def brain_advice_path(self) -> Path:
+        return self.log_dir / "brain_advice.json"
+
+    @property
     def commands_done_path(self) -> Path:
         return self.log_dir / "commands.done"
 
