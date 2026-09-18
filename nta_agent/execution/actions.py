@@ -331,6 +331,14 @@ class Actions:
             player["injuryPawns"] = [p for p in inj if str(p.get("uid")) != str(pawn_uid)]
         return reply
 
+    def pawn_lving(self, index: int, army_uid: str, pawn_uid: str) -> dict:
+        """Normal (exp-book) pawn level-up (GAME_HD_PawnLving). Queued/timed; locks
+        the army (LVING). Reply carries updated queues + army."""
+        reply = self.session.request("game/HD_PawnLving", {
+            "index": int(index), "auid": str(army_uid), "puid": str(pawn_uid)})
+        self._apply_result(reply)
+        return reply
+
     def move_cell_army(
         self,
         armies: list[dict],

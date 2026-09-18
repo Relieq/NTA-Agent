@@ -32,3 +32,10 @@ def test_forge_and_lock_action_shapes():
     a.lock_equip_effect("e1", 2)
     assert s.sent[-2] == ("game/HD_ForgeEquip", {"uid": "e1"})
     assert s.sent[-1] == ("game/HD_LockEquipEffect", {"uid": "e1", "effect": 2})
+
+
+def test_pawn_lving_action_shape():
+    s = FakeSession({})
+    a = Actions(session=s)
+    a.pawn_lving(72100, "A", "p1")
+    assert s.sent[-1] == ("game/HD_PawnLving", {"index": 72100, "auid": "A", "puid": "p1"})
