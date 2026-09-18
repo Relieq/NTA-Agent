@@ -46,3 +46,25 @@ def test_skips_off_cadence_and_survives_unavailable(tmp_path):
     for _ in range(9):
         svc.tick(_state())      # tick 10: fires but BrainUnavailable -> swallowed
     assert prof.occupy["max_loss"] == 0.0   # unchanged
+
+
+def test_territory_summary_from_forts_json(tmp_path):
+    import json
+    fp = tmp_path / "forts.json"
+    fp.write_text(json.dumps({
+        "owned_count": 23, "enemy_cells": [[104, 100], [200, 200]],
+        "enemy_cities": [{"x": 104, "y": 100, "type": 1}], "frontier": [[99, 100]],
+        "recommendations": [],
+    }), encoding="utf-8")
+    cfg = SimpleNamespace(profile_path=tmp_path / "profile.json", forts_path=fp)
+    svc = BrainService(load_profile("none"), cfg)
+    st = SimpleNamespace(main_city_index=100 * 600 + 100)  # (100,100)
+    terr = svc._territory(st)
+    assert terr["owned"] == 23 and terr["enemy_cells"] == 2 and terr["frontier"] == 1
+    assert terr["nearest_enemy_dist"] == 4  # (104,100) is 4 away
+
+
+def test_territory_none_when_no_file(tmp_path):
+    cfg = SimpleNamespace(profile_path=tmp_path / "p.json", forts_path=tmp_path / "missing.json")
+    svc = BrainService(load_profile("none"), cfg)
+    assert svc._territory(SimpleNamespace(main_city_index=1)) is None
