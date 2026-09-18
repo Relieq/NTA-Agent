@@ -127,11 +127,12 @@ slot xây + thời gian, nên là **đánh đổi đa yếu tố**: trần kho h
 thời gian tới đầy, tài nguyên cần cho các công trình khác, và **có đáng đánh đổi thời gian/tiến độ** không.
 ⇒ KHÔNG làm rule tự-nâng-kho (sẽ nâng bừa, phí slot). E1 là **cố vấn**, không phải auto-action.
 
-**Phạm vi (không giao dịch, chủ yếu cố vấn):**
-- **E1 — Cố vấn chống tràn** (S, info-only, gộp vào Phase I): khi một tài nguyên sắp đầy, phân tích & trình
-  bày đánh đổi: dự báo giờ-tới-đầy, headroom, chi phí+thời gian nâng Kho tương ứng, các build đang cần loại
-  đó, và **khuyến nghị có nên nâng kho / tiêu / bỏ qua** — kèm lý do; người quyết. Phần auto an toàn duy nhất
-  là **tiêu theo build-order sẵn có + cảnh báo** (đều đã có). KHÔNG tự nâng kho.
+**Phạm vi (không giao dịch):**
+- **E1 — Tự nâng kho khi trần chặn nâng cấp** — ✅ **XONG (PR#53, 2026-09-18).** Rule deterministic
+  `capped_storage_upgrade` (build_planner): khi **trần kho < chi phí** một nâng-cấp mong muốn → tự nâng
+  Kho Lương (2002, cereal) / Kho (2003, timber/stone/iron) trước (điều kiện CẦN, không phải "có đáng không").
+  Chỉ khi kho tồn tại + cấp kế đủ tiền + không tự-cap-block; inert khi cap=0/cost≤cap. (Cố vấn đánh-đổi mềm
+  hơn có thể thêm sau qua Phase I/brain, nhưng ca "bắt buộc" đã tự động.)
 - **E2 — ~~Mua/bán hệ thống~~** — ❌ **BỎ** (3 lần/ngày + tổn thất lớn).
 - **E3 — Tối ưu tech/mở khóa (đề xuất + người duyệt)** (M): agent tính thứ tự ceri/policy/binh chủng tối ưu
   và **đề xuất kèm lý do**; người duyệt (human-in-loop). Agent chỉ thực thi lựa chọn (`StudySelect`).
