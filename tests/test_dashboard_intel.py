@@ -28,3 +28,14 @@ def test_read_intel_empty_is_safe(tmp_path):
     r = read_intel(cfg)  # no files -> empty but well-formed
     assert r["threats"]["summary"]["count"] == 0
     assert isinstance(r["recommendations"], list)
+
+
+def test_read_errors_summary(tmp_path):
+    from nta_agent.dashboard.server import read_errors
+    from nta_agent.runtime.errorlog import ErrorLog
+    cfg = RuntimeConfig(distinct_id="x", log_dir=tmp_path)
+    Path(cfg.errors_path).parent.mkdir(parents=True, exist_ok=True)
+    el = ErrorLog(cfg.errors_path)
+    el.log("occupy_cell", "rule_error", "ecode.500019")
+    s = read_errors(cfg)
+    assert s["total"] == 1 and s["by_source"]["occupy_cell"] == 1

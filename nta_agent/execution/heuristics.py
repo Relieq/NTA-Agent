@@ -879,6 +879,7 @@ class Leveling:
 @dataclass
 class RuleEngine:
     rules: list[Rule]
+    on_error: object = None  # optional on_error(rule_name, exc): full error sink (ErrorLog)
 
     def tick(self, state: GameState, actions: Actions) -> list[str]:
         """Run every applicable rule once; return the names that fired."""
@@ -895,6 +896,11 @@ class RuleEngine:
                     raise CaptchaRequired(str(e)) from e
                 detail = str(e).split(":")[-1].strip() or type(e).__name__
                 fired.append(f"{rule.name}!ERR:{detail}")
+                if self.on_error is not None:
+                    try:
+                        self.on_error(rule.name, e)
+                    except Exception:
+                        pass  # error logging must never break the loop
         return fired
 
     @classmethod

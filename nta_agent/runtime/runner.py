@@ -57,15 +57,32 @@ def run(cfg: RuntimeConfig, *, ticks: int = 0, session=None, engine=None) -> Non
     except FileNotFoundError:
         config = None
         log.append("config_missing")
+
+    # Structured error log for unattended runs (morning post-mortem).
+    from nta_agent.runtime.errorlog import ErrorLog
+    errlog = ErrorLog(cfg.errors_path, config)
+    _ERROR_KINDS = {"connection_lost", "recover_retry", "captcha_failed",
+                    "captcha_detected", "config_missing", "interrupted"}
+
+    def on_event(kind, detail=None):
+        log.append(kind, detail)
+        if kind in _ERROR_KINDS:
+            errlog.log("agent", kind, detail)
+
+    agent.on_event = on_event
+    engine.on_error = errlog.rule_error  # full rule errors (traceback + ecode + reason)
+    if config is None:
+        errlog.log("runtime", "config_missing", "GameConfig not found")
+
     service = None
     if config is not None:
-        service = DecisionService(agent.actions, config, cfg, on_event=log.append,
+        service = DecisionService(agent.actions, config, cfg, on_event=on_event,
                                   profile=profile)
         agent.captcha = CaptchaSolver(agent.actions, config)
     from nta_agent.runtime.brain_service import BrainService
-    brain = BrainService(profile, cfg, on_event=log.append, actions=agent.actions)
+    brain = BrainService(profile, cfg, on_event=on_event, actions=agent.actions)
     from nta_agent.runtime.fort_service import FortService
-    forts = FortService(cfg, agent.actions, on_event=log.append)
+    forts = FortService(cfg, agent.actions, on_event=on_event)
     def _enemy_from_forts():
         # P2: enemy cell indices from the (throttled) FortService output — no request.
         try:
@@ -88,6 +105,7 @@ def run(cfg: RuntimeConfig, *, ticks: int = 0, session=None, engine=None) -> Non
             fn(*a)
         except Exception as e:  # observability must not kill the loop
             sys.stderr.write(f"[spine] {fn.__name__} failed: {e}\n")
+            errlog.log(getattr(fn, "__name__", "service"), "service_error", e)
 
     def on_tick(i, fired, state):
         _safe(write_snapshot, state, cfg.snapshot_path)
@@ -99,6 +117,11 @@ def run(cfg: RuntimeConfig, *, ticks: int = 0, session=None, engine=None) -> Non
                   control=lambda: read_mode(cfg.control_path))
     except KeyboardInterrupt:
         log.append("interrupted")
+    except Exception as e:  # last-resort: record why the loop died before re-raising
+        errlog.log("runtime", "loop_fatal", e)
+        log.append("loop_fatal", str(e))
+        raise
     finally:
         _safe(write_snapshot, session.state, cfg.snapshot_path)
+        log.append("error_summary", errlog.summary())  # morning-friendly roll-up
         session.close()
