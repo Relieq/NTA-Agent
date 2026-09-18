@@ -14,6 +14,8 @@ from nta_agent.data.config import GameConfig
 from nta_agent.state.schema import Building, GameState
 
 MAIN_HALL_ID = 2001
+GRANARY_BUILD = 2002    # Kho Lương — raises the granary (cereal) cap
+WAREHOUSE_BUILD = 2003  # Kho — raises the warehouse (timber/stone/iron) cap
 
 
 @dataclass
@@ -56,6 +58,52 @@ def _affordable(cost: dict[str, int], state: GameState) -> bool:
     r = state.resources
     have = {"cereal": r.cereal, "timber": r.timber, "stone": r.stone, "iron": r.iron}
     return all(have.get(res, 0) >= amt for res, amt in cost.items())
+
+
+def _cap_for(state: GameState, resource: str) -> int:
+    return (state.granary_cap if resource == "cereal" else state.warehouse_cap) or 0
+
+
+def capped_storage_upgrade(state: GameState, config: GameConfig,
+                           skip: set | None = None) -> BuildAction | None:
+    """If a wanted upgrade's cost exceeds what the store can hold, upgrade the
+    store first (user rule 2026-09-18: cap < required → must raise the cap, else
+    you can never save enough). Returns the storage upgrade or None.
+
+    Only fires when a real cap is set and the storage building exists, its next
+    level is affordable now and not itself cap-blocked — so it never loops and is
+    inert in tests/early game (caps 0)."""
+    skip = skip or set()
+    level_by_id = {b.id: b.lv for b in state.builds}
+    main_lv = level_by_id.get(MAIN_HALL_ID, 0)
+    if not _cap_for(state, "cereal") and not _cap_for(state, "timber"):
+        return None
+    for b in state.builds:
+        if b.id in skip or b.id in (GRANARY_BUILD, WAREHOUSE_BUILD):
+            continue
+        target = b.lv + 1
+        if b.id != MAIN_HALL_ID and target > main_lv:
+            continue
+        up = config.build_upgrade(b.id, target)
+        if up is None or not _prep_ok(up.prep_cond, level_by_id):
+            continue
+        for res, amt in up.cost.items():
+            cap = _cap_for(state, res)
+            if not cap or amt <= cap:
+                continue
+            sid = GRANARY_BUILD if res == "cereal" else WAREHOUSE_BUILD
+            store = next((x for x in state.builds if x.id == sid), None)
+            if store is None:
+                continue
+            su = config.build_upgrade(sid, store.lv + 1)
+            if su is None or not _affordable(su.cost, state):
+                continue
+            # the storage upgrade must not itself be cap-blocked (avoid a loop)
+            if any(sa > _cap_for(state, sr) for sr, sa in su.cost.items()
+                   if _cap_for(state, sr)):
+                continue
+            return BuildAction(kind="upgrade", build_id=sid, up=su, build=store)
+    return None
 
 
 def next_upgrade(
@@ -158,6 +206,11 @@ def next_build_action(
                     and _affordable(up1.cost, state)
                     and (build_id == MAIN_HALL_ID or main_lv >= 1)):
                 return BuildAction(kind="construct", build_id=build_id, up=up1)
+
+    # Raise a storage cap that would otherwise block a wanted upgrade forever.
+    storage = capped_storage_upgrade(state, config, skip)
+    if storage is not None and storage.build.uid not in queued_uids:
+        return storage
 
     for build_id in order:
         if build_id in skip:
