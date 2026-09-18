@@ -12,6 +12,7 @@ import BuildOrderPanel from "./BuildOrderPanel.js";
 import BrainChatPanel from "./BrainChatPanel.js";
 import EventsPanel from "./EventsPanel.js";
 import IntelPanel from "./IntelPanel.js";
+import LevelingConfigPanel from "./LevelingConfigPanel.js";
 const { ref } = window.Vue;
 const TABS=[
  {id:"overview", label:"Tổng quan", icon:"▦"},
@@ -24,7 +25,7 @@ const TABS=[
 function loadTab(){ try{ return localStorage.getItem("nta.tab")||"overview"; }catch(e){ return "overview"; } }
 export default {
  components:{ StatusHeader, Sidebar, ResourcePanel, CityPanel, MiscPanel, ArmiesPanel,
-  DecisionsPanel, EquipmentPanel, TerritoryPanel, FortsPanel, BuildOrderPanel, BrainChatPanel, EventsPanel, IntelPanel },
+  DecisionsPanel, EquipmentPanel, TerritoryPanel, FortsPanel, BuildOrderPanel, BrainChatPanel, EventsPanel, IntelPanel, LevelingConfigPanel },
  setup(){
   const activeTab=ref(loadTab());
   function select(id){ activeTab.value=id; try{ localStorage.setItem("nta.tab", id); }catch(e){} }
@@ -37,7 +38,7 @@ export default {
     <div v-if="activeTab==='overview'" class="grid">
      <ResourcePanel/><CityPanel/><MiscPanel/></div>
     <div v-if="activeTab==='army'" class="grid">
-     <ArmiesPanel/><DecisionsPanel/><EquipmentPanel/></div>
+     <ArmiesPanel/><LevelingConfigPanel/><DecisionsPanel/><EquipmentPanel/></div>
     <div v-show="activeTab==='territory'" class="grid">
      <TerritoryPanel/><FortsPanel/></div>
     <div v-if="activeTab==='intel'" class="grid">

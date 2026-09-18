@@ -109,6 +109,7 @@ def read_profile_view(cfg) -> dict:
             "presets": list(profile.army.get("presets") or {}),
             "notes": profile.notes,
             "build": profile.build,
+            "leveling": getattr(profile, "leveling", {}),
             "names": {str(k): v for k, v in names.items()},
             "catalogue": catalogue}
 

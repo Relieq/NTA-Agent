@@ -76,6 +76,21 @@ def sanitize_edits(edits: dict, profile, valid_army_uids, valid_build_ids=None) 
         if army:
             out["army"] = army
 
+    lv_in = edits.get("leveling") if isinstance(edits, dict) else None
+    if isinstance(lv_in, dict):
+        lv: dict = {}
+        if "enabled" in lv_in:
+            v = lv_in["enabled"]
+            lv["enabled"] = (v.lower() in ("1", "true", "yes")
+                             if isinstance(v, str) else bool(v))
+        if "target_lv" in lv_in:
+            lv["target_lv"] = int(_num(lv_in["target_lv"], 0, 1000, 0))
+        for k in ("army_uid", "farm_uid"):
+            if k in lv_in:
+                lv[k] = str(lv_in[k] or "")
+        if lv:
+            out["leveling"] = lv
+
     rev_in = edits.get("revive") if isinstance(edits, dict) else None
     if isinstance(rev_in, dict) and "enabled" in rev_in:
         v = rev_in["enabled"]
