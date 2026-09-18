@@ -235,6 +235,32 @@ class OccupyCell:
         )
         return picks[0].plan if picks else None
 
+    def _expansion_select(self, cands, plans_for, predict, mode):
+        """Pick the winnable target that best fits the expansion pattern.
+
+        Respects the same max_loss cap as farming; ranks survivors by the
+        preset's key (spiral: least exposure; octopus: richest land; hybrid).
+        """
+        from nta_agent.execution.advisor import best_plan
+        from nta_agent.execution.expansion import land_value, sort_key
+        cfg = self._config()
+        max_loss = float(self.profile.occupy.get("max_loss", 0) or 0) if self.profile else 0.0
+        scored = []
+        for c in cands:
+            plan = best_plan([c], plans_for, predict)
+            if plan is None or not plan.prediction.win:
+                continue
+            if plan.prediction.loss_percent > max_loss:
+                continue
+            key = sort_key(mode, owned_neighbors=c.owned_neighbors,
+                           land_value=land_value(cfg, c.land_id) if cfg else 0,
+                           loss_percent=plan.prediction.loss_percent)
+            scored.append((key, plan))
+        if not scored:
+            return None
+        scored.sort(key=lambda t: t[0])
+        return scored[0][1]
+
     def applies(self, state: GameState, actions: Actions) -> bool:
         if state.resources.stamina < self.min_stamina or not state.main_city_index:
             return False
@@ -281,15 +307,21 @@ class OccupyCell:
             pawns = [p for a in plan.armies for p in (a.get("pawns") or [])]
             return predictor.predict(pawns, c.defenders)
 
-        # Profile-driven farming (chest budget) or the plain safest-win pick.
+        # Selection priority: expansion preset (spiral/octopus/hybrid) > farming
+        # loot budget > plain safest-win.
+        from nta_agent.execution import expansion as _exp
+        mode = (self.profile.occupy.get("expansion") if self.profile else None) or "none"
         loot_on = (self.profile is not None
                    and (self.profile.occupy.get("loot") or {}).get("enabled", True))
-        kind = "occupy_plan"
-        if loot_on:
+        if mode in _exp.MODES:
+            plan = self._expansion_select(cands, plans_for, predict, mode)
+            kind = f"expansion:{mode}"
+        elif loot_on:
             plan = self._farm_select(cands, plans_for, predict, state)
             kind = "farm_plan"
         else:
             plan = best_plan(cands, plans_for, predict)
+            kind = "occupy_plan"
         if plan is None:
             return False
         self._pending = (list(plan.armies), plan.target)

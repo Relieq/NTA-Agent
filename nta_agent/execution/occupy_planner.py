@@ -22,6 +22,7 @@ class Candidate:
     defenders: list[dict]      # enemy pawns guarding the cell
     hp: tuple[int, int]        # cell durability (proxy for difficulty)
     land_id: int = 0           # land type (for the sim's config-based enemy gen)
+    owned_neighbors: int = 0   # # of 4-neighbours already owned (expansion presets)
 
 
 def discover_targets(
@@ -60,13 +61,19 @@ def discover_targets(
                                             hp=(int(hp[0]), int(hp[-1])),
                                             land_id=int(area.get("landId", 0) or 0)))
 
-    def adjoins_owned(idx: int) -> bool:
+    def owned_nbrs(idx: int) -> int:
         # The server allows attacking only orthogonally-adjoining cells (verified live).
         x, y = idx % map_width, idx // map_width
-        return any((y + ny) * map_width + (x + nx) in owned
+        return sum((y + ny) * map_width + (x + nx) in owned
                    for nx, ny in ((-1, 0), (1, 0), (0, -1), (0, 1)))
 
-    return [c for c in occupiable if adjoins_owned(c.index)]
+    out = []
+    for c in occupiable:
+        n = owned_nbrs(c.index)
+        if n:  # adjoins at least one owned cell
+            c.owned_neighbors = n
+            out.append(c)
+    return out
 
 
 def land_yield(config: GameConfig, land_id: int) -> dict[str, int]:

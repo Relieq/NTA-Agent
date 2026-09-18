@@ -86,6 +86,30 @@ def test_occupy_rule_picks_winnable_and_sends_army():
     assert act.calls[0][2] == ["A"]
 
 
+def test_occupy_rule_spiral_prefers_least_exposed():
+    from types import SimpleNamespace
+    center = 182 * W + 526
+    st = GameState(source="api")
+    st.user.uid = "me"
+    st.main_city_index = center
+    st.resources.stamina = 10
+    areas = {
+        center: _cell(owner="me", city=1001),        # owned city
+        center + 2: _cell(owner="me"),               # owned -> gives B a 2nd owned neighbour
+        center - 1: _cell(owner="", pawns=[50]),     # A: 1 owned neighbour (center)
+        center + 1: _cell(owner="", pawns=[50]),     # B: 2 owned neighbours (center, center+2)
+    }
+    my_army = [{"index": center, "uid": "A", "pawns": [{"hp": 500}, {"hp": 500}], "state": None}]
+    act = FakeActions(areas=areas, armies=my_army)
+    prof = SimpleNamespace(occupy={"expansion": "spiral", "max_loss": 100,
+                                   "loot": {"enabled": True}},
+                           army={"group": [], "presets": {}, "active": ""})
+    rule = OccupyCell(radius=2, predictor=BattlePredictor(), profile=prof)
+    assert rule.applies(st, act) is True
+    rule.act(act)
+    assert act.calls[0][1] == center - 1  # spiral chose the least-exposed (1-neighbour) cell
+
+
 def test_occupy_rule_skips_when_no_stamina():
     st = GameState(source="api"); st.user.uid = "me"; st.main_city_index = 1
     st.resources.stamina = 0
