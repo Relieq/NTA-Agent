@@ -117,27 +117,23 @@ báo cáo với dữ liệu live; người chơi thấy đúng và hữu ích.
 **Vì sao cần:** đây là lõi "trợ thủ lo việc lặp". Hiện thu/xây/tuyển đã có nhưng chưa cân bằng tài nguyên,
 dễ tràn kho, chưa tối ưu tech dài hạn.
 
-**Ranh giới (user chốt 2026-09-18):** agent **KHÔNG đụng gì liên quan người chơi khác** — bỏ **chợ người
-chơi** (`BazaarSellRes` định giá; `BazaarBuyRes` nếu là mua từ listing người chơi) và **tặng tài nguyên**
-(`BazaarGiveRes`). Chỉ giao dịch với **HỆ THỐNG**. Các thứ liên quan người chơi, nếu hữu ích, chỉ **hiển
-thị thông tin** (Phase I), không hành động.
+**Ranh giới (user chốt 2026-09-18):** (1) agent **KHÔNG đụng gì liên quan người chơi khác** — bỏ chợ người
+chơi (`BazaarSellRes`/`BazaarBuyRes`) và tặng (`BazaarGiveRes`). (2) **GIAO DỊCH VỚI HỆ THỐNG cũng BỎ** —
+đổi tài nguyên với hệ thống chỉ **tối đa 3 lần/ngày và tỉ giá tổn thất lớn** ⇒ không đáng (giống Tonden).
+Vậy **toàn bộ Bazaar/giao dịch bị loại** khỏi agent; các thứ liên quan chỉ **hiển thị thông tin** (Phase I).
 
-**Phạm vi:**
-- **E1 — Quản trần kho & chống tràn** (S–M, chore chính, giá trị ngay): dùng dự báo đầy kho (Phase I:
-  nhịp opHour vs `granary_cap`/`warehouse_cap`) → **tiêu trước khi tràn** (ưu tiên xây/nâng/tuyển loại sắp
-  đầy) + **bán dư cho HỆ THỐNG** (`BazaarSellToSys`) đổi lấy gold thay vì mất trắng; canh nhịp thu; cảnh
-  báo nếu không tiêu kịp. Chỉ giao dịch hệ thống, guard trần bán. *An toàn, không đụng người chơi.*
-- **E2 — Mua bù gỡ nghẽn (CHỈ nếu có kênh hệ thống)** (S, có điều kiện): nếu game cho **mua từ hệ thống**
-  (verify RE), mua đúng loại đang **chặn một build/tuyển cụ thể** với trần chi gold. Nếu chỉ có chợ người
-  chơi → **BỎ** (người chơi tự làm). Xác định qua RE trước khi làm.
+**Phạm vi (không giao dịch):**
+- **E1 — Chống tràn kho KHÔNG giao dịch** (S): dùng dự báo đầy kho (Phase I: nhịp opHour vs
+  `granary_cap`/`warehouse_cap`) → khi một tài nguyên sắp đầy: **ưu tiên nâng cấp KHO** của loại đó (Kho
+  Lương→granary, Kho→warehouse) để tăng trần, và **tiêu vào build/nâng/tuyển** phù hợp; nếu vẫn không tránh
+  được → **cảnh báo** (Phase I). Thuần chore, không giao dịch, an toàn.
+- **E2 — ~~Mua/bán hệ thống~~** — ❌ **BỎ** (3 lần/ngày + tổn thất lớn; xem trên).
 - **E3 — Tối ưu tech/mở khóa (đề xuất + người duyệt)** (M): agent tính thứ tự ceri/policy/binh chủng tối ưu
-  và **đề xuất kèm lý do**; người chơi duyệt (giữ human-in-loop cho mục taste-driven/không đảo ngược). Agent
-  chỉ thực thi lựa chọn của người (`StudySelect`), không tự mở.
+  và **đề xuất kèm lý do**; người chơi duyệt (giữ human-in-loop). Agent chỉ thực thi lựa chọn (`StudySelect`),
+  không tự mở.
 
-**Phụ thuộc:** E1 nối Phase I (dự báo). E2 cần RE Bazaar (loại chợ + tỉ giá/phí). **Kiểm chứng:** unit
-(chống tràn + SellToSys guard); live quan sát không còn phí tài nguyên do tràn qua nhiều tick.
-**Cần RE + verify live:** shape `BazaarSellToSys`/`GetTradingRess` + tỉ giá hệ thống + xác định có mua-hệ-
-thống hay không (đừng đoán — chạy thật mới chốt).
+**Phụ thuộc:** E1 nối Phase I (dự báo) + build-order (đã có, ưu tiên nâng kho). **Kiểm chứng:** unit (khi
+sắp tràn → ưu tiên nâng kho/tiêu; cảnh báo); live quan sát giảm phí tài nguyên do tràn.
 
 ### Giai đoạn B — Bộ não hỗ trợ (điều phối tự động + sinh cố vấn)
 
