@@ -120,7 +120,10 @@ Mô hình chi phí rương/loot: `execution/treasure_model.py`, cơ chế: [trea
 | `HD_CancelDrillPawn` / `HD_DismissPawn` / `HD_DismissArmy` | ❓ | — | Huỷ tuyển / giải tán lính / giải tán đội. |
 | `HD_ChangePawnArmy` / `HD_CheckArmyName` / `HD_ModifyAmryName` | ❓ | — | Chuyển đội / kiểm tên / đổi tên. |
 | `HD_ChangePawnAttr` / `HD_ChangePawnPortrayal` / `HD_UsePawnSkin` | ❓ | — | Đổi thuộc tính / hoạ tượng / skin pawn. |
-| `HD_PawnLving` / `HD_CancelPawnLving` / `HD_UseUpScrollUpPawnLv` / `HD_GetPawnDeadLvMap` | ❓ | — | Lên cấp lính (Lving) / cuộn nâng cấp / map cấp-khi-chết. |
+| `HD_PawnLving` | 🔶 | `{index, auid, puid}` | **Nâng PHỔ THÔNG** = tốn **sách exp (exp_book)**, có **hàng đợi/thời gian** (`pawnLvingQueues`), **KHÓA đội** (state LVING, không điều động). Reply: `queues`+`army`. |
+| `HD_UseUpScrollUpPawnLv` | 🔶 | `{index, armyUid, uid}` | **Nâng TRỰC TIẾP** = tốn **quyển trục (up_scroll)**, **tức thì**, KHÔNG khóa đội / không chờ. |
+| `HD_CancelPawnLving` | ❓ | — | Huỷ nâng phổ thông đang trong hàng đợi. |
+| `HD_GetPawnDeadLvMap` | ❓ | — | Map cấp-khi-chết. |
 
 ## 9. Ceri (mở khoá binh chủng/policy/equip — người chơi quyết)
 | Endpoint | Trạng thái | Request | Ghi chú |
@@ -129,8 +132,13 @@ Mô hình chi phí rương/loot: `execution/treasure_model.py`, cơ chế: [trea
 | `HD_CeriResetSelect` | ✅ | `{lv, tp}` | Reroll option (tốn vàng). Reply có `selectIds`/`resetCount`. `actions.ceri_reset`. |
 
 ## 10. Trang bị / rèn
-`HD_ForgeEquip`, `HD_InDoneForge`, `HD_RestoreForge`, `HD_SmeltingEquip`, `HD_RestoreSmeltEquip`,
-`HD_LockEquipEffect` — ❓ rèn/nung/khoá hiệu ứng trang bị. Shape TODO.
+| Endpoint | Trạng thái | Request | Ghi chú |
+|---|---|---|---|
+| `HD_ForgeEquip` | 🔶 | `{uid}` | Rèn/recast trang bị → attrs ngẫu nhiên mới; tốn **sắt** (`forgeCost`) trừ khi có lượt **free (CHỈ từ policy** `FREE_RECAST_COUNT`, `getfreeForgeSurplusCount`). Reply: `equip`(attrs mới), `iron`, `nextForgeFree`, `recastCount`. |
+| `HD_RestoreForge` | 🔶 | `{uid}` | Hoàn lại attr trước (giữ bản tốt hơn sau recast tệ). Reply: `iron`, `equip`. |
+| `HD_LockEquipEffect` | 🔶 | `{uid, effect}` | Khóa 1 hiệu ứng (effect index) — tốn **fixator** (Máy Cố Định, `getSmeltNeedFixatorCount`). |
+| `HD_InDoneForge` | ❓ | `{}` | Hoàn tất rèn tức thì. |
+| `HD_SmeltingEquip` / `HD_RestoreSmeltEquip` | ❓ | — | Nung/hoàn nung trang bị. |
 
 ## 11. Nhiệm vụ
 | Endpoint | Trạng thái | Request |
