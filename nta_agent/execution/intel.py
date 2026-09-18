@@ -18,8 +18,11 @@ def _time_to_full(cur: int, cap: int, rate: float):
     return round((cap - cur) / rate, 1)
 
 
-def build_report(snapshot: dict, forts: dict, config=None) -> dict:
-    """Assemble the advisory report from a snapshot dict + a forts.json dict."""
+def build_report(snapshot: dict, forts: dict, config=None, brain_advice=None) -> dict:
+    """Assemble the advisory report from a snapshot dict + a forts.json dict.
+
+    ``brain_advice`` (list of {text, why}) are the LLM brain's human-facing
+    recommendations (Phase B), shown alongside the deterministic ones."""
     snapshot = snapshot or {}
     forts = forts or {}
     res = snapshot.get("resources", {}) or {}
@@ -77,4 +80,5 @@ def build_report(snapshot: dict, forts: dict, config=None) -> dict:
         "opportunities": {"open_frontier": len(forts.get("frontier") or []),
                           "enemy_nearby": len(forts.get("enemy_cells") or [])},
         "recommendations": recs,
+        "brain_advice": list(brain_advice or []),
     }

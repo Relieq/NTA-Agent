@@ -145,9 +145,15 @@ def read_forts_view(cfg) -> dict:
 
 
 def read_intel(cfg) -> dict:
-    """Assemble the intel & advisory report (Phase I) from snapshot + forts.json."""
+    """Assemble the intel & advisory report (Phase I) from snapshot + forts.json,
+    plus the brain's human-facing advice (Phase B)."""
     from nta_agent.execution.intel import build_report
-    return build_report(read_state(cfg.snapshot_path), read_forts_view(cfg))
+    try:
+        advice = json.loads(Path(cfg.brain_advice_path).read_text(encoding="utf-8"))
+    except (OSError, ValueError):
+        advice = []
+    return build_report(read_state(cfg.snapshot_path), read_forts_view(cfg),
+                        brain_advice=advice)
 
 
 def recompute_forts(cfg) -> dict:

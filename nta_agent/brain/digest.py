@@ -4,7 +4,16 @@ from __future__ import annotations
 from collections import Counter
 
 
-def digest(state, profile, armies=None, territory=None) -> dict:
+def _decisions_digest(decisions) -> list:
+    """Compact pending reserved decisions (unlock/policy) for the brain to advise on."""
+    out = []
+    for d in decisions or []:
+        opts = [{"id": o.get("id"), "name": o.get("name")} for o in (d.get("options") or [])]
+        out.append({"track": d.get("track"), "lv": d.get("lv"), "options": opts})
+    return out
+
+
+def digest(state, profile, armies=None, territory=None, decisions=None) -> dict:
     r = state.resources
     res = {k: getattr(r, k, 0) for k in
            ("cereal", "timber", "stone", "iron", "gold", "stamina",
@@ -27,4 +36,7 @@ def digest(state, profile, armies=None, territory=None) -> dict:
     }
     if territory:  # owned/enemy/frontier summary so the brain can pick expansion + forts
         out["territory"] = territory
+    dec = _decisions_digest(decisions)
+    if dec:  # pending unlock/policy picks reserved for the human -> brain advises (E3)
+        out["decisions"] = dec
     return out

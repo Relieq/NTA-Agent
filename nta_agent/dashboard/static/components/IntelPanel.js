@@ -43,6 +43,14 @@ export default {
    </div>
   </template>
 
+  <template v-if="(r.brain_advice||[]).length">
+   <h3 style="margin:12px 0 6px">Cố vấn từ bộ não 🧠</h3>
+   <ul style="margin:0;padding-left:18px">
+    <li v-for="(a,i) in r.brain_advice" :key="i" style="margin:4px 0">
+     {{ a.text }}<span v-if="a.why" style="color:#8b949e"> — {{ a.why }}</span></li>
+   </ul>
+  </template>
+
   <div class="kv" style="margin-top:10px;color:#8b949e">
    Cơ hội: biên hở <b>{{ (r.opportunities&&r.opportunities.open_frontier)??0 }}</b> ô ·
    địch quanh <b>{{ (r.opportunities&&r.opportunities.enemy_nearby)??0 }}</b> ô</div>

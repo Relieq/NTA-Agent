@@ -75,3 +75,9 @@ def test_expansion_whitelist_and_revive():
     # invalid expansion is dropped
     bad = sanitize_edits({"occupy": {"expansion": "zigzag"}}, _prof(), set())
     assert "occupy" not in bad or "expansion" not in bad.get("occupy", {})
+
+
+def test_advice_sanitized():
+    out = sanitize_edits({"advice": [{"text": "Nâng Kho Lương", "why": "sắp tràn"},
+                                     {"text": ""}, {"nope": 1}]}, _prof(), set())
+    assert out["advice"] == [{"text": "Nâng Kho Lương", "why": "sắp tràn"}]

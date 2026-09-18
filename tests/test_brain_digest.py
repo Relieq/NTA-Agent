@@ -59,3 +59,14 @@ def test_digest_includes_injured_and_territory():
     assert d["injured"] == 2
     assert d["territory"]["nearest_enemy_dist"] == 4
     assert "revive" in d["profile"]
+
+
+def test_digest_includes_pending_decisions():
+    st = SimpleNamespace(main_city_index=7,
+        resources=SimpleNamespace(cereal=1, timber=1, stone=1, iron=0, gold=0,
+                                  stamina=0, exp_book=0, up_scroll=0, fixator=0), raw={})
+    decisions = [{"track": "pawn", "lv": 3,
+                  "options": [{"id": 6001, "name": "Cung"}, {"id": 6002, "name": "Thương"}]}]
+    d = digest(st, load_profile("none"), [], decisions=decisions)
+    assert d["decisions"][0]["track"] == "pawn"
+    assert d["decisions"][0]["options"][0]["name"] == "Cung"
