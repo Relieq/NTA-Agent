@@ -331,6 +331,31 @@ class Actions:
             player["injuryPawns"] = [p for p in inj if str(p.get("uid")) != str(pawn_uid)]
         return reply
 
+    def change_pawn_army(self, index: int, army_uid: str, pawn_uid: str,
+                         new_army_uid: str = "", *, is_new_create: bool = False,
+                         army_name: str = "", only_change: bool = True) -> dict:
+        """Move a pawn to another army (GAME_HD_ChangePawnArmy).
+
+        ``is_new_create`` creates a brand-new army for the pawn (agent's leveling
+        army); otherwise it moves into ``new_army_uid``. (Create params RE'd; to
+        re-confirm live once a multi-army state exists.)"""
+        params = {"index": int(index), "armyUid": str(army_uid), "uid": str(pawn_uid),
+                  "newArmyUid": str(new_army_uid)}
+        if is_new_create:
+            params["isNewCreate"] = True
+            if army_name:
+                params["armyName"] = str(army_name)
+        else:
+            params["onlyChangeArmy"] = bool(only_change)
+        reply = self.session.request("game/HD_ChangePawnArmy", params)
+        self._apply_result(reply)
+        return reply
+
+    def dismiss_army(self, index: int, army_uid: str, pawn_id: int = 0) -> dict:
+        """Dismiss an army (GAME_HD_DismissArmy). ``pawn_id`` 0 = whole army."""
+        return self.session.request("game/HD_DismissArmy",
+                                    {"index": int(index), "armyUid": str(army_uid), "id": int(pawn_id)})
+
     def pawn_lving(self, index: int, army_uid: str, pawn_uid: str) -> dict:
         """Normal (exp-book) pawn level-up (GAME_HD_PawnLving). Queued/timed; locks
         the army (LVING). Reply carries updated queues + army."""

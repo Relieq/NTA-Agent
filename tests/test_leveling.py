@@ -1,52 +1,72 @@
 from nta_agent.execution.leveling import (
+    LEVEL_ARMY_NAME,
+    find_leveling_army,
     next_level_action,
-    pawns_needing_level,
-    ready_pawns,
 )
 
 TARGET = 10
+MAIN = 100
 
 
-def _army(uid, index, pawns):
-    return {"uid": uid, "index": index, "pawns": [{"uid": u, "id": 3101, "lv": lv} for u, lv in pawns]}
+def _army(uid, pawns, index=MAIN, name=""):
+    return {"uid": uid, "index": index, "name": name,
+            "pawns": [{"uid": u, "id": 3101, "lv": lv} for u, lv in pawns]}
 
 
-def test_needing_and_ready():
-    la = _army("L", 100, [("a", 5), ("b", 10), ("c", 12)])
-    assert {p["uid"] for p in pawns_needing_level(la, TARGET, [])} == {"a"}
-    assert {p["uid"] for p in ready_pawns(la, TARGET)} == {"b", "c"}
-    assert pawns_needing_level(la, TARGET, ["a"]) == []  # a already queued
+def _lvl(pawns, index=MAIN):
+    return _army("L", pawns, index=index, name=LEVEL_ARMY_NAME)
 
 
-def test_levels_lowest_pawn_when_exp_available():
-    farm = _army("F", 100, [("f1", 10)])
-    lv = _army("L", 100, [("a", 3), ("b", 7)])
-    act = next_level_action(farm, lv, TARGET, farm_home=False, queue_uids=[], exp_book=5)
-    assert act.kind == "level" and act.pawn_uid == "a" and act.army_uid == "L"
+def test_find_leveling_army_by_name():
+    a = _army("F", [("a", 1)]); b = _lvl([("x", 5)])
+    assert find_leveling_army([a, b])["uid"] == "L"
+    assert find_leveling_army([a]) is None
 
 
-def test_no_level_without_exp_book():
-    lv = _army("L", 100, [("a", 3)])
-    assert next_level_action(_army("F", 100, []), lv, TARGET, exp_book=0) is None
+def test_pull_creates_leveling_army_when_none():
+    farm = [_army("F1", [("a", 3), ("b", 12)])]
+    act = next_level_action(farm, None, TARGET, farm_home=True, max_leveling=1)
+    assert act.kind == "pull" and act.create is True and act.src_uid == "F1" and act.pawn_uid == "a"
 
 
-def test_swaps_ready_into_farm_when_home():
-    farm = _army("F", 100, [("f_low", 4), ("f_ok", 12)])
-    lv = _army("L", 100, [("ready", 10), ("still", 6)])
-    act = next_level_action(farm, lv, TARGET, farm_home=True, exp_book=5)
+def test_pull_moves_into_existing_leveling_army():
+    farm = [_army("F1", [("a", 3)])]
+    lv = _lvl([])  # exists, empty, room for 1
+    act = next_level_action(farm, lv, TARGET, farm_home=True, exp_book=0, max_leveling=1)
+    assert act.kind == "pull" and act.create is False and act.level_uid == "L"
+
+
+def test_levels_lowest_in_leveling_army():
+    farm = [_army("F1", [("f", 12)])]
+    lv = _lvl([("a", 3), ("b", 7)])
+    act = next_level_action(farm, lv, TARGET, farm_home=True, exp_book=5, max_leveling=2)
+    assert act.kind == "level" and act.pawn_uid == "a" and act.level_uid == "L"
+
+
+def test_swap_ready_into_farm_when_home_takes_priority():
+    farm = [_army("F1", [("f_low", 4)])]
+    lv = _lvl([("ready", 10), ("todo", 3)])
+    act = next_level_action(farm, lv, TARGET, farm_home=True, exp_book=5, max_leveling=2)
     assert act.kind == "swap" and act.ready_uid == "ready" and act.low_uid == "f_low"
-    assert act.farm_uid == "F" and act.army_uid == "L"
+    assert act.farm_uid == "F1" and act.level_uid == "L"
 
 
-def test_no_swap_when_farm_not_home():
-    farm = _army("F", 100, [("f_low", 4)])
-    lv = _army("L", 100, [("ready", 10)])
+def test_dismiss_empty_leveling_army():
+    farm = [_army("F1", [("f", 12)])]  # farm all at/above target
+    lv = _lvl([])
+    act = next_level_action(farm, lv, TARGET, farm_home=True, exp_book=5, max_leveling=1)
+    assert act.kind == "dismiss" and act.level_uid == "L"
+
+
+def test_no_pull_when_buffer_full():
+    farm = [_army("F1", [("a", 3)])]
+    lv = _lvl([("x", 3)])           # buffer already has 1 == max_leveling
+    act = next_level_action(farm, lv, TARGET, farm_home=True, exp_book=0, max_leveling=1)
+    assert act is None             # buffer full, no exp -> nothing (x will level when exp)
+
+
+def test_no_swap_when_not_home():
+    farm = [_army("F1", [("f_low", 4)], index=999)]
+    lv = _lvl([("ready", 10)])
     act = next_level_action(farm, lv, TARGET, farm_home=False, exp_book=0)
-    assert act is None  # not home -> no swap; no exp -> no level
-
-
-def test_swap_takes_priority_over_level_when_home():
-    farm = _army("F", 100, [("f_low", 4)])
-    lv = _army("L", 100, [("ready", 10), ("todo", 3)])
-    act = next_level_action(farm, lv, TARGET, farm_home=True, exp_book=5)
-    assert act.kind == "swap"  # finishing a cycle beats starting a new level
+    assert act is None

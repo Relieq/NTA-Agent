@@ -85,9 +85,8 @@ def sanitize_edits(edits: dict, profile, valid_army_uids, valid_build_ids=None) 
                              if isinstance(v, str) else bool(v))
         if "target_lv" in lv_in:
             lv["target_lv"] = int(_num(lv_in["target_lv"], 0, 1000, 0))
-        for k in ("army_uid", "farm_uid"):
-            if k in lv_in:
-                lv[k] = str(lv_in[k] or "")
+        if "max_leveling" in lv_in:
+            lv["max_leveling"] = int(_num(lv_in["max_leveling"], 1, 50, 1))
         if lv:
             out["leveling"] = lv
 

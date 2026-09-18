@@ -1,6 +1,7 @@
 from types import SimpleNamespace
 
 from nta_agent.execution.heuristics import Leveling
+from nta_agent.execution.leveling import LEVEL_ARMY_NAME
 from nta_agent.state.schema import GameState, User
 
 MAIN = 100 * 600 + 100
@@ -15,8 +16,9 @@ def _state(exp_book=5, queues=None):
     return st
 
 
-def _army(uid, index, pawns):
-    return {"uid": uid, "index": index, "pawns": [{"uid": u, "id": 3101, "lv": lv} for u, lv in pawns]}
+def _army(uid, pawns, index=MAIN, name=""):
+    return {"uid": uid, "index": index, "name": name,
+            "pawns": [{"uid": u, "id": 3101, "lv": lv} for u, lv in pawns]}
 
 
 class FakeActions:
@@ -31,59 +33,56 @@ class FakeActions:
         return self._armies
 
     def pawn_lving(self, index, army_uid, pawn_uid):
-        self.calls.append(("level", index, army_uid, pawn_uid)); return {}
+        self.calls.append(("level", army_uid, pawn_uid)); return {}
 
     def exchange_pawn_army(self, index, army_uid, uid1, uid2, army_uid2=None):
         self.calls.append(("swap", army_uid, uid1, uid2, army_uid2)); return {}
 
+    def change_pawn_army(self, index, army_uid, pawn_uid, new_army_uid="", **kw):
+        self.calls.append(("pull", army_uid, pawn_uid, new_army_uid,
+                           kw.get("is_new_create", False))); return {}
 
-def _prof(**kw):
-    lv = {"enabled": True, "target_lv": 10, "army_uid": "L", "farm_uid": "F"}
-    lv.update(kw)
-    return SimpleNamespace(leveling=lv)
+    def dismiss_army(self, index, army_uid, pawn_id=0):
+        self.calls.append(("dismiss", army_uid)); return {}
+
+
+def _prof(group=("F1",), enabled=True, target_lv=10, max_leveling=1):
+    return SimpleNamespace(army={"group": list(group), "presets": {}, "active": ""},
+                           leveling={"enabled": enabled, "target_lv": target_lv,
+                                     "max_leveling": max_leveling})
 
 
 def test_inert_when_disabled():
-    acts = FakeActions([_army("L", MAIN, [("a", 3)]), _army("F", MAIN, [("f", 3)])])
-    rule = Leveling(profile=_prof(enabled=False))
-    assert rule.applies(_state(), acts) is False
+    acts = FakeActions([_army("F1", [("a", 3)])])
+    assert Leveling(profile=_prof(enabled=False)).applies(_state(), acts) is False
 
 
-def test_levels_lowest_pawn_in_leveling_army():
-    acts = FakeActions([_army("L", MAIN, [("a", 3), ("b", 7)]), _army("F", MAIN, [("f", 10)])])
-    rule = Leveling(profile=_prof())
-    assert rule.applies(_state(exp_book=5), acts) is True
-    rule.act(acts)
-    assert acts.calls == [("level", MAIN, "L", "a")]
+def test_inert_without_farm_group():
+    acts = FakeActions([_army("F1", [("a", 3)])])
+    assert Leveling(profile=_prof(group=())).applies(_state(), acts) is False
 
 
-def test_swaps_when_farm_home():
-    acts = FakeActions([_army("L", MAIN, [("ready", 10)]), _army("F", MAIN, [("f_low", 4)])])
+def test_pull_creates_leveling_army():
+    acts = FakeActions([_army("F1", [("a", 3), ("b", 12)])])
     rule = Leveling(profile=_prof())
     assert rule.applies(_state(), acts) is True
     rule.act(acts)
-    assert acts.calls == [("swap", "F", "f_low", "ready", "L")]
+    assert acts.calls == [("pull", "F1", "a", "", True)]  # isNewCreate
 
 
-def test_skips_pawn_already_in_queue():
-    acts = FakeActions([_army("L", MAIN, [("a", 3)]), _army("F", MAIN, [("f", 10)])])
+def test_levels_then_swaps():
+    # leveling army exists with a ready pawn + farm has a low pawn -> swap first
+    farm = _army("F1", [("f_low", 4)])
+    lv = _army("L", [("ready", 10)], name=LEVEL_ARMY_NAME)
+    acts = FakeActions([farm, lv])
     rule = Leveling(profile=_prof())
-    q = {"pawnUIDMap": {"a": 1}}
-    assert rule.applies(_state(queues=q), acts) is False  # only pawn is queued
+    assert rule.applies(_state(), acts) is True
+    rule.act(acts)
+    assert acts.calls == [("swap", "F1", "f_low", "ready", "L")]
 
 
-def test_inert_when_armies_missing():
-    acts = FakeActions([_army("X", MAIN, [("a", 3)])])
+def test_no_op_when_farm_away():
+    acts = FakeActions([_army("F1", [("a", 3)], index=999)])
     rule = Leveling(profile=_prof())
-    assert rule.applies(_state(), acts) is False
-
-
-def test_profile_roundtrip_leveling(tmp_path):
-    from nta_agent.execution.profile import load_profile, save_profile
-    p = load_profile("none")
-    p.leveling["enabled"] = True
-    p.leveling["target_lv"] = 8
-    path = tmp_path / "p.json"
-    save_profile(p, path)
-    assert load_profile(path).leveling == {"enabled": True, "target_lv": 8,
-                                           "army_uid": "", "farm_uid": ""}
+    # farm not home -> no pull/swap; no leveling army -> nothing
+    assert rule.applies(_state(exp_book=0), acts) is False

@@ -16,9 +16,10 @@ DEFAULT_PROFILE = {
     "occupy": {"max_loss": 0.0, "max_march_ms": 0, "expansion": "none",
                "loot": {"enabled": True, "min_reward_per_chest": 0.0}},
     "revive": {"enabled": True},
-    # leveling: dedicated exp-book leveling army + fixed farm army (user-designated
-    # via dashboard). Disabled until configured. See memory nta-agent-forge-leveling.
-    "leveling": {"enabled": False, "target_lv": 0, "army_uid": "", "farm_uid": ""},
+    # leveling: exp-book cycle over the FARM GROUP (army.group) + an agent-created
+    # leveling army. max_leveling = how many pawns to buffer at once. Disabled
+    # until configured. See memory nta-agent-forge-leveling.
+    "leveling": {"enabled": False, "target_lv": 0, "max_leveling": 1},
     "notes": [],
     "build": {"order": [], "skip": []},
 }
@@ -44,7 +45,7 @@ class Profile:
     build: dict
     revive: dict = field(default_factory=lambda: {"enabled": True})
     leveling: dict = field(default_factory=lambda: {"enabled": False, "target_lv": 0,
-                                                    "army_uid": "", "farm_uid": ""})
+                                                    "max_leveling": 1})
 
 
 def load_profile(path) -> Profile:

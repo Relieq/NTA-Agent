@@ -85,6 +85,5 @@ def test_advice_sanitized():
 
 def test_leveling_sanitized():
     out = sanitize_edits({"leveling": {"enabled": "yes", "target_lv": "8",
-                                       "army_uid": "L", "farm_uid": "F", "bogus": 1}},
-                         _prof(), set())
-    assert out["leveling"] == {"enabled": True, "target_lv": 8, "army_uid": "L", "farm_uid": "F"}
+                                       "max_leveling": "2", "bogus": 1}}, _prof(), set())
+    assert out["leveling"] == {"enabled": True, "target_lv": 8, "max_leveling": 2}
