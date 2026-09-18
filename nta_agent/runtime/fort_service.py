@@ -58,9 +58,10 @@ class FortService:
             fort_indices = [int(f.get("index", 0)) for f in
                             (player.get("fortAutoSupports") or []) if isinstance(f, dict)]
             decisions = fort_decisions.load(self.cfg.fort_decisions_path)
+            enemy = set(m.get("enemy_cells", ())) | set((m.get("enemy_cities") or {}).keys())
             recs, accepted = plan_forts(main, owned, fort_indices, decisions,
                                         self._max_forts(), map_width=self.map_width,
-                                        radius=self.radius)
+                                        radius=self.radius, enemy=enemy)
             mw = self.map_width
             cells = sorted([c % mw, c // mw] for c in owned)
             accepted_coords = sorted([i % mw, i // mw] for i in accepted)

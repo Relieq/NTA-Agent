@@ -38,21 +38,35 @@ def recommend_forts(
     map_width: int = 600,
     max_forts: int = 1,
     radius: int = 6,
+    enemy=None,
+    safety_cap: int = 10,
+    enemy_weight: float = 1.0,
+    danger_radius: int = 0,
 ) -> list[dict]:
     """Return up to ``max_forts`` fort recommendations, best first.
 
     Each rec is ``{index, x, y, reason}``. Candidates are owned cells with
     Manhattan distance from the 2x2 main-city block greater than ``radius`` (the free
     speed zone) and not already forts. Ranking is greedy: repeatedly pick the
-    candidate maximising ``dist_from_main + spread`` where spread is the minimum
-    Manhattan distance to the main-city block, existing forts, and picked recs
-    — pushing picks outward and into distinct directions.
+    candidate maximising ``dist_from_main + spread + safety`` where spread is the
+    minimum Manhattan distance to the main-city block, existing forts, and picked
+    recs, and ``safety`` favours candidates far from the enemy (C1).
+
+    ``enemy`` = enemy cell/city indices; a fort near them is exposed. ``safety`` =
+    ``min(dist_to_nearest_enemy, safety_cap) * enemy_weight`` (no enemy → constant,
+    so ranking is unchanged — backward compatible). ``danger_radius`` > 0 drops
+    candidates with an enemy within that Manhattan distance.
     """
     if max_forts <= 0:
         return []
     fort_set = {int(f) for f in (forts or [])}
     rej_set = {int(r) for r in (rejected or [])}
+    enemy_pts = [_pos(int(e), map_width) for e in (enemy or ())]
     mpos = _pos(int(main), map_width)
+
+    def enemy_dist(cpos: tuple[int, int]) -> int:
+        # No enemy known -> treat as maximally safe (constant across candidates).
+        return min((_manh(cpos, ep) for ep in enemy_pts), default=safety_cap)
 
     candidates = [
         int(c)
@@ -61,6 +75,7 @@ def recommend_forts(
         and int(c) not in rej_set
         and int(c) != int(main)
         and _block_dist(_pos(int(c), map_width), mpos) > radius
+        and (danger_radius <= 0 or enemy_dist(_pos(int(c), map_width)) > danger_radius)
     ]
     if not candidates:
         return []
@@ -78,17 +93,16 @@ def recommend_forts(
             frontier = _block_dist(cpos, mpos)
             spread = min([frontier] + [_manh(cpos, s)
                          for s in fort_pts + [_pos(p, map_width) for p in picked]])
-            score = (frontier + spread, frontier, -c)  # deterministic tiebreak
+            safety = min(enemy_dist(cpos), safety_cap) * enemy_weight
+            score = (frontier + spread + safety, frontier, -c)  # deterministic tiebreak
             if best_score is None or score > best_score:
                 best_score = score
                 best = c
         cpos = _pos(best, map_width)
-        recs.append({
-            "index": best,
-            "x": cpos[0],
-            "y": cpos[1],
-            "reason": f"biên giới cách thành chính {_block_dist(cpos, mpos)} ô",
-        })
+        reason = f"biên giới cách thành chính {_block_dist(cpos, mpos)} ô"
+        if enemy_pts:
+            reason += f", cách địch {enemy_dist(cpos)} ô"
+        recs.append({"index": best, "x": cpos[0], "y": cpos[1], "reason": reason})
         picked.append(best)
         candidates.remove(best)
 
@@ -96,17 +110,20 @@ def recommend_forts(
 
 
 def plan_forts(main, owned, existing_forts, decisions, cap,
-               map_width: int = 600, radius: int = 6):
+               map_width: int = 600, radius: int = 6, enemy=None,
+               danger_radius: int = 0):
     """Turn owned cells + user decisions into (recommendations, accepted indices).
 
     ``decisions`` maps a cell index to "accepted" or "rejected". Accepted cells are
     planned forts: excluded from candidates, used as spread anchors, and counted
-    against ``cap``. Rejected cells are never recommended.
+    against ``cap``. Rejected cells are never recommended. ``enemy`` (cell/city
+    indices) makes placement threat-aware (C1).
     """
     accepted = [int(i) for i, d in decisions.items() if d == "accepted"]
     rejected = [int(i) for i, d in decisions.items() if d == "rejected"]
     anchors = [int(f) for f in (existing_forts or [])] + accepted
     slots = max(0, int(cap) - len(anchors))
     recs = recommend_forts(main, owned, forts=anchors, rejected=rejected,
-                           map_width=map_width, max_forts=slots, radius=radius)
+                           map_width=map_width, max_forts=slots, radius=radius,
+                           enemy=enemy, danger_radius=danger_radius)
     return recs, accepted
