@@ -298,6 +298,26 @@ class Actions:
         self._apply_result(reply)
         return reply
 
+    def cure_injury_pawn(self, index: int, army_uid: str, army_name: str,
+                         pawn_uid: str) -> dict:
+        """Revive a dead pawn into an army at a city (GAME_HD_CureInjuryPawn).
+
+        ``army_uid`` empty + ``army_name`` set creates a new army; otherwise the
+        revived pawn joins that army (must be stationed at ``index``). Costs
+        resources + a curing-queue slot + time. Optimistically drops the pawn
+        from the local ``injuryPawns`` so it isn't retried before the next sync.
+        """
+        reply = self.session.request("game/HD_CureInjuryPawn", {
+            "index": int(index), "armyUid": str(army_uid),
+            "armyName": str(army_name), "pawnUid": str(pawn_uid),
+        })
+        self._apply_result(reply)
+        player = self._player()
+        inj = player.get("injuryPawns")
+        if isinstance(inj, list):
+            player["injuryPawns"] = [p for p in inj if str(p.get("uid")) != str(pawn_uid)]
+        return reply
+
     def move_cell_army(
         self,
         armies: list[dict],

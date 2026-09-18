@@ -673,6 +673,65 @@ class HealRouting:
 
 
 @dataclass
+class ReviveInjured:
+    """Revive dead pawns (``player.injuryPawns``) into a home army (deterministic).
+
+    Best-effort, cost-aware: reviving spends resources + a curing-queue slot +
+    time, and the slot/free-count limits are policy-driven (not fixed), so we
+    cap per tick, keep a resource floor, and let the server enforce limits —
+    backing off on rejection instead of hard-coding them.
+    """
+    name: str = "revive_injured"
+    max_per_tick: int = 1
+    capacity_hint: int = 9      # per-army pawn cap hint; server (500019) is truth
+    min_cereal: int = 200       # resource floor: don't drain the economy reviving
+    fail_cooldown: int = 8
+    on_event: object = None
+    profile: object = None
+    _cooldown: int = 0
+    _injured: object = None
+
+    def _enabled(self) -> bool:
+        if self.profile is None:
+            return True
+        rev = getattr(self.profile, "revive", None) or {}
+        return bool(rev.get("enabled", True))
+
+    def applies(self, state: GameState, actions: Actions) -> bool:
+        if self._cooldown > 0:
+            self._cooldown -= 1
+            return False
+        if not state.main_city_index or not self._enabled():
+            return False
+        if state.resources.cereal < self.min_cereal:
+            return False
+        player = (state.raw or {}).get("player") or {}
+        self._injured = list(player.get("injuryPawns") or [])
+        return bool(self._injured)
+
+    def act(self, actions: Actions) -> None:
+        from nta_agent.execution.injury import best_injured, revive_target
+        main = actions.main_city_index()
+        armies = actions.get_player_armys()
+        for _ in range(self.max_per_tick):
+            pawn = best_injured(self._injured)
+            if pawn is None:
+                break
+            army_uid, army_name = revive_target(armies, main, self.capacity_hint)
+            try:
+                actions.cure_injury_pawn(main, army_uid, army_name, str(pawn.get("uid")))
+            except Exception:
+                self._cooldown = self.fail_cooldown  # full army / no slot / cost -> back off
+                raise
+            self._injured = [p for p in self._injured
+                             if str(p.get("uid")) != str(pawn.get("uid"))]
+            if self.on_event:
+                self.on_event("revive_injured", {"pawn": pawn.get("uid"),
+                                                 "id": pawn.get("id"), "into": army_name or army_uid})
+            armies = actions.get_player_armys()  # refresh occupancy for the next revive
+
+
+@dataclass
 class RuleEngine:
     rules: list[Rule]
 
@@ -699,4 +758,4 @@ class RuleEngine:
                           Recruit(profile=profile),
                           HealRouting(),
                           OccupyCell(use_sim=True, profile=profile),
-                          ClaimTreasures(), ClaimTasks()])
+                          ClaimTreasures(), ReviveInjured(profile=profile), ClaimTasks()])
