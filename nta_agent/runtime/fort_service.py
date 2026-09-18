@@ -12,6 +12,7 @@ import sys
 
 from nta_agent.execution.fort_advisor import plan_forts, recommend_forts
 from nta_agent.execution.territory import scan_map
+from nta_agent.execution.threat import detect_incursions
 from nta_agent.runtime import fort_decisions
 
 FORT_BUILD_ID = 2102  # Cứ Điểm
@@ -71,14 +72,21 @@ class FortService:
             enemy_cities = [{"x": i % mw, "y": i // mw, "type": t}
                             for i, t in (m.get("enemy_cities") or {}).items()]
             frontier = sorted([i % mw, i // mw] for i in m.get("frontier", ()))
+            # P3: detect enemy touching/penetrating our convex-hull territory.
+            threat = detect_incursions(owned, m.get("enemy_cells", ()),
+                                       m.get("enemy_cities") or {}, main, mw)
             payload = {"owned_count": len(owned), "owned_cells": cells,
                        "accepted": accepted_coords, "rejected": rejected_coords,
                        "enemy_cells": enemy_cells, "enemy_cities": enemy_cities,
-                       "frontier": frontier, "recommendations": recs}
+                       "frontier": frontier, "recommendations": recs,
+                       "threats": threat["threats"][:50],
+                       "threat_summary": threat["summary"]}
             path = self.cfg.forts_path
             path.parent.mkdir(parents=True, exist_ok=True)
             path.write_text(json.dumps(payload, ensure_ascii=False, indent=2),
                             encoding="utf-8")
             self._on_event("fort_scan", {"owned": len(owned), "recs": len(recs)})
+            if threat["summary"]["count"]:  # P3: surface a defensive alert
+                self._on_event("threat_alert", threat["summary"])
         except Exception as e:  # never kill the loop
             sys.stderr.write(f"[fort] tick failed: {e}\n")

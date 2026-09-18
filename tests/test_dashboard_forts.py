@@ -28,4 +28,5 @@ def test_read_forts_view_missing_returns_empty(tmp_path):
     cfg = RuntimeConfig(distinct_id="x", log_dir=tmp_path)
     v = read_forts_view(cfg)
     assert v == {"owned_count": 0, "owned_cells": [], "accepted": [], "rejected": [],
-                 "enemy_cells": [], "enemy_cities": [], "frontier": [], "recommendations": []}
+                 "enemy_cells": [], "enemy_cities": [], "frontier": [], "recommendations": [],
+                 "threats": [], "threat_summary": {"count": 0}}
