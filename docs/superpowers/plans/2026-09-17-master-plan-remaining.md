@@ -54,18 +54,18 @@ LIVE = cần verify trên emulator.
     chiếm được ô liền kề nên vươn "vòi" để chặn địch).
   - **Hybrid:** kết hợp. *Deps: none (dựa dữ liệu owned + land config sẵn có).* Chi tiết: [[nta-agent-strategy]].
 
-### B. Bộ não chiến lược (LLM) — khoảng trống lớn nhất vs mục tiêu dự án
-- **B1 — Thư viện chiến thuật** (L). Intent schema cấp cao (chọn mục tiêu đánh, phân bổ quân theo mặt
-  trận, build-order dài hạn) → resolver ở tay chân. Brain đọc digest (đã có) + enemy data (C1) → phát
-  intent thưa. *Deps: digest (có), tốt hơn nếu có C1.*
-- **B2 — Policy/guardrail + ngân sách token** (S–M). Khi nào gọi LLM (đầu ngày, dư tài nguyên, bị đánh),
-  cache quyết định, guard chống hành động phá game. Mở rộng `brain/policies.py`. *Deps: B1.*
+### B. Bộ não chiến lược (LLM) — ✅ **XONG (PR#41, 2026-09-18)**
+Brain là **profile-editing** (đọc digest → sửa profile; hands thực thi; token thưa) — kiến trúc đã có,
+nay NỐI với năng lực mới: digest thêm `injured`+`territory` (enemy/frontier/nearest_enemy_dist từ
+forts.json); brain điều khiển `occupy.expansion` + `revive.enabled`; guard validate; `_SYSTEM` hướng dẫn
+threat/cost-aware. Verify live: địch gần→spiral, cereal thấp→tắt revive. *Còn lại (tuỳ chọn):*
+- **B2 — Policy/guardrail nâng cao** (S–M). Gọi LLM theo sự kiện (bị đánh/dư tài nguyên) thay vì chỉ cadence
+  cố định; cache; ngân sách token cứng hơn. `brain/policies.py` hiện chỉ every_ticks + max_calls.
 
 ### C. Trí tuệ bản đồ / advisor
-- **C1 — Advisor dùng dữ liệu địch** (M). Dùng `enemy_cells/enemy_cities` (Tier B đã có) để: gợi ý Cứ
-  Điểm né sát địch/hướng biên an toàn, chọn vùng farm ít rủi ro, cảnh báo mối đe doạ. *Deps: Tier B (có).*
-- **C2 — Verify protection radius + geometry thật** (S, LIVE). Xác minh bán kính-6/vùng bảo vệ trên
-  emulator (đọc overlay game) để chốt hằng số `territory`/advisor. *Deps: none.* Nên làm sớm (rẻ, unblock C1).
+- **C1 — Advisor dùng dữ liệu địch** — ✅ **XONG (PR#40).** `recommend_forts` né địch (điểm an toàn +
+  danger_radius); `fort_service` truyền enemy. Tương thích ngược khi no-enemy.
+- **C2 — ~~Verify protection radius~~** — ❌ **BỎ (user biết geometry, giữ radius-6/Manhattan).**
 
 ### D. Kinh tế / giao thương
 - **E1 — Bazaar tự động** (M, RE+LIVE). `HD_BazaarBuyRes/SellRes/SellToSys/...` cân bằng tài nguyên
