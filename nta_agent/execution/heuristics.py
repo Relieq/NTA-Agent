@@ -458,6 +458,16 @@ class OccupyCell:
             raise
 
 
+def _unused_army_name(armys) -> str:
+    """A "D<k>" army name not already taken (count-based naming collides when an
+    army is dismissed or named differently — the duplicate-name bug)."""
+    existing = {str(a.get("name", "")) for a in (armys or [])}
+    k = 1
+    while f"D{k}" in existing:
+        k += 1
+    return f"D{k}"
+
+
 @dataclass
 class Recruit:
     """Recruit an already-unlocked pawn into an army at the main city.
@@ -549,7 +559,7 @@ class Recruit:
         if room:
             self._pending = (bu, pawn, str(room["uid"]), "", len(room.get("pawns", [])))
         elif len(armys) < self.max_armies:
-            self._pending = (bu, pawn, "", f"D{len(armys) + 1}", 0)
+            self._pending = (bu, pawn, "", _unused_army_name(armys), 0)
         else:
             return False
         return True

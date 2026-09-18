@@ -49,7 +49,7 @@ def test_creates_new_army_when_all_full():
     r = Recruit(config=False)
     assert r.applies(st, act) is True
     r.act(act)
-    assert act.calls[0][2] == "" and act.calls[0][3] == "D2"  # new army
+    assert act.calls[0][2] == "" and act.calls[0][3] == "D1"  # new army (first unused name)
 
 
 def test_blocks_at_army_cap():
@@ -83,7 +83,7 @@ def test_500019_marks_army_full_and_does_not_retry_it():
     # next pass: A is known-full -> skip it and create a new army instead
     assert r.applies(st, act) is True
     r.act(act)
-    assert act.calls == [("bar", 3101, "", "D2")]
+    assert act.calls == [("bar", 3101, "", "D1")]
 
 
 def test_full_mark_cleared_when_army_pawn_count_changes():
