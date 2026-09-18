@@ -122,18 +122,23 @@ chơi (`BazaarSellRes`/`BazaarBuyRes`) và tặng (`BazaarGiveRes`). (2) **GIAO 
 đổi tài nguyên với hệ thống chỉ **tối đa 3 lần/ngày và tỉ giá tổn thất lớn** ⇒ không đáng (giống Tonden).
 Vậy **toàn bộ Bazaar/giao dịch bị loại** khỏi agent; các thứ liên quan chỉ **hiển thị thông tin** (Phase I).
 
-**Phạm vi (không giao dịch):**
-- **E1 — Chống tràn kho KHÔNG giao dịch** (S): dùng dự báo đầy kho (Phase I: nhịp opHour vs
-  `granary_cap`/`warehouse_cap`) → khi một tài nguyên sắp đầy: **ưu tiên nâng cấp KHO** của loại đó (Kho
-  Lương→granary, Kho→warehouse) để tăng trần, và **tiêu vào build/nâng/tuyển** phù hợp; nếu vẫn không tránh
-  được → **cảnh báo** (Phase I). Thuần chore, không giao dịch, an toàn.
-- **E2 — ~~Mua/bán hệ thống~~** — ❌ **BỎ** (3 lần/ngày + tổn thất lớn; xem trên).
-- **E3 — Tối ưu tech/mở khóa (đề xuất + người duyệt)** (M): agent tính thứ tự ceri/policy/binh chủng tối ưu
-  và **đề xuất kèm lý do**; người chơi duyệt (giữ human-in-loop). Agent chỉ thực thi lựa chọn (`StudySelect`),
-  không tự mở.
+**Nhận xét (user 2026-09-18):** nâng Kho/Kho Lương **không làm thường xuyên** — nâng 1 công trình tốn 1
+slot xây + thời gian, nên là **đánh đổi đa yếu tố**: trần kho hiện tại & headroom, sản lượng (opHour) &
+thời gian tới đầy, tài nguyên cần cho các công trình khác, và **có đáng đánh đổi thời gian/tiến độ** không.
+⇒ KHÔNG làm rule tự-nâng-kho (sẽ nâng bừa, phí slot). E1 là **cố vấn**, không phải auto-action.
 
-**Phụ thuộc:** E1 nối Phase I (dự báo) + build-order (đã có, ưu tiên nâng kho). **Kiểm chứng:** unit (khi
-sắp tràn → ưu tiên nâng kho/tiêu; cảnh báo); live quan sát giảm phí tài nguyên do tràn.
+**Phạm vi (không giao dịch, chủ yếu cố vấn):**
+- **E1 — Cố vấn chống tràn** (S, info-only, gộp vào Phase I): khi một tài nguyên sắp đầy, phân tích & trình
+  bày đánh đổi: dự báo giờ-tới-đầy, headroom, chi phí+thời gian nâng Kho tương ứng, các build đang cần loại
+  đó, và **khuyến nghị có nên nâng kho / tiêu / bỏ qua** — kèm lý do; người quyết. Phần auto an toàn duy nhất
+  là **tiêu theo build-order sẵn có + cảnh báo** (đều đã có). KHÔNG tự nâng kho.
+- **E2 — ~~Mua/bán hệ thống~~** — ❌ **BỎ** (3 lần/ngày + tổn thất lớn).
+- **E3 — Tối ưu tech/mở khóa (đề xuất + người duyệt)** (M): agent tính thứ tự ceri/policy/binh chủng tối ưu
+  và **đề xuất kèm lý do**; người duyệt (human-in-loop). Agent chỉ thực thi lựa chọn (`StudySelect`).
+
+**Hệ quả:** sau khi bỏ giao dịch và chuyển nâng-kho thành cố vấn, phần **auto** của kinh tế coi như đã đủ
+(thu/xây/tuyển sẵn có). Phase E còn lại chủ yếu là **cố vấn** (E1 gộp Phase I) + **đề xuất-người-duyệt**
+(E3) — hợp vai trợ thủ. **Phụ thuộc:** Phase I. **Kiểm chứng:** unit phân tích đánh đổi; review khuyến nghị.
 
 ### Giai đoạn B — Bộ não hỗ trợ (điều phối tự động + sinh cố vấn)
 
