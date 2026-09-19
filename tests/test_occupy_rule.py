@@ -391,3 +391,17 @@ def test_occupy_skips_busy_army():
     act = FakeActions(areas=areas, armies=busy)
     rule = OccupyCell(radius=1, predictor=BattlePredictor())
     assert rule.applies(st, act) is False
+
+
+def test_discover_frontier_keeps_defended_unowned_cells():
+    from nta_agent.execution.occupy_planner import discover_frontier
+    world = {
+        10: _cell(owner="", pawns=[100, 100]),   # defended wild -> candidate
+        11: _cell(owner="", pawns=[]),            # empty frontier -> skip
+        12: _cell(owner="me", pawns=[100]),       # mine -> skip
+        13: _cell(owner="enemy", city=2001),      # enemy city -> skip
+        14: _cell(owner="", pawns=[50]),          # defended wild -> candidate
+    }
+    cands = discover_frontier(lambda i: world.get(i, {}), {10, 11, 12, 13, 14}, my_uid="me")
+    assert {c.index for c in cands} == {10, 14}
+    assert all(c.owned_neighbors == 1 for c in cands)

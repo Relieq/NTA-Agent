@@ -294,20 +294,30 @@ class OccupyCell:
         if self._cooldown > 0:
             self._cooldown -= 1
             return False
-        from nta_agent.execution.army_health import is_idle as _idle
-        from nta_agent.execution.occupy_planner import discover_around
-        # Probe around the city AND each idle army: occupy needs an army adjacent to
-        # the target, so the reachable frontier is next to where armies already sit.
-        centers = {state.main_city_index}
+        from nta_agent.execution.occupy_planner import discover_around, discover_frontier
+
+        def get_area(i):
+            return actions.get_area(i).get("data", {})
+        # Primary: follow the OWNED FRONTIER from map chunks (grows with territory,
+        # no fixed radius). Fall back to a fixed-radius probe around the city + idle
+        # armies only if the chunk scan fails or yields no frontier.
+        cands = []
         try:
-            centers |= {int(a.get("index", 0) or 0)
-                        for a in actions.get_player_armys() if _idle(a)}
+            from nta_agent.execution.territory import scan_map
+            frontier = scan_map(actions, state.main_city_index, state.user.uid).get("frontier")
+            if frontier:
+                cands = discover_frontier(get_area, frontier, state.user.uid)
         except Exception:
-            pass
-        cands = discover_around(
-            lambda i: actions.get_area(i).get("data", {}),
-            centers, self.radius, state.user.uid,
-        )
+            frontier = None
+        if not frontier:  # scan unavailable -> radius fallback around city + idle armies
+            from nta_agent.execution.army_health import is_idle as _idle
+            centers = {state.main_city_index}
+            try:
+                centers |= {int(a.get("index", 0) or 0)
+                            for a in actions.get_player_armys() if _idle(a)}
+            except Exception:
+                pass
+            cands = discover_around(get_area, centers, self.radius, state.user.uid)
         self._cooldown = self.discover_every  # throttle regardless of outcome
         predictor = self._pred()      # stats: fallback verdict
         sim = self._sim_pred()        # engine: authoritative win verdict when available

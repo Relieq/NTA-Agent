@@ -76,6 +76,37 @@ def discover_targets(
     return out
 
 
+def discover_frontier(
+    get_area: Callable[[int], dict],
+    frontier,
+    my_uid: str,
+    map_width: int = MAP_WIDTH,
+) -> list[Candidate]:
+    """Build occupiable Candidates from a precomputed FRONTIER set (unclaimed cells
+    orthogonally adjacent to owned — from ``territory.scan_map`` over map chunks).
+
+    Follows the owned frontier as territory grows (no fixed radius) and only probes
+    the frontier cells themselves. Keeps defended, non-city, unowned cells (wild
+    "Đất Hoang" is NPC-guarded); each is adjacent to owned by construction.
+    """
+    out: list[Candidate] = []
+    for idx in frontier or ():
+        try:
+            area = get_area(int(idx)) or {}
+        except Exception:
+            area = {}  # unreachable/fogged cell -> falls through the checks below
+        if str(area.get("owner", "")) == my_uid or area.get("cityId"):
+            continue
+        pawns = [p for g in area.get("armys", []) or [] for p in g.get("pawns", []) or []]
+        if not pawns:
+            continue  # empty/impassable frontier cell -> not an occupy target
+        hp = area.get("hp") or [0, 0]
+        out.append(Candidate(index=int(idx), defenders=pawns,
+                             hp=(int(hp[0]), int(hp[-1])),
+                             land_id=int(area.get("landId", 0) or 0), owned_neighbors=1))
+    return out
+
+
 def discover_around(
     get_area: Callable[[int], dict],
     centers,
