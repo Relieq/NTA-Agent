@@ -351,8 +351,19 @@ class Handler(BaseHTTPRequestHandler):
                         pass
                 return out
 
-            edits = {"build": {"order": _ints(body.get("order", [])),
-                               "skip": _ints(body.get("skip", []))}}
+            # Build the edit from what the panel actually sent. The BuildOrderPanel
+            # posts {order, skip} at top level; other panels post a nested section
+            # ({leveling:{...}}, {logistics:{...}}, ...). Previously this hardcoded
+            # edits={build:{order,skip}} for EVERY post — so a leveling/logistics
+            # save was dropped AND it wiped build.order/skip to empty.
+            edits: dict = {}
+            if "order" in body or "skip" in body:
+                edits["build"] = {"order": _ints(body.get("order", [])),
+                                  "skip": _ints(body.get("skip", []))}
+            for key in ("build", "leveling", "logistics", "occupy", "army",
+                        "revive", "forge", "notes"):
+                if key in body:
+                    edits[key] = body[key]
             self._json(200, handle_profile_edit(cfg, edits))
             return
         if parsed.path != "/api/command":
