@@ -1058,11 +1058,14 @@ class Forge:
     """
     name: str = "forge"
     fail_cooldown: int = 8
+    forge_cooldown: int = 48   # ~4min: a forge takes time; don't poll it every tick
     config: object = None
     profile: object = None
     on_event: object = None
     _cooldown: int = 0
     _pending: str = ""   # equip uid to forge
+
+    FORGE_BUSY_ECODE = "ecode.500058"  # a forge is already running
 
     def _cfg(self):
         if self.config is None:
@@ -1111,7 +1114,15 @@ class Forge:
             return
         try:
             actions.forge_equip(uid)
-        except Exception:
+            # A forge takes time and its in-progress state isn't synced to us, so
+            # wait it out instead of re-forging (which would hit ecode.500058).
+            self._cooldown = self.forge_cooldown
+        except Exception as e:
+            # 500058 = a forge is already running (state didn't reflect it): expected,
+            # back off quietly for the forge duration rather than surfacing an error.
+            if self.FORGE_BUSY_ECODE in str(e):
+                self._cooldown = self.forge_cooldown
+                return
             self._cooldown = self.fail_cooldown
             raise
 

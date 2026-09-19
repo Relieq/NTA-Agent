@@ -63,3 +63,18 @@ def test_forge_disabled():
     st = _state({"1": {"id": 6005, "lv": 1}}, iron=100)
     rule = Forge(config=FakeConfig(BASE), profile=SimpleNamespace(forge={"enabled": False}))
     assert rule.applies(st, FakeActions()) is False
+
+
+class BusyActions:
+    """forge_equip raises 500058 (a forge already running)."""
+    def forge_equip(self, uid):
+        from nta_agent.io.api.client import ApiError
+        raise ApiError("game/HD_ForgeEquip: ecode.500058")
+
+
+def test_forge_500058_quiet_backoff():
+    st = _state({"1": {"id": 6005, "lv": 1}}, iron=100)
+    rule = Forge(config=FakeConfig(BASE), profile=SimpleNamespace(forge={"enabled": True}))
+    assert rule.applies(st, BusyActions()) is True
+    rule.act(BusyActions())              # 500058 -> swallowed, no raise
+    assert rule._cooldown == rule.forge_cooldown
