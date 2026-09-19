@@ -96,3 +96,34 @@ def test_no_op_when_farm_away():
     rule = Leveling(profile=_prof())
     # farm not home -> no pull/swap; no leveling army -> nothing
     assert rule.applies(_state(exp_book=0), acts) is False
+
+
+def test_quiet_backoff_on_already_queued():
+    """A 500079 (pawn already in the leveling queue — state-freshness retry) is a
+    benign transient: swallow it quietly and set a cooldown, don't raise/spam."""
+    class RaisingActions(FakeActions):
+        def pawn_lving(self, index, army_uid, pawn_uid):
+            raise RuntimeError("game/HD_PawnLving: ecode.500079")
+    acts = RaisingActions([_army("F1", [("a", 3)])])
+    rule = Leveling(profile=_prof())
+    assert rule.applies(_state(), acts) is True
+    rule.act(acts)                      # must NOT raise
+    assert rule._cooldown == rule.quiet_cooldown
+
+
+def test_raises_on_real_leveling_error():
+    class RaisingActions(FakeActions):
+        def pawn_lving(self, index, army_uid, pawn_uid):
+            raise RuntimeError("game/HD_PawnLving: ecode.500033")
+    acts = RaisingActions([_army("F1", [("a", 3)])])
+    rule = Leveling(profile=_prof())
+    assert rule.applies(_state(), acts) is True
+    errored = []
+    rule.on_event = lambda k, d: errored.append((k, d))
+    try:
+        rule.act(acts)
+    except RuntimeError:
+        pass
+    else:
+        raise AssertionError("should have raised on a real error")
+    assert any(k == "leveling_error" for k, _ in errored)

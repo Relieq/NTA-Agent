@@ -1029,6 +1029,12 @@ class Leveling:
         return act is not None
 
     fail_cooldown: int = 12
+    quiet_cooldown: int = 24
+    # Benign "already doing it / can't right now" ecodes: back off QUIETLY (no
+    # error). 500079 = pawn already in the leveling queue (a PawnLving succeeded
+    # but the queue/LVING state isn't synced into our snapshot yet — state
+    # freshness, like the build queue); 500020 = the army started marching.
+    QUIET_ECODES = ("500079", "500020")
 
     def act(self, actions: Actions) -> None:
         a = self._pending
@@ -1042,24 +1048,21 @@ class Leveling:
                 actions.exchange_pawn_army(a.index, a.farm_uid, a.low_uid, a.ready_uid,
                                            army_uid2=a.level_uid)
             elif a.kind == "pull":
-                from nta_agent.execution.leveling import LEVEL_ARMY_NAME
-                if a.create:
-                    actions.change_pawn_army(a.index, a.src_uid, a.pawn_uid, "",
-                                             is_new_create=True, army_name=LEVEL_ARMY_NAME)
-                else:
-                    actions.change_pawn_army(a.index, a.src_uid, a.pawn_uid, a.level_uid,
-                                             only_change=True)
+                actions.change_pawn_army(a.index, a.src_uid, a.pawn_uid, a.level_uid,
+                                         only_change=True)
             elif a.kind == "dismiss":
                 actions.dismiss_army(a.index, a.level_uid, 0)
         except Exception as e:
-            # Create-army/pull/swap can be rejected (e.g. ecode.500011 army-missing,
-            # army-cap). Back off instead of retrying every cycle, and surface it.
+            ecode = str(e).split("ecode.")[-1][:6] if "ecode." in str(e) else ""
+            if ecode in self.QUIET_ECODES:
+                # expected transient — a pawn is already leveling / army moved.
+                self._cooldown = self.quiet_cooldown
+                return
+            # a real rejection — back off and surface it instead of spamming.
             self._cooldown = self.fail_cooldown
             if self.on_event:
                 self.on_event("leveling_error", {
-                    "kind": a.kind,
-                    "ecode": str(e).split("ecode.")[-1][:6] if "ecode." in str(e) else "",
-                    "msg": str(e)[:80]})
+                    "kind": a.kind, "ecode": ecode, "msg": str(e)[:80]})
             raise
 
 
