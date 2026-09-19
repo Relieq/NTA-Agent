@@ -80,3 +80,30 @@ def test_free_recast_costs_zero_and_ignores_budget():
 def test_busy_blocks_all():
     equips = [_e("u1", 6001, is_forged=False)]
     assert next_forge(equips, base_of, iron=100, busy=True) is None
+
+
+def test_parse_cost_multi_resource():
+    from nta_agent.execution.forge import parse_cost
+    assert parse_cost("2,0,357|3,0,357|9,0,3") == {"timber": 357, "stone": 357, "iron": 3}
+    assert parse_cost("") == {}
+
+
+def test_affordable():
+    from nta_agent.execution.forge import affordable
+    cost = {"timber": 357, "stone": 357, "iron": 3}
+    assert affordable(cost, {"timber": 400, "stone": 400, "iron": 3}) is True
+    assert affordable(cost, {"timber": 400, "stone": 400, "iron": 1}) is False  # iron short
+
+
+def test_craft_candidates_from_slots():
+    slots = {"1": {"id": 6001, "lv": 1},          # chosen common -> craft "6001_1"
+             "3": {"selectIds": [6001, 6002], "lv": 3},  # not chosen (no id) -> skip
+             "5": {"id": 9001, "lv": 5}}          # specialized -> skip
+    base = {6001: {"exclusive_pawn": "", "forge_cost": "9,0,3"},
+            9001: {"exclusive_pawn": "3101", "forge_cost": "9,0,3"}}
+    from nta_agent.execution.forge import craft_candidates
+    cands = craft_candidates(slots, lambda i: base.get(i), crafted_ids=set())
+    assert [c["uid"] for c in cands] == ["6001_1"]
+    assert cands[0]["cost"] == {"iron": 3}
+    # already crafted -> skipped
+    assert craft_candidates(slots, lambda i: base.get(i), crafted_ids={6001}) == []

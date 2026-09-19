@@ -1047,6 +1047,76 @@ class Logistics:
 
 
 @dataclass
+class Forge:
+    """Craft (materialize) unlocked COMMON equipment so it can be equipped.
+
+    A StudySelect-chosen equip sits in ``player.equipSlots`` as ``{id, lv}`` but is
+    unusable until FORGED — forging uid ``"<id>_<lv>"`` (engine EquipSlotObj.uid)
+    crafts it into ``player.equips``. We auto-craft common (non-pawn-locked) equips
+    when their multi-resource forge cost is affordable; specialized equips + recast
+    tuning stay the human's call. One forge at a time (server: ecode.500058).
+    """
+    name: str = "forge"
+    fail_cooldown: int = 8
+    config: object = None
+    profile: object = None
+    on_event: object = None
+    _cooldown: int = 0
+    _pending: str = ""   # equip uid to forge
+
+    def _cfg(self):
+        if self.config is None:
+            from nta_agent.data.config import GameConfig
+            try:
+                self.config = GameConfig.load()
+            except FileNotFoundError:
+                self.config = False
+        return self.config or None
+
+    def _enabled(self) -> bool:
+        fg = getattr(self.profile, "forge", None) if self.profile else None
+        return True if fg is None else bool(fg.get("enabled", True))
+
+    def applies(self, state: GameState, actions: Actions) -> bool:
+        if self._cooldown > 0:
+            self._cooldown -= 1
+            return False
+        cfg = self._cfg()
+        if not cfg or not self._enabled():
+            return False
+        player = (state.raw or {}).get("player") or {}
+        if player.get("currForgeEquip"):
+            return False  # a forge is already running
+        from nta_agent.execution.forge import affordable, craft_candidates
+        equips = player.get("equips") or []
+        crafted = {int(e.get("id", 0) or 0) for e in equips if isinstance(e, dict)}
+        cands = craft_candidates(
+            player.get("equipSlots") or {},
+            lambda i: cfg.table("equipBase").get(i),
+            crafted, novice=(int(getattr(state, "room_type", 0) or 0) == 1))
+        res = {"cereal": state.resources.cereal, "timber": state.resources.timber,
+               "stone": state.resources.stone, "iron": state.resources.iron,
+               "gold": state.resources.gold}
+        for c in cands:
+            if affordable(c["cost"], res):
+                self._pending = c["uid"]
+                if self.on_event:
+                    self.on_event("forge", {"uid": c["uid"], "id": c["id"], "cost": c["cost"]})
+                return True
+        return False
+
+    def act(self, actions: Actions) -> None:
+        uid, self._pending = self._pending, ""
+        if not uid:
+            return
+        try:
+            actions.forge_equip(uid)
+        except Exception:
+            self._cooldown = self.fail_cooldown
+            raise
+
+
+@dataclass
 class RuleEngine:
     rules: list[Rule]
     on_error: object = None  # optional on_error(rule_name, exc): full error sink (ErrorLog)
@@ -1083,5 +1153,5 @@ class RuleEngine:
                           HealRouting(),
                           OccupyCell(use_sim=True, profile=profile),
                           ClaimTreasures(), ReviveInjured(profile=profile),
-                          Leveling(profile=profile),
+                          Leveling(profile=profile), Forge(profile=profile),
                           Logistics(profile=profile), ClaimTasks()])

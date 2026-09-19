@@ -25,6 +25,8 @@ DEFAULT_PROFILE = {
     # See docs/superpowers/specs/2026-09-19-army-logistics-design.md.
     "logistics": {"enabled": False, "target": 9, "heal_skip_frac": 0.2,
                   "exclude": [], "min_shortfall": 1, "redeploy": {}},
+    # forge: auto-craft unlocked COMMON equipment when affordable (user: "agent làm").
+    "forge": {"enabled": True},
     "notes": [],
     "build": {"order": [], "skip": []},
 }
@@ -53,6 +55,7 @@ class Profile:
                                                     "max_leveling": 1})
     logistics: dict = field(default_factory=lambda: copy.deepcopy(
         DEFAULT_PROFILE["logistics"]))
+    forge: dict = field(default_factory=lambda: {"enabled": True})
 
 
 def load_profile(path) -> Profile:
@@ -64,7 +67,7 @@ def load_profile(path) -> Profile:
     merged = _merge(DEFAULT_PROFILE, data if isinstance(data, dict) else {})
     return Profile(army=merged["army"], occupy=merged["occupy"], notes=merged["notes"],
                    build=merged["build"], revive=merged["revive"], leveling=merged["leveling"],
-                   logistics=merged["logistics"])
+                   logistics=merged["logistics"], forge=merged["forge"])
 
 
 def save_profile(profile: Profile, path) -> None:
@@ -74,7 +77,8 @@ def save_profile(profile: Profile, path) -> None:
                              "notes": profile.notes, "build": profile.build,
                              "revive": getattr(profile, "revive", {"enabled": True}),
                              "leveling": getattr(profile, "leveling", {}),
-                             "logistics": getattr(profile, "logistics", {})},
+                             "logistics": getattr(profile, "logistics", {}),
+                             "forge": getattr(profile, "forge", {"enabled": True})},
                             ensure_ascii=False, indent=1), encoding="utf-8")
 
 

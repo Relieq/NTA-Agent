@@ -16,6 +16,54 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 
+# CType -> resource name (engine enum, verified: 1 cereal,2 timber,3 stone,9 iron…).
+CTYPE = {1: "cereal", 2: "timber", 3: "stone", 5: "gold", 7: "exp_book",
+         9: "iron", 13: "up_scroll", 14: "fixator"}
+
+
+def parse_cost(s) -> dict:
+    """``"2,0,357|3,0,357|9,0,3"`` -> ``{"timber":357,"stone":357,"iron":3}``.
+
+    Each ``ctype,_,amount`` segment; the resource name comes from :data:`CTYPE`."""
+    out: dict[str, int] = {}
+    for seg in str(s or "").split("|"):
+        parts = seg.split(",")
+        if len(parts) >= 3:
+            try:
+                name = CTYPE.get(int(parts[0]))
+                if name:
+                    out[name] = out.get(name, 0) + int(parts[-1])
+            except (ValueError, TypeError):
+                continue
+    return out
+
+
+def affordable(cost: dict, resources: dict) -> bool:
+    return all(int(resources.get(k, 0) or 0) >= v for k, v in cost.items())
+
+
+def craft_candidates(equip_slots, base_of, crafted_ids, *, novice=False):
+    """Unlocked equip slots to CRAFT (materialize) via the first forge.
+
+    ``equip_slots``: ``player.equipSlots`` = ``{slotKey: {"id":?, "lv":n, ...}}``.
+    A slot with a chosen ``id`` whose equip is COMMON and not yet in ``crafted_ids``
+    yields a craft: uid ``"<id>_<lv>"`` (engine EquipSlotObj.uid = id_lv), with its
+    forge cost. Specialized (pawn-locked) equips are left for the human."""
+    out = []
+    for slot in (equip_slots or {}).values():
+        if not isinstance(slot, dict):
+            continue
+        eid = int(slot.get("id", 0) or 0)
+        if not eid or eid in crafted_ids:
+            continue
+        base = base_of(eid) or {}
+        if not is_common(base):
+            continue
+        cost_key = "forge_cost_novice" if novice else "forge_cost"
+        cost = parse_cost(base.get(cost_key) or base.get("forge_cost"))
+        out.append({"uid": f"{eid}_{int(slot.get('lv', 0) or 0)}", "id": eid, "cost": cost})
+    return out
+
 
 def parse_range(s) -> tuple[int, int] | None:
     """``"6,15"`` -> ``(6, 15)``; empty/invalid -> None."""
