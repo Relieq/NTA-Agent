@@ -25,3 +25,29 @@ def test_forecast_input_passes_pawn_point_when_present():
                "pawns": [{"uid": "p1", "id": 3101, "lv": 1, "point": {"x": 6, "y": 7}}]}]
     out = build_forecast_input(st, armies, target_index=9, land_id=0, distance=1)
     assert out["armies"][0]["pawns"][0]["point"] == {"x": 6, "y": 7}
+
+
+def test_forecast_injects_config_equip_onto_pawns():
+    """A pawn's own equip is empty; the sim must apply the per-type config loadout
+    (configPawnMap -> equips) so the engine sees the pawn's real strength."""
+    st = GameState(source="api"); st.user.uid = "1"
+    st.raw = {"player": {
+        "configPawnMap": {"3101": {"equipUid": "6005_1"}},
+        "equips": [{"uid": "6005_1", "attrs": [{"attr": [2, 3, 178, 25]}]}],  # no `id` field
+    }}
+    armies = [{"uid": "a", "index": 1, "marchTime": 0,
+               "pawns": [{"uid": "p1", "id": 3101, "lv": 1, "equip": {}}]}]
+    out = build_forecast_input(st, armies, target_index=9, land_id=0, distance=1)
+    eq = out["armies"][0]["pawns"][0]["equip"]
+    assert eq == {"uid": "6005_1", "id": 6005, "attrs": [{"attr": [2, 3, 178, 25]}]}
+
+
+def test_forecast_prefers_pawn_own_equip_over_config():
+    st = GameState(source="api"); st.user.uid = "1"
+    st.raw = {"player": {"configPawnMap": {"3101": {"equipUid": "6005_1"}},
+                         "equips": [{"uid": "6005_1", "attrs": []}]}}
+    own = {"uid": "9999_1", "id": 9999, "attrs": []}
+    armies = [{"uid": "a", "index": 1, "marchTime": 0,
+               "pawns": [{"uid": "p1", "id": 3101, "lv": 1, "equip": own}]}]
+    out = build_forecast_input(st, armies, target_index=9, land_id=0, distance=1)
+    assert out["armies"][0]["pawns"][0]["equip"] == own
