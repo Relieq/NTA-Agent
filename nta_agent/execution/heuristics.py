@@ -322,7 +322,7 @@ class OccupyCell:
         predictor = self._pred()      # stats: fallback verdict
         sim = self._sim_pred()        # engine: authoritative win verdict when available
         from nta_agent.execution.advisor import Plan, best_plan
-        from nta_agent.execution.order_strategies import candidate_orders
+        from nta_agent.execution.order_strategies import colocated_orders
         from nta_agent.execution.predictors.sim_bridge import SimUnavailable
 
         cand_by_index = {c.index: c for c in cands}
@@ -344,8 +344,12 @@ class OccupyCell:
             if grp:
                 chosen = [a for a in avail if str(a.get("uid")) in {str(x) for x in grp}]
                 avail = chosen or avail
+            # Only combine CO-LOCATED armies: a multi-army occupy marches each army
+            # from its own cell, so scattered origins arrive staggered and lose
+            # pawns the sim (one force, one distance) can't predict. Same-cell
+            # armies depart+arrive together; lone armies fight alone regardless.
             return [Plan(armies=order, target=i, label=label, prediction=None)
-                    for label, order in candidate_orders(avail)]
+                    for label, order in colocated_orders(avail)]
 
         def predict(plan):
             c = cand_by_index[plan.target]

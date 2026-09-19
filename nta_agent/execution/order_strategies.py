@@ -31,3 +31,30 @@ def candidate_orders(group: list[dict]) -> list[tuple[str, list[dict]]]:
     for a in group:
         out.append((f"single:{a.get('uid')}", [a]))
     return out
+
+
+def colocated_orders(group: list[dict]) -> list[tuple[str, list[dict]]]:
+    """Candidate orders that never mix armies from different cells.
+
+    A multi-army occupy sends each army from its OWN index, so armies at
+    different cells arrive in staggered waves (different distances/speeds) and
+    fight piecemeal — losing pawns the sim can't predict (it models one
+    simultaneous force at a single distance). So multi-army orders are formed
+    only WITHIN a same-index group (they depart together and arrive together,
+    matching the sim); every army also gets a single-army order (a lone army
+    fights alone regardless of when it arrives, so its origin is harmless).
+    """
+    from collections import defaultdict
+    by_index: dict[int, list[dict]] = defaultdict(list)
+    for a in group:
+        by_index[int(a.get("index", 0) or 0)].append(a)
+    out: list[tuple[str, list[dict]]] = []
+    seen: set[tuple[str, ...]] = set()
+    for idx in sorted(by_index):
+        for label, order in candidate_orders(by_index[idx]):
+            key = tuple(str(a.get("uid")) for a in order)
+            if key in seen:
+                continue
+            seen.add(key)
+            out.append((label, order))
+    return out
