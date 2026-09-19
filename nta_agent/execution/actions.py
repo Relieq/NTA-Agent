@@ -353,15 +353,20 @@ class Actions:
         """Move a pawn to another army (GAME_HD_ChangePawnArmy).
 
         ``is_new_create`` creates a brand-new army for the pawn (agent's leveling
-        army); otherwise it moves into ``new_army_uid``. (Create params RE'd; to
-        re-confirm live once a multi-army state exists.)"""
-        params = {"index": int(index), "armyUid": str(army_uid), "uid": str(pawn_uid),
-                  "newArmyUid": str(new_army_uid)}
+        army); otherwise it moves into ``new_army_uid``.
+
+        Create path mirrors the verified sibling APIs (``DrillPawn``,
+        ``CureInjuryPawn``) which create with an EMPTY target + ``armyName``: we
+        omit ``newArmyUid`` entirely when creating, because sending
+        ``newArmyUid=""`` made the server validate a non-existent army first and
+        reject with ecode.500011 ("Đội quân không tồn tại")."""
+        params = {"index": int(index), "armyUid": str(army_uid), "uid": str(pawn_uid)}
         if is_new_create:
             params["isNewCreate"] = True
             if army_name:
                 params["armyName"] = str(army_name)
         else:
+            params["newArmyUid"] = str(new_army_uid)
             params["onlyChangeArmy"] = bool(only_change)
         reply = self.session.request("game/HD_ChangePawnArmy", params)
         self._apply_result(reply)

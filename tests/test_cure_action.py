@@ -45,8 +45,10 @@ def test_change_pawn_army_and_dismiss_shapes():
     s = FakeSession({})
     a = Actions(session=s)
     a.change_pawn_army(72100, "F", "p1", "", is_new_create=True, army_name="Nâng Cấp")
+    # create path omits newArmyUid (sending "" made the server reject with
+    # ecode.500011); mirrors DrillPawn/CureInjuryPawn empty-target + armyName.
     assert s.sent[-1] == ("game/HD_ChangePawnArmy",
-                          {"index": 72100, "armyUid": "F", "uid": "p1", "newArmyUid": "",
+                          {"index": 72100, "armyUid": "F", "uid": "p1",
                            "isNewCreate": True, "armyName": "Nâng Cấp"})
     a.change_pawn_army(72100, "F", "p1", "L", only_change=True)
     assert s.sent[-1] == ("game/HD_ChangePawnArmy",
