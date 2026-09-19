@@ -450,11 +450,40 @@ class OccupyCell:
             return
         armies, target = self._pending
         self._pending = None
+        # Re-validate against fresh army state: between applies() and now, Logistics
+        # (or a march/battle) may have emptied, moved or busied an army chosen from
+        # the stale select_armys snapshot. Sending a stale/0-pawn army can make the
+        # whole occupy fail (ecode.500000). Keep only armies that still exist, are
+        # idle and have pawns, using their CURRENT index.
+        from nta_agent.execution.army_health import is_idle
+        try:
+            fresh = {str(a.get("uid")): a for a in actions.get_player_armys()}
+        except Exception:
+            fresh = {}
+        if fresh:
+            valid = []
+            for a in armies:
+                cur = fresh.get(str(a.get("uid")))
+                if cur is not None and is_idle(cur) and (cur.get("pawns") or []):
+                    valid.append({"uid": str(cur.get("uid")), "index": int(cur.get("index", 0) or 0)})
+            armies = valid
+        if not armies:
+            self._cooldown = self.fail_cooldown
+            return
         self._optimize_formations(actions, armies, target)
         try:
             actions.occupy_cell(target, armies)
-        except Exception:
+        except Exception as e:
             self._cooldown = self.fail_cooldown
+            if self.on_event:  # capture what we actually sent, to debug rejections
+                w = 600
+                self.on_event("occupy_error", {
+                    "ecode": str(e).split("ecode.")[-1][:6] if "ecode." in str(e) else "",
+                    "target": target, "target_xy": [target % w, target // w],
+                    "land_id": self._land_ref,
+                    "starts": [[int(a.get("index", 0)) % w, int(a.get("index", 0)) // w]
+                               for a in armies],
+                    "uids": [str(a.get("uid")) for a in armies]})
             raise
 
 

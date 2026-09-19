@@ -47,8 +47,22 @@ def _desc(config, text_name: str, value: int) -> str:
         arg = str(pol.get("value", "")).split(",")[0]
         return tmpl.replace("{0}", arg) if arg else tmpl
     if text_name == "equipText":
-        row = config.table(text_name).get(f"effect_{value}") or {}
-        return _clean(row.get("vi") or row.get("en") or "")
+        # Build informative stats from equipBase (the effect_ text is often empty):
+        # attack range, hp range, common vs specialized — so the human can choose.
+        base = config.table("equipBase").get(value) or {}
+        parts: list[str] = []
+        atk = str(base.get("attack") or "").strip()
+        hp = str(base.get("hp") or "").strip()
+        if atk:
+            parts.append(f"ST {atk.replace(',', '–')}")
+        if hp:
+            parts.append(f"Máu {hp.replace(',', '–')}")
+        parts.append("chuyên dụng" if str(base.get("exclusive_pawn") or "").strip() else "thường")
+        eff = _clean((config.table(text_name).get(f"effect_{value}") or {}).get("vi")
+                     or (config.table(text_name).get(f"effect_{value}") or {}).get("en") or "")
+        if eff:
+            parts.append(eff)
+        return " · ".join(parts)
     return ""
 
 

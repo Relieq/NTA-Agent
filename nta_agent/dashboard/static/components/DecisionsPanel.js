@@ -19,15 +19,17 @@ export default {
              : {action:"reroll",track:d.track,lv:d.lv};
    await postJSON("/api/command", cmd);
   }
-  return { ds, act, sending, skey, canReroll };
+  const TRACK={pawn:"Binh chủng",equip:"Trang bị",policy:"Chính sách"};
+  const tname=(t)=> TRACK[t]||t;
+  return { ds, act, sending, skey, canReroll, tname };
  },
- template:`<div class="card full"><h2>Quyết định đang chờ</h2>
+ template:`<div class="card full"><h2>Quyết định đang chờ (chọn 1 trong 3)</h2>
   <span v-if="!ds.length" class="muted">—</span>
-  <div v-for="d in ds" :key="d.track+d.lv" style="margin:6px 0">
-   <span class="muted">{{ d.track }} · Lv{{ d.lv }}</span><br>
-   <template v-for="o in (d.options||[])" :key="o.ceri_id">
-    <button :disabled="sending[skey(d,o)]" @click="act(d,o)">{{ sending[skey(d,o)]?"đã gửi…":o.name }}</button>
-    <span v-if="o.desc" class="muted">{{ o.desc }}</span><br></template>
+  <div v-for="d in ds" :key="d.track+d.lv" style="margin:10px 0">
+   <div class="muted" style="margin-bottom:3px">{{ tname(d.track) }} · Lv{{ d.lv }}</div>
+   <div v-for="o in (d.options||[])" :key="o.ceri_id" style="display:flex;align-items:center;gap:8px;margin:2px 0">
+    <button :disabled="sending[skey(d,o)]" @click="act(d,o)" style="min-width:130px">{{ sending[skey(d,o)]?"đã gửi…":o.name }}</button>
+    <span v-if="o.desc" class="muted" style="font-size:12px">{{ o.desc }}</span></div>
    <button :disabled="sending[skey(d,null)]||!canReroll(d)" :title="canReroll(d)?'':'Không đủ vàng để làm mới'" @click="act(d,null)">{{ sending[skey(d,null)]?"đã gửi…":("Làm mới"+(d.reset_count?(" ("+d.reset_count+")"):" (free)")) }}</button>
    <span v-if="!canReroll(d)" class="muted" style="font-size:12px">· cần vàng</span>
   </div></div>`
