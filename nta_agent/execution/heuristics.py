@@ -1179,7 +1179,7 @@ class RuleEngine:
         return cls(rules=[CollectCityOutput(), BuildOrder(profile=profile),
                           Recruit(profile=profile),
                           HealRouting(),
-                          OccupyCell(use_sim=True, profile=profile),
+                          OccupyCell(use_sim=True, profile=profile, radius=4),
                           ClaimTreasures(), ReviveInjured(profile=profile),
                           Leveling(profile=profile), Forge(profile=profile),
                           Logistics(profile=profile), ClaimTasks()])
