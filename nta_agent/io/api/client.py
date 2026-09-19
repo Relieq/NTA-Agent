@@ -43,6 +43,22 @@ class NotConnected(RuntimeError):
     """A request was attempted while the MQTT connection was down."""
 
 
+# mqant returns this when the session/route is gone (kicked / server restart) —
+# the request "succeeds" at transport but the game service is unreachable.
+_SESSION_DOWN_MARKERS = ("Service(type:", "not found", "session")
+
+
+def is_session_error(exc: BaseException) -> bool:
+    """True if ``exc`` means the game session/connection is down (recoverable by
+    reconnecting), vs. a normal game ecode rejection."""
+    if isinstance(exc, (NotConnected, TimeoutError, ConnectionError, OSError)):
+        return True
+    if isinstance(exc, ApiError):
+        msg = str(exc)
+        return "ecode." not in msg and any(m in msg for m in _SESSION_DOWN_MARKERS)
+    return False
+
+
 @dataclass
 class GameClient:
     server: ServerConfig

@@ -490,8 +490,11 @@ class Recruit:
     # rejected. The per-army cap is not in the data (it varies by army), so we learn
     # it: skip an army marked full until its pawn count changes.
     _full: dict = field(default_factory=dict)
+    _max_army_count: int = 0   # learned army cap (ecode.500054); 0 = unknown
+    _new_army_at: int = 0      # army count when the pending create was queued
 
     ARMY_FULL_ECODE = "ecode.500019"
+    ARMY_COUNT_FULL_ECODE = "ecode.500054"  # PLAYER_FULL_ARMY: at getArmyMaxCount
 
     def _is_full(self, army: dict) -> bool:
         uid = str(army.get("uid"))
@@ -558,8 +561,10 @@ class Recruit:
                      and len(a.get("pawns", [])) < self.max_army_pawns), None)
         if room:
             self._pending = (bu, pawn, str(room["uid"]), "", len(room.get("pawns", [])))
-        elif len(armys) < self.max_armies:
+        elif len(armys) < self.max_armies and not (
+                self._max_army_count and len(armys) >= self._max_army_count):
             self._pending = (bu, pawn, "", _unused_army_name(armys), 0)
+            self._new_army_at = len(armys)  # to learn the cap if the server rejects
         else:
             return False
         return True
@@ -577,6 +582,11 @@ class Recruit:
             # error worth surfacing every cooldown.
             if au and self.ARMY_FULL_ECODE in str(e):
                 self._full[str(au)] = count
+                return
+            # At the army cap (PLAYER_FULL_ARMY): stop trying to create new armies
+            # until one is dismissed (army count drops below the learned cap).
+            if not au and self.ARMY_COUNT_FULL_ECODE in str(e):
+                self._max_army_count = self._new_army_at or 1
                 return
             self._cooldown = self.fail_cooldown
             raise
@@ -910,6 +920,9 @@ class RuleEngine:
             except Exception as e:  # a failing rule must not kill the loop
                 if ANTI_CHEAT_ECODE in str(e):
                     raise CaptchaRequired(str(e)) from e
+                from nta_agent.io.api.client import is_session_error
+                if is_session_error(e):
+                    raise  # session down -> let the agent loop reconnect, don't swallow
                 detail = str(e).split(":")[-1].strip() or type(e).__name__
                 fired.append(f"{rule.name}!ERR:{detail}")
                 if self.on_error is not None:
