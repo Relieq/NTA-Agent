@@ -135,6 +135,8 @@ def sanitize_edits(edits: dict, profile, valid_army_uids, valid_build_ids=None) 
     if isinstance(edits.get("notes"), list):
         out["notes"] = [str(s).strip()[:200] for s in edits["notes"] if str(s).strip()][:20]
 
+    # build.order/skip (the dashboard edits this; the brain must NOT — it strips
+    # build from its own edits before calling here, see BrainService.tick).
     build_in = edits.get("build") if isinstance(edits, dict) else None
     if isinstance(build_in, dict) and valid_build_ids is not None:
         valid_b = {int(x) for x in valid_build_ids}

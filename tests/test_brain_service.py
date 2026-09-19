@@ -109,3 +109,18 @@ def test_no_fire_when_quiet_off_cadence(tmp_path):
                        llm_propose=lambda dg, p: (calls.append(1) or {}))
     svc.tick(_state())  # no threat / no decisions -> not urgent -> no call
     assert calls == []
+
+
+def test_brain_never_edits_build_order(tmp_path):
+    """The LLM echoes build from the digest; the brain must strip it so the human's
+    build.order/skip (set via dashboard) is never clobbered."""
+    prof = load_profile("none")
+    prof.build = {"order": [2001, 2008], "skip": [2000]}
+    actions = SimpleNamespace(get_player_armys=lambda: [{"uid": "A", "name": "D1", "pawns": []}])
+    svc = BrainService(prof, _cfg(tmp_path),
+                       actions=actions, policy=BrainPolicy(every_ticks=1, max_calls=5),
+                       llm_propose=lambda dg, p: {"build": {"order": [], "skip": []},
+                                                  "occupy": {"max_loss": 5}})
+    svc.tick(_state())
+    assert prof.build == {"order": [2001, 2008], "skip": [2000]}  # untouched
+    assert prof.occupy["max_loss"] == 5                            # other edits still apply

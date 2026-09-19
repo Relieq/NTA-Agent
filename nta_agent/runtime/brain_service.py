@@ -113,6 +113,12 @@ class BrainService:
             dg = digest(state, self.profile, armies, territory=self._territory(state),
                         decisions=self._decisions(state))
             edits = self._propose(dg, self.profile)
+            # build.order/skip is the human's plan (set via dashboard). The LLM sees
+            # it in the digest and tends to echo it back, and the valid-id filter
+            # then emptied it — wiping the user's build order every brain run. The
+            # brain never edits build; it advises via `advice` instead.
+            if isinstance(edits, dict):
+                edits.pop("build", None)
             valid = {str(a.get("uid")) for a in armies}
             clean = sanitize_edits(edits, self.profile, valid,
                                    valid_build_ids=self._valid_build_ids())
