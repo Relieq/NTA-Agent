@@ -94,10 +94,12 @@ function installAssets(configDir = DEFAULT_CONFIG_DIR, requireByName, { playerUi
     getBattleForecastRetData: () => null,
     getMainCityIndex: () => 0,
   });
-  // Equip lookups for config-generated enemies (beasts/caterans); benign defaults.
-  if (!gameHpr.noviceServer) {
-    gameHpr.noviceServer = { getEnemyEquipById: () => null, setEnemyEquip: () => {} };
-  }
+  // Equip lookups for config-generated enemies (beasts/caterans/NPC waves); benign
+  // defaults. A partial noviceServer may already exist WITHOUT these (then the enemy
+  // generator crashes: "getEnemyEquipById is not a function"), so patch it in rather
+  // than only creating a fresh stub — patch() never overrides a real method.
+  if (!gameHpr.noviceServer) gameHpr.noviceServer = {};
+  patch(gameHpr.noviceServer, { getEnemyEquipById: () => null, setEnemyEquip: () => {} });
   // Policy buffs are optional for a bare forecast; neutral season (no seasonal attr).
   gameHpr.getPolicyBattleBuffs = () => [];
   gameHpr.getCurrSeasonType = () => 0;
