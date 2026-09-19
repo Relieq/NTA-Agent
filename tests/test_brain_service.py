@@ -25,10 +25,10 @@ def test_applies_sanitized_edits_in_place_and_emits(tmp_path):
     before_group = list(prof.army.get("group") or [])
     svc = BrainService(prof, _cfg(tmp_path), on_event=lambda k, d: events.append((k, d)),
                        actions=actions, policy=BrainPolicy(every_ticks=1, max_calls=5),
-                       llm_propose=lambda dg, p: {"occupy": {"max_loss": 12},
+                       llm_propose=lambda dg, p: {"occupy": {"expansion": "octopus"},
                                                   "army": {"group": ["A"]}, "rationale": "tune"})
     svc.tick(_state())
-    assert prof.occupy["max_loss"] == 12       # mutated in place
+    assert prof.occupy["expansion"] == "octopus"   # mutated in place
     assert prof.army.get("group") == before_group  # army is human-owned; brain ignores it
     assert any(k == "brain_plan" for k, d in events)
     assert (tmp_path / "profile.json").exists()  # persisted
@@ -130,11 +130,11 @@ def test_brain_never_edits_build_order(tmp_path):
     svc = BrainService(prof, cfg,
                        actions=actions, policy=BrainPolicy(every_ticks=1, max_calls=5),
                        llm_propose=lambda dg, p: {"build": {"order": [], "skip": []},
-                                                  "occupy": {"max_loss": 5}})
+                                                  "occupy": {"expansion": "octopus"}})
     svc.tick(_state())
     saved = json.loads(Path(cfg.profile_path).read_text(encoding="utf-8"))
     assert saved["build"] == {"order": [2001, 2008], "skip": [2000]}  # untouched
-    assert prof.occupy["max_loss"] == 5                               # other edits still apply
+    assert prof.occupy["expansion"] == "octopus"                     # other edits still apply
 
 
 def test_brain_save_does_not_clobber_dashboard_build_edit(tmp_path):
@@ -154,11 +154,11 @@ def test_brain_save_does_not_clobber_dashboard_build_edit(tmp_path):
     actions = SimpleNamespace(get_player_armys=lambda: [{"uid": "A", "name": "D1", "pawns": []}])
     svc = BrainService(prof, cfg, actions=actions,
                        policy=BrainPolicy(every_ticks=1, max_calls=5),
-                       llm_propose=lambda dg, p: {"occupy": {"max_loss": 7}})  # brain edit -> save
+                       llm_propose=lambda dg, p: {"occupy": {"expansion": "octopus"}})  # brain edit -> save
     svc.tick(_state())
     saved = _json.loads(Path(cfg.profile_path).read_text(encoding="utf-8"))
     assert saved["build"] == {"order": [2001, 2004], "skip": [2000]}  # dashboard's, not [1]
-    assert saved["occupy"]["max_loss"] == 7                            # brain edit persisted
+    assert saved["occupy"]["expansion"] == "octopus"                   # brain edit persisted
 
 
 def test_brain_save_does_not_clobber_dashboard_farm_group(tmp_path):
@@ -181,8 +181,23 @@ def test_brain_save_does_not_clobber_dashboard_farm_group(tmp_path):
     actions = SimpleNamespace(get_player_armys=lambda: [{"uid": "A", "name": "D1", "pawns": []}])
     svc = BrainService(prof, cfg, actions=actions,
                        policy=BrainPolicy(every_ticks=1, max_calls=5),
-                       llm_propose=lambda dg, p: {"occupy": {"max_loss": 7}})  # brain edit -> save
+                       llm_propose=lambda dg, p: {"occupy": {"expansion": "octopus"}})  # brain edit -> save
     svc.tick(_state())
     saved = _json.loads(Path(cfg.profile_path).read_text(encoding="utf-8"))
     assert saved["army"]["group"] == ["1789811706664002", "1789755140946001"]  # user's, not []
-    assert saved["occupy"]["max_loss"] == 7                                      # brain edit persisted
+    assert saved["occupy"]["expansion"] == "octopus"                              # brain edit persisted
+
+
+def test_brain_cannot_raise_max_loss_but_can_set_expansion(tmp_path):
+    """max_loss is the user's hard risk cap; the brain must not raise it (would
+    undo the no-loss policy). It may still pick the expansion pattern."""
+    prof = load_profile("none")
+    prof.occupy["max_loss"] = 0.0
+    actions = SimpleNamespace(get_player_armys=lambda: [{"uid": "A", "name": "D1", "pawns": []}])
+    svc = BrainService(prof, _cfg(tmp_path), actions=actions,
+                       policy=BrainPolicy(every_ticks=1, max_calls=5),
+                       llm_propose=lambda dg, p: {"occupy": {"max_loss": 7.4,
+                                                             "expansion": "octopus"}})
+    svc.tick(_state())
+    assert prof.occupy["max_loss"] == 0.0        # user's cap kept
+    assert prof.occupy["expansion"] == "octopus"  # pattern still brain-editable
