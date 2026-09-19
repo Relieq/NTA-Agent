@@ -319,13 +319,14 @@ class OccupyCell:
 
         def plans_for(i):
             # Candidate selection-orders from the active formation group (or all reachable).
-            # Only IDLE armies can be sent (skip marching/fighting/recruiting/leveling),
-            # and — verified live — the server only accepts an occupy whose armies sit on
-            # a cell ORTHOGONALLY ADJACENT to the target (else ecode.500000). Filter to
-            # adjacent idle armies so we never send a doomed cross-map occupy.
+            # Only IDLE armies can be sent (skip marching/fighting/recruiting/leveling).
+            # Origin distance does NOT matter — the target only needs to adjoin owned
+            # land (verified live). But an army mid-recruit/cure (pending drill/curing
+            # pawns) can't be sent and poisons the whole occupy with ecode.500000, so
+            # exclude those (they show no busy `state`, so check the pawn queues).
             from nta_agent.execution.army_health import is_idle
             avail = [a for a in actions.select_armies(i)
-                     if is_idle(a) and self._dist(int(a.get("index", 0) or 0), i) == 1]
+                     if is_idle(a) and not a.get("drillPawns") and not a.get("curingPawns")]
             grp = []
             if self.profile is not None:
                 from nta_agent.execution.profile import active_formation
@@ -477,7 +478,10 @@ class OccupyCell:
             valid = []
             for a in armies:
                 cur = fresh.get(str(a.get("uid")))
-                if cur is not None and is_idle(cur) and (cur.get("pawns") or []):
+                # skip armies that got emptied, moved-busy, or a pending drill/cure
+                # between applies() and now — any of those makes the occupy 500000.
+                if (cur is not None and is_idle(cur) and (cur.get("pawns") or [])
+                        and not cur.get("drillPawns") and not cur.get("curingPawns")):
                     valid.append({"uid": str(cur.get("uid")), "index": int(cur.get("index", 0) or 0)})
             armies = valid
         if not armies:
