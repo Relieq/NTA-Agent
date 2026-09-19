@@ -1009,8 +1009,16 @@ class Leveling:
         if not farm_armies:
             return False
         main = actions.main_city_index()
-        farm_home = all(int(a.get("index", 0) or 0) == main for a in farm_armies)
-        act = next_level_action(farm_armies, level_army, target, farm_home=farm_home,
+        # Only IDLE farm armies AT the city can have pawns pulled/swapped —
+        # ChangePawnArmy/ExchangePawnArmy reject a marching or fighting army
+        # (ecode.500020 "Đang hành quân"). Operate on those, and let leveling
+        # proceed whenever at least ONE farm army is idle at home (not only when
+        # ALL are) — the farm armies are usually out farming, so requiring all
+        # home meant leveling never ran.
+        from nta_agent.execution.army_health import is_idle
+        home_farm = [a for a in farm_armies
+                     if is_idle(a) and int(a.get("index", 0) or 0) == main]
+        act = next_level_action(home_farm, level_army, target, farm_home=bool(home_farm),
                                 queue_uids=self._queue_uids(state),
                                 exp_book=state.resources.exp_book,
                                 max_leveling=int(cfg.get("max_leveling", 1) or 1))
