@@ -10,7 +10,7 @@ export default {
  setup(){
   const canvas=ref(null), tip=ref(null), sel=ref(null);
   let scale=16, originX=0, originY=0, fitted=false, hover=null;
-  let data={main:0, mw:MAPW, owned:[], accepted:[], forts:[], garr:[], recs:[]};
+  let data={main:0, mw:MAPW, owned:[], accepted:[], forts:[], garr:[], recs:[], armyCells:{}};
   let stateMap=new Map();
   let dragging=false, moved=0, lastX=0, lastY=0;
 
@@ -82,8 +82,17 @@ export default {
     ctx.strokeStyle="#0b1320"; ctx.lineWidth=1; ctx.strokeRect(sX(x)+1.5,sY(y)+1.5,scale-3,scale-3); } });
    data.enemyCities.forEach(c=>{ if(inView(c.x,c.y)){ ctx.strokeStyle="#0b1320"; ctx.lineWidth=2;
     ctx.strokeRect(sX(c.x)+3,sY(c.y)+3,scale-6,scale-6); } });             // thành/fort địch
-   ctx.strokeStyle="#c3c2b7"; ctx.lineWidth=1.5;
-   data.garr.forEach(([x,y])=>{ if(inView(x,y)) ctx.strokeRect(sX(x)+2,sY(y)+2,scale-4,scale-4); });
+   // troop markers: ring coloured by activity + pawn-count badge (idle steel /
+   // hành quân xanh / đang đánh đỏ). Drawn as a ring+halo'd number so it reads on
+   // top of any cell fill (city, owned…), matching the in-game army overlay.
+   const troopColor=(s)=> s===2?"#da3633" : s===1?"#58a6ff" : "#c3c2b7";
+   Object.keys(data.armyCells).forEach(k=>{ const c=data.armyCells[k]; if(!inView(c.x,c.y)) return;
+    const col=troopColor(c.maxState);
+    ctx.strokeStyle=col; ctx.lineWidth=2; ctx.strokeRect(sX(c.x)+2,sY(c.y)+2,scale-4,scale-4);
+    if(scale>=14){ const cx=sX(c.x)+scale/2, cy=sY(c.y)+scale/2;
+     ctx.font="bold "+Math.min(13,scale-4)+"px system-ui"; ctx.textAlign="center"; ctx.textBaseline="middle";
+     ctx.lineWidth=3; ctx.strokeStyle="#0b1320"; ctx.strokeText(String(c.pawns), cx, cy);
+     ctx.fillStyle=col; ctx.fillText(String(c.pawns), cx, cy); } });
    data.forts.forEach(([x,y])=>{ if(inView(x,y)) box(x,y,"#d95926"); });
    data.accepted.forEach(([x,y])=>{ if(inView(x,y)){ box(x,y,"#d95926");
     ctx.fillStyle="#0b1320"; ctx.beginPath(); ctx.arc(sX(x)+scale/2,sY(y)+scale/2,Math.max(1.5,scale/6),0,7); ctx.fill(); } });
@@ -120,11 +129,21 @@ export default {
    const t=await getJSON("/api/territory"), f=await getJSON("/api/forts");
    if(!t||!f) return;
    const mw=t.map_width||MAPW;
+   // per-cell troop view from /api/armies (has index/name/state/pawns) — like the
+   // in-game map's army markers. Grouped by cell index: count of armies + pawns +
+   // the most-active state (idle < march < fight) for the cell's colour.
+   const arms=(await getJSON("/api/armies"))||[];
+   const armyCells={};
+   arms.forEach(a=>{ const i=(a&&a.index)|0; if(!i) return;
+    const c=armyCells[i]||(armyCells[i]={x:i%mw, y:Math.floor(i/mw), armies:[], pawns:0, maxState:0});
+    const n=((a.pawns)||[]).length;
+    c.armies.push({name:a.name||"?", state:(a.state)|0, label:a.state_label||"", pawns:n});
+    c.pawns+=n; c.maxState=Math.max(c.maxState,(a.state)|0); });
    data={ main:t.main_city||0, mw, owned:f.owned_cells||[], accepted:f.accepted||[],
     forts:(t.forts||[]).map(x=>[x.x,x.y]),
     garr:(t.garrisons||[]).map(i=>[i%mw, Math.floor(i/mw)]),
     enemy:f.enemy_cells||[], enemyCities:f.enemy_cities||[], frontier:f.frontier||[],
-    recs:f.recommendations||[] };
+    recs:f.recommendations||[], armyCells };
    buildStateMap();
    const cv=canvas.value;
    if(cv && data.main && !fitted){ fitView(cv); fitted=true; }
@@ -144,15 +163,19 @@ export default {
    if(px<ML||py<MT){ if(hover){hover=null;render();} tip.value=null; return; }
    const c=cellAt(px,py); hover=c;
    const st=stateMap.get(idx(c.x,c.y));
-   tip.value={ left:(ev.clientX-r.left)+12, top:(ev.clientY-r.top)+12,
-     text:`(${c.x}, ${c.y})`+(st?` · ${st.label}`:" · trống") };
+   const ac=data.armyCells[idx(c.x,c.y)];
+   let txt=`(${c.x}, ${c.y})`+(st?` · ${st.label}`:" · trống");
+   if(ac) txt+=` · ${ac.armies.length} đội / ${ac.pawns} lính`;
+   tip.value={ left:(ev.clientX-r.left)+12, top:(ev.clientY-r.top)+12, text:txt };
    render();
   }
   function onUp(ev){ dragging=false;
    if(moved<4){ const [px,py]=toCanvas(ev);
     if(px>=ML&&py>=MT){ const c=cellAt(px,py), st=stateMap.get(idx(c.x,c.y));
      const r=canvas.value.getBoundingClientRect();
+     const ac=data.armyCells[idx(c.x,c.y)];
      sel.value={ x:c.x, y:c.y, index: st?st.index:idx(c.x,c.y), state: st?st.label:"trống",
+       armies: ac?ac.armies:null,
        left:Math.min(ev.clientX-r.left, r.width-170), top:(ev.clientY-r.top) }; } } }
   function onLeave(){ hover=null; tip.value=null; render(); }
   function onWheel(ev){ ev.preventDefault(); const [px,py]=toCanvas(ev); zoomAt(px,py, ev.deltaY<0?1.15:1/1.15); }
@@ -182,6 +205,9 @@ export default {
    <div v-if="sel" style="position:absolute;background:#0d1117;border:1px solid var(--border-hi);
      border-radius:6px;padding:6px 8px;z-index:7" :style="{left:sel.left+'px',top:(sel.top+16)+'px'}">
     <div class="muted" style="font-size:12px">Ô ({{ sel.x }}, {{ sel.y }}) · {{ sel.state }}</div>
+    <div v-if="sel.armies" style="font-size:12px;margin:2px 0">
+     <div v-for="(a,i) in sel.armies" :key="i">🛡️ {{ a.name }} · <b>{{ a.pawns }}</b> lính
+      <span class="muted">({{ a.label }})</span></div></div>
     <template v-if="sel.state==='gợi ý'">
      <button @click="decide('accept')">✓ Chấp thuận</button>
      <button @click="decide('reject')">✕ Từ chối</button></template>
@@ -192,7 +218,7 @@ export default {
    <span><b style="color:#199e70">■</b> ô đã chiếm</span>
    <span><b style="color:#d95926">■</b> Cứ Điểm / dự kiến</span>
    <span><b style="color:#e66767">◯</b> gợi ý</span>
-   <span><b style="color:#c3c2b7">▢</b> quân trú</span>
+   <span>quân (số=lính): <b style="color:#c3c2b7">▢</b>rảnh <b style="color:#58a6ff">▢</b>hành quân <b style="color:#da3633">▢</b>đang đánh</span>
    <span><b style="color:#da3633">■</b> ô địch</span>
    <span><b class="muted">▢</b> biên giới trống (xấp xỉ)</span>
    <span><b style="color:#F5E900">◇</b> vùng bảo vệ/tăng tốc = bán kính 6 ô (Manhattan) quanh thành 2×2 — không cần xây Cứ Điểm bên trong</span>
