@@ -946,11 +946,20 @@ class Logistics:
         if redeploy:
             ready = {str(a.get("uid")): a for a in ready_armies(
                 armies, main, target=int(lg.get("target", 9)))}
+            live = {str(a.get("uid")) for a in armies}
             for uid, target in list(redeploy.items()):
-                army = ready.get(str(uid))
-                if army is not None:
-                    self._pending = ("redeploy", army, int(target))
-                    return True
+                uid, target = str(uid), int(target)
+                if uid not in live:
+                    redeploy.pop(uid, None)          # army gone -> drop stale order
+                    continue
+                army = ready.get(uid)
+                if army is None:
+                    continue                         # not full/idle yet -> wait
+                if target == int(army.get("index", 0) or 0):
+                    redeploy.pop(uid, None)          # already there -> drop no-op
+                    continue
+                self._pending = ("redeploy", army, target)
+                return True
         # A: consolidate / bring under-strength field armies home.
         act = plan_logistics(armies, main, [f.index for f in terr.forts],
                              target=int(lg.get("target", 9)),
@@ -971,10 +980,10 @@ class Logistics:
         try:
             if pending[0] == "redeploy":
                 _, army, target = pending
-                actions.move_cell_army([army], target)
                 lg = self._cfg()
-                if lg:  # consume the brain's one-shot instruction
+                if lg:  # consume BEFORE the call so a bad order never respams
                     (lg.get("redeploy") or {}).pop(str(army.get("uid")), None)
+                actions.move_cell_army([army], target)
                 return
             act = pending[1]
             if act.kind == "consolidate":

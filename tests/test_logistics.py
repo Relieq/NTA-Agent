@@ -149,6 +149,32 @@ def test_rule_redeploy_consumes_instruction():
     assert prof.logistics["redeploy"] == {}  # one-shot consumed
 
 
+def test_rule_redeploy_to_own_cell_is_dropped_not_moved():
+    # brain mistake: redeploy a city army to the main city (where it already is).
+    st = _state(MAIN)
+    prof = _prof(redeploy={"R": MAIN})
+    acts = FakeActions([_army("R", MAIN, 9)], MAIN)
+    rule = Logistics(check_every=0, profile=prof)
+    # no valid redeploy, no field armies -> nothing to do; bad order dropped
+    assert rule.applies(st, acts) is False
+    assert prof.logistics["redeploy"] == {}
+    assert acts.moved == []
+
+
+def test_rule_redeploy_stale_uid_dropped_then_consolidates():
+    st = _state(MAIN)
+    prof = _prof(redeploy={"GHOST": 7777})
+    keeper = _army("K", 5555, 6)
+    donor = _army("D", 5555, [80, 95, 90, 85])
+    acts = FakeActions([keeper, donor], MAIN)
+    rule = Logistics(check_every=0, profile=prof)
+    # stale redeploy dropped, then falls through to consolidation
+    assert rule.applies(st, acts) is True
+    assert prof.logistics["redeploy"] == {}
+    rule.act(acts)
+    assert {c[1] for c in acts.changed} == {"Dp1", "Dp2", "Dp3"}
+
+
 # --- brain seam -------------------------------------------------------------- #
 def test_sanitize_logistics_redeploy_valid_uid_only():
     from nta_agent.brain.guard import sanitize_edits

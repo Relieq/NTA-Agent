@@ -45,7 +45,10 @@ _SYSTEM = (
     "pawns in the field, march short armies home to recruit). digest.ready_to_redeploy "
     "lists armies now full+idle at the city awaiting orders: set logistics.redeploy["
     "armyUid]=cellIndex to send one to farm/expand, or add its uid to army.group to "
-    "rejoin the farm — decide per the situation (keep defenders home if the enemy is near)."
+    "rejoin the farm — decide per the situation (keep defenders home if the enemy is near). "
+    "The redeploy cellIndex MUST be a DIFFERENT cell than the army's current index (see "
+    "digest.armies[].index) — never its own cell/main_city_index; to keep an army home, "
+    "omit it from redeploy instead."
 )
 
 
