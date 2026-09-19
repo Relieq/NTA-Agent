@@ -211,7 +211,14 @@ def handle_profile_edit(cfg, edits: dict) -> dict:
     from nta_agent.brain.guard import sanitize_edits
     from nta_agent.execution.profile import apply_edits, load_profile, save_profile
     profile = load_profile(cfg.profile_path)
-    clean = sanitize_edits(edits, profile, set(), valid_build_ids=_valid_build_ids())
+    # army.group is validated against real army uids; without them a group edit
+    # (farm-group picker) would be filtered to empty. Read them from armies.json.
+    try:
+        armies = json.loads(Path(cfg.armies_path).read_text(encoding="utf-8"))
+        valid_uids = {str(a.get("uid")) for a in armies if isinstance(a, dict)}
+    except (OSError, ValueError):
+        valid_uids = set()
+    clean = sanitize_edits(edits, profile, valid_uids, valid_build_ids=_valid_build_ids())
     apply_edits(profile, clean)
     save_profile(profile, cfg.profile_path)
     append_command(cfg.commands_path, {"action": "profile_edit", "edits": clean})
