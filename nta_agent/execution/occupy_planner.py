@@ -218,3 +218,33 @@ def evaluate_target(
         target=target, ok=ok, score=score, prediction=prediction,
         yield_total=yield_total, need_stamina=need_stamina, reason=reason,
     )
+
+
+def plan_rally(idle_group, city, target_indices, evaluate, max_loss=0.0):
+    """Decide whether to consolidate scattered idle group armies at the city.
+
+    Occupy attacks only with co-located armies (scattered origins arrive in
+    staggered waves and lose pawns). When no single/co-located force wins a
+    frontier cell, but the FULL idle group — once rallied together at the city —
+    WOULD win one at ``<= max_loss``, this returns ``(armies_to_move,
+    target_index)`` so the caller marches the not-yet-home armies home; a
+    co-located attack from the city can then follow. Returns ``None`` when there
+    is nothing to consolidate or the combined force still can't win.
+
+    ``evaluate(armies, target_index)`` predicts the battle for ``armies`` already
+    re-based to the city; it returns an object with ``.win`` and
+    ``.loss_percent`` (or ``None``).
+    """
+    idle_group = list(idle_group or [])
+    if len(idle_group) < 2:
+        return None  # a lone army is already the single-army case
+    scattered = [a for a in idle_group if int(a.get("index", 0) or 0) != city]
+    if not scattered:
+        return None  # already all home -> a co-located plan should have been found
+    combined = [{**a, "index": city} for a in idle_group]
+    for t in target_indices:
+        pred = evaluate(combined, t)
+        if (pred is not None and getattr(pred, "win", False)
+                and getattr(pred, "loss_percent", 100.0) <= max_loss):
+            return (scattered, t)
+    return None

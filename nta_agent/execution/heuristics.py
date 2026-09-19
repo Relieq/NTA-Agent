@@ -178,6 +178,7 @@ class OccupyCell:
     threats_source: object = None  # callable -> enemy index set (P2 defense); wired in runner
     contest_range: int = 1     # a winnable candidate within this of an enemy is contested
     _pending: object = None    # (armies_list, target_index)
+    _rally: object = None       # (armies_to_move, city, for_target) — consolidate then attack
     _cooldown: int = 0
     _state_ref: object = None  # stashed for act()'s formation optimization
     _land_ref: int = 0
@@ -393,7 +394,46 @@ class OccupyCell:
             plan = best_plan(cands, plans_for, predict)
             kind = "occupy_plan"
         if plan is None:
+            # No single/co-located force wins outright. If the FULL idle group,
+            # once rallied together at the city, WOULD win a reachable target,
+            # consolidate them there ("tập hợp trước") so a co-located attack can
+            # follow next tick — instead of attacking scattered (which loses pawns
+            # to staggered arrival). Only fires as a fallback, so it never
+            # displaces a real single-army win.
+            from nta_agent.execution.army_health import is_idle
+            from nta_agent.execution.occupy_planner import plan_rally
+            grp = set()
+            if self.profile is not None:
+                from nta_agent.execution.profile import active_formation
+                grp = {str(x) for x in (active_formation(self.profile).get("group") or [])}
+            try:
+                allarmies = actions.get_player_armys()
+            except Exception:
+                allarmies = []
+            idle_grp = [a for a in allarmies
+                        if is_idle(a) and (a.get("pawns"))
+                        and not a.get("drillPawns") and not a.get("curingPawns")
+                        and (not grp or str(a.get("uid")) in grp)]
+            max_loss = float(self.profile.occupy.get("max_loss", 0) or 0) if self.profile else 0.0
+
+            def _eval(armies, tgt):
+                if tgt not in cand_by_index:
+                    return None
+                return predict(Plan(armies=armies, target=tgt, label="rally", prediction=None))
+            ry = plan_rally(idle_grp, state.main_city_index, list(cand_by_index),
+                            _eval, max_loss)
+            if ry is not None:
+                self._rally = (ry[0], state.main_city_index, ry[1])
+                self._pending = None
+                if self.on_event:
+                    w = 600
+                    self.on_event("rally", {
+                        "to": state.main_city_index,
+                        "armies": [a.get("name") or a.get("uid") for a in ry[0]],
+                        "for_target": ry[1], "for_target_xy": [ry[1] % w, ry[1] // w]})
+                return True
             return False
+        self._rally = None
         self._pending = (list(plan.armies), plan.target)
         self._state_ref = state
         self._land_ref = cand_by_index[plan.target].land_id
@@ -483,6 +523,29 @@ class OccupyCell:
                 pass  # never block the occupy
 
     def act(self, actions: Actions) -> None:
+        if self._rally is not None:
+            armies, city, _tgt = self._rally
+            self._rally = None
+            # One MoveCellArmy can pull armies from several cells home at once
+            # (no battle, so staggered arrival is harmless). Re-validate to idle
+            # armies that still have pawns, using their CURRENT index.
+            from nta_agent.execution.army_health import is_idle
+            try:
+                fresh = {str(a.get("uid")): a for a in actions.get_player_armys()}
+            except Exception:
+                fresh = {}
+            move = []
+            for a in armies:
+                cur = fresh.get(str(a.get("uid"))) if fresh else a
+                if cur is not None and is_idle(cur) and (cur.get("pawns") or []):
+                    move.append({"uid": str(cur.get("uid")),
+                                 "index": int(cur.get("index", 0) or 0)})
+            if move:
+                try:
+                    actions.move_cell_army(move, city)
+                except Exception:
+                    self._cooldown = self.fail_cooldown
+            return
         if not self._pending:
             return
         armies, target = self._pending
