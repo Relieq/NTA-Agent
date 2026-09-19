@@ -1020,26 +1020,39 @@ class Leveling:
                                        "pawn": act.pawn_uid or act.ready_uid})
         return act is not None
 
+    fail_cooldown: int = 12
+
     def act(self, actions: Actions) -> None:
         a = self._pending
         self._pending = None
         if a is None:
             return
-        if a.kind == "level":
-            actions.pawn_lving(a.index, a.level_uid, a.pawn_uid)
-        elif a.kind == "swap":
-            actions.exchange_pawn_army(a.index, a.farm_uid, a.low_uid, a.ready_uid,
-                                       army_uid2=a.level_uid)
-        elif a.kind == "pull":
-            from nta_agent.execution.leveling import LEVEL_ARMY_NAME
-            if a.create:
-                actions.change_pawn_army(a.index, a.src_uid, a.pawn_uid, "",
-                                         is_new_create=True, army_name=LEVEL_ARMY_NAME)
-            else:
-                actions.change_pawn_army(a.index, a.src_uid, a.pawn_uid, a.level_uid,
-                                         only_change=True)
-        elif a.kind == "dismiss":
-            actions.dismiss_army(a.index, a.level_uid, 0)
+        try:
+            if a.kind == "level":
+                actions.pawn_lving(a.index, a.level_uid, a.pawn_uid)
+            elif a.kind == "swap":
+                actions.exchange_pawn_army(a.index, a.farm_uid, a.low_uid, a.ready_uid,
+                                           army_uid2=a.level_uid)
+            elif a.kind == "pull":
+                from nta_agent.execution.leveling import LEVEL_ARMY_NAME
+                if a.create:
+                    actions.change_pawn_army(a.index, a.src_uid, a.pawn_uid, "",
+                                             is_new_create=True, army_name=LEVEL_ARMY_NAME)
+                else:
+                    actions.change_pawn_army(a.index, a.src_uid, a.pawn_uid, a.level_uid,
+                                             only_change=True)
+            elif a.kind == "dismiss":
+                actions.dismiss_army(a.index, a.level_uid, 0)
+        except Exception as e:
+            # Create-army/pull/swap can be rejected (e.g. ecode.500011 army-missing,
+            # army-cap). Back off instead of retrying every cycle, and surface it.
+            self._cooldown = self.fail_cooldown
+            if self.on_event:
+                self.on_event("leveling_error", {
+                    "kind": a.kind,
+                    "ecode": str(e).split("ecode.")[-1][:6] if "ecode." in str(e) else "",
+                    "msg": str(e)[:80]})
+            raise
 
 
 @dataclass
