@@ -31,12 +31,28 @@ def digest(state, profile, armies=None, territory=None, decisions=None) -> dict:
     from nta_agent.execution.logistics import ready_armies
     ready = [str(a.get("uid")) for a in ready_armies(
         armies or [], main, target=int(logistics.get("target", 9)))]
+    # rally points = cells where the farm group (army.group) sits, with free slots
+    # (<=5 armies/cell, engine DEFAULT_MAX_ARMY_COUNT) so the brain rallies a ready
+    # army to a real destination instead of guessing an index (or its own cell).
+    MAX_ARMIES_PER_CELL = 5
+    group = {str(u) for u in ((getattr(profile, "army", {}) or {}).get("group") or [])}
+    by_cell: dict[int, dict] = {}
+    for a in (armies or []):
+        idx = int(a.get("index", 0) or 0)
+        c = by_cell.setdefault(idx, {"total": 0, "farm": 0})
+        c["total"] += 1
+        if str(a.get("uid")) in group:
+            c["farm"] += 1
+    rally = [{"index": idx, "farm_armies": c["farm"],
+              "free_slots": max(0, MAX_ARMIES_PER_CELL - c["total"])}
+             for idx, c in sorted(by_cell.items()) if c["farm"] > 0]
     player = (getattr(state, "raw", None) or {}).get("player") or {}
     out = {
         "main_city_index": main,
         "resources": res,
         "armies": army_rows,
         "ready_to_redeploy": ready,  # full+idle city armies awaiting a destination
+        "rally_points": rally,       # farm-group cells + free slots to rally into
         "injured": len(player.get("injuryPawns") or []),  # dead pawns awaiting revive
         "profile": {"army": profile.army, "occupy": profile.occupy,
                     "build": getattr(profile, "build", {}),

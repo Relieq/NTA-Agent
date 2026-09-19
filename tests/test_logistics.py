@@ -205,3 +205,16 @@ def test_digest_lists_ready_to_redeploy():
     d = digest(st, prof, armies=armies)
     assert d["ready_to_redeploy"] == ["R"]
     assert {r["uid"]: r["index"] for r in d["armies"]} == {"R": MAIN, "Q": 5555}
+
+
+def test_digest_rally_points_from_farm_group():
+    from nta_agent.brain.digest import digest
+    from nta_agent.execution.profile import load_profile
+    st = _state(MAIN)
+    prof = load_profile("/nonexistent")
+    prof.army["group"] = ["F1"]  # farm group
+    armies = [_army("F1", 5555, 9), _army("G", 5555, 6),  # 2 armies at 5555
+              _army("R", MAIN, 9)]                         # ready, not farm
+    d = digest(st, prof, armies=armies)
+    # rally at the farm cell 5555 only; 2 armies there -> 3 free slots of 5
+    assert d["rally_points"] == [{"index": 5555, "farm_armies": 1, "free_slots": 3}]

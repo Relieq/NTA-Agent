@@ -43,12 +43,14 @@ _SYSTEM = (
     "and build.skip lists build ids to never auto-build/upgrade.\n"
     "logistics.enabled turns on auto-filling under-strength armies (consolidate "
     "pawns in the field, march short armies home to recruit). digest.ready_to_redeploy "
-    "lists armies now full+idle at the city awaiting orders: set logistics.redeploy["
-    "armyUid]=cellIndex to send one to farm/expand, or add its uid to army.group to "
-    "rejoin the farm — decide per the situation (keep defenders home if the enemy is near). "
-    "The redeploy cellIndex MUST be a DIFFERENT cell than the army's current index (see "
-    "digest.armies[].index) — never its own cell/main_city_index; to keep an army home, "
-    "omit it from redeploy instead."
+    "lists armies now full+idle at the city awaiting orders. Regroup logic: if farming "
+    "continues, RALLY a ready army to the farm group — set logistics.redeploy[armyUid]="
+    "index of a digest.rally_points entry that has free_slots>0 (that is where army.group "
+    "sits); if it should join the farm roster too, also add its uid to army.group. If the "
+    "enemy is near (territory.enemy_cells / nearest_enemy_dist) keep it home to defend — "
+    "just leave it out of redeploy. The redeploy index MUST differ from the army's own "
+    "index (digest.armies[].index) and from main_city_index, and MUST have free_slots>0 "
+    "(<=5 armies/cell). If there is no rally_point with room, keep the army home."
 )
 
 
