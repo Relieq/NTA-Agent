@@ -47,3 +47,21 @@ def test_unknown_names_fall_back():
     assert rows[0]["current_equip_desc"] == ""
     # unknown equip -> compatible, no effect text
     assert rows[0]["options"] == [{"uid": "x", "id": 9999, "name": "#9999", "desc": ""}]
+
+
+def test_lists_unlocked_pawn_type_without_config():
+    """pawnSlots with a chosen id but no configPawnMap -> still shown so it can be
+    geared, and an equip whose live shape lacks `id` derives it from the uid."""
+    st = GameState(source="api")
+    st.raw = {"player": {
+        "pawnSlots": {"1": {"id": 3101, "lv": 1},
+                      "2": {"selectIds": [3301, 3405], "lv": 2}},  # pending -> no id
+        "configPawnMap": None,
+        "equips": [{"uid": "6001_1", "attrs": [{"attr": [0, 2, 4]}]}],  # no `id` field
+    }}
+    rows = pawn_equipment(st, FakeConfig())
+    assert [r["pawn_id"] for r in rows] == [3101]           # only the chosen slot
+    r = rows[0]
+    assert r["current_equip_uid"] == "" and r["current_equip_name"] == ""
+    # equip id derived from uid "6001_1" -> 6001 (common) offered as an option
+    assert r["options"] == [{"uid": "6001_1", "id": 6001, "name": "Kiếm Sắt", "desc": "+10% công"}]
