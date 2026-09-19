@@ -21,11 +21,10 @@ export default {
  template:`<div class="card"><h2>Thành chính &amp; công trình</h2>
   <div class="muted">@{{ (s&&s.main_city_index)||"?" }} · hàng đợi {{ queue.length }}/{{ (s&&s.build_queue_slots)||0 }}</div>
 
-  <h3 style="margin:10px 0 4px">🔨 Đang xây / nâng cấp</h3>
-  <ul><li v-for="(b,i) in queue" :key="i">{{ nm(b.id) }} → <b>Lv{{ b.lv }}</b>
+  <h3 style="margin:10px 0 4px">{{ queue.length ? "🔨 Đang xây / nâng cấp" : "🛠️ Không có công trình đang xây" }}</h3>
+  <ul v-if="queue.length"><li v-for="(b,i) in queue" :key="i">{{ nm(b.id) }} → <b>Lv{{ b.lv }}</b>
        <span class="muted" v-if="remain(b,now)>0"> · còn {{ fmt(remain(b,now)) }}</span>
-       <span class="muted" v-else> · sắp xong…</span></li>
-   <li v-if="!queue.length" class="muted">(không có gì trong hàng đợi)</li></ul>
+       <span class="muted" v-else> · sắp xong…</span></li></ul>
 
   <h3 style="margin:10px 0 4px">Công trình đã có</h3>
   <ul><li v-for="b in builds" :key="b.uid">{{ nm(b.id) }} <b>Lv{{ b.lv }}</b></li>
