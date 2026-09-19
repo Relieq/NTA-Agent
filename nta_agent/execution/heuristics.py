@@ -342,9 +342,18 @@ class OccupyCell:
             dist = self._dist(state.main_city_index, c.index)
             if sim is not None:
                 try:
+                    # Pass the REAL guardians (from get_area) as the enemy — letting the
+                    # sim generate them from land_id fails here (get_area gives no
+                    # land_id, so land_id=0 -> the generator throws -> SimUnavailable ->
+                    # fell back to the pessimistic stats predictor).
+                    enemy = None
+                    if c.defenders:
+                        enemy = {"armys": [{"index": c.index, "uid": "npc", "owner": "",
+                                            "state": 2, "pawns": c.defenders}],
+                                 "hp": [c.hp[0], c.hp[1]]}
                     return sim.predict_armies(
-                        state, plan.armies,
-                        target_index=c.index, land_id=c.land_id, distance=dist)
+                        state, plan.armies, target_index=c.index, land_id=c.land_id,
+                        distance=dist, enemy_army_conf=enemy)
                 except SimUnavailable:
                     pass
             pawns = [p for a in plan.armies for p in (a.get("pawns") or [])]
