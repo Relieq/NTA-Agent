@@ -51,3 +51,13 @@ def test_forecast_prefers_pawn_own_equip_over_config():
                "pawns": [{"uid": "p1", "id": 3101, "lv": 1, "equip": own}]}]
     out = build_forecast_input(st, armies, target_index=9, land_id=0, distance=1)
     assert out["armies"][0]["pawns"][0]["equip"] == own
+
+
+def test_pawn_hp_map_normalized_to_list():
+    """Live pawns carry hp as a protobuf map {0:cur,1:max}; list() on it returns
+    the KEYS ([0,1]) and put every pawn into the sim at 1 hp -> always lost."""
+    from nta_agent.execution.predictors.sim_input import _pawn
+    assert _pawn({"id": 3101, "lv": 1, "hp": {0: 135, 1: 135}})["hp"] == [135, 135]
+    assert _pawn({"id": 3101, "lv": 1, "hp": {"0": 100, "1": 135}})["hp"] == [100, 135]
+    assert _pawn({"id": 3101, "lv": 1, "hp": [120, 135]})["hp"] == [120, 135]
+    assert _pawn({"id": 3101, "lv": 1})["hp"] is None  # enemy w/o hp -> engine computes

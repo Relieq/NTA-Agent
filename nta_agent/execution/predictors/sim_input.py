@@ -11,6 +11,22 @@ from typing import Any
 from nta_agent.state.schema import GameState
 
 
+def _hp_list(hp) -> list[int] | None:
+    """Normalize a pawn's hp to ``[cur, max]``. Live pawns carry hp as a protobuf
+    map ``{0: cur, 1: max}`` (int or str keys) — ``list(hp)`` on that returns the
+    KEYS ([0, 1]), which put every pawn into the sim at 1 hp and made it lose every
+    battle. Also accept ``[cur, max]`` and ``{curHp, maxHp}``."""
+    if isinstance(hp, dict):
+        cur = hp.get(0, hp.get("0", hp.get("curHp")))
+        mx = hp.get(1, hp.get("1", hp.get("maxHp")))
+        if cur is not None and mx is not None:
+            return [int(cur), int(mx)]
+        return None
+    if isinstance(hp, (list, tuple)) and len(hp) >= 2:
+        return [int(hp[0]), int(hp[1])]
+    return None
+
+
 def _config_equips(state: GameState) -> dict[int, dict]:
     """Resolve each pawn TYPE's equipped gear from ``configPawnMap`` -> its equip
     (uid, id, attrs). A pawn's own ``equip`` field is empty in the API (the loadout
@@ -37,7 +53,7 @@ def _pawn(p: dict[str, Any], equips_by_pid: dict[int, dict] | None = None) -> di
         "uid": p.get("uid"),
         "id": int(p.get("id", 0)),
         "lv": int(p.get("lv", 0) or 0),
-        "hp": list(p["hp"]) if p.get("hp") else None,
+        "hp": _hp_list(p.get("hp")),
         "buffs": p.get("buffs") or [],
         "skills": p.get("skills") or [],
         "treasures": p.get("treasures") or [],
