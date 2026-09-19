@@ -60,6 +60,31 @@ def test_apply_edits_merges_and_activates():
     assert apply_edits(p, {}) is False        # no-op
 
 
+def test_group_edit_lands_in_active_preset(tmp_path):
+    """The farm-group picker posts army.group while a preset is active. The edit
+    must stick (and reach active_formation), not be reverted by the preset->flat
+    sync to the preset's empty group. Regression: leveling never ran because the
+    group vanished on save."""
+    from nta_agent.execution.profile import (
+        active_formation,
+        apply_edits,
+        load_profile,
+        save_profile,
+    )
+    p = load_profile("none")
+    p.army["presets"]["Default Formation"] = {"group": [], "roles": {}}
+    p.army["active"] = "Default Formation"
+    changed = apply_edits(p, {"army": {"group": ["u1", "u2"]}})
+    assert changed is True
+    assert p.army["group"] == ["u1", "u2"]                       # flat kept
+    assert p.army["presets"]["Default Formation"]["group"] == ["u1", "u2"]  # preset too
+    assert active_formation(p)["group"] == ["u1", "u2"]          # what leveling reads
+    # survives a save/load round-trip
+    save_profile(p, tmp_path / "profile.json")
+    q = load_profile(tmp_path / "profile.json")
+    assert active_formation(q)["group"] == ["u1", "u2"]
+
+
 def test_notes_edit_replaces_list():
     p = load_profile("none")
     apply_edits(p, {"notes": ["a"]})

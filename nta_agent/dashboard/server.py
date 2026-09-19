@@ -95,7 +95,7 @@ def read_profile_view(cfg) -> dict:
     """Current profile plus building-name map + in-city catalogue (for the editor),
     filtered to the current game mode (room_type from the snapshot)."""
     from nta_agent.dashboard.names import load_build_names
-    from nta_agent.execution.profile import load_profile
+    from nta_agent.execution.profile import active_formation, load_profile
     profile = load_profile(cfg.profile_path)
     names = load_build_names()
     room_type = read_state(cfg.snapshot_path).get("room_type")
@@ -107,6 +107,9 @@ def read_profile_view(cfg) -> dict:
     catalogue = [{"id": bid, "name": names.get(bid, f"#{bid}")} for bid in ids]
     return {"active": profile.army.get("active", ""),
             "presets": list(profile.army.get("presets") or {}),
+            # effective farm group (active preset's, else flat) so FarmGroupPanel
+            # can restore the saved selection after a reload.
+            "army": {"group": active_formation(profile).get("group") or []},
             "notes": profile.notes,
             "build": profile.build,
             "leveling": getattr(profile, "leveling", {}),

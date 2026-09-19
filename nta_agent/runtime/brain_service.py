@@ -89,12 +89,14 @@ class BrainService:
 
     def _refresh_human_fields(self) -> None:
         """Re-read the dashboard-owned sections the brain never edits (build,
-        leveling, forge) from disk into the shared profile, right before saving, so
-        the brain's save can't clobber a dashboard edit made mid-tick."""
+        leveling, forge, army) from disk into the shared profile, right before
+        saving, so the brain's save can't clobber a dashboard edit made mid-tick.
+        army holds the user's farm group (FarmGroupPanel), which leveling/occupy
+        read but the brain must not overwrite."""
         try:
             from nta_agent.execution.profile import load_profile
             disk = load_profile(self.cfg.profile_path)
-            for f in ("build", "leveling", "forge"):
+            for f in ("build", "leveling", "forge", "army"):
                 setattr(self.profile, f, getattr(disk, f))
         except Exception:
             pass
@@ -129,18 +131,24 @@ class BrainService:
             # it in the digest and tends to echo it back, and the valid-id filter
             # then emptied it — wiping the user's build order every brain run. The
             # brain never edits build; it advises via `advice` instead.
+            # build.order/skip and army.group are the human's plan (set via the
+            # dashboard). The LLM sees them in the digest and tends to echo them
+            # back; the valid-id/uid filter then emptied them — wiping the user's
+            # build order and farm group every brain run. The brain never edits
+            # these; it advises via `advice` instead.
             if isinstance(edits, dict):
                 edits.pop("build", None)
+                edits.pop("army", None)
             valid = {str(a.get("uid")) for a in armies}
             clean = sanitize_edits(edits, self.profile, valid,
                                    valid_build_ids=self._valid_build_ids())
             changed = apply_edits(self.profile, clean)
             if changed:
-                # Human-owned config (build, leveling) is edited by the dashboard in
-                # another process. Even though the brain never edits it, saving the
-                # whole profile would write our possibly-stale copy and clobber a
-                # dashboard edit made since this tick started. Re-read those sections
-                # from disk right before saving so the latest dashboard value wins.
+                # Human-owned config (build, leveling, forge, army) is edited by the
+                # dashboard in another process. Even though the brain never edits it,
+                # saving the whole profile would write our possibly-stale copy and
+                # clobber a dashboard edit made since this tick started. Re-read those
+                # sections from disk right before saving so the latest dashboard wins.
                 self._refresh_human_fields()
                 save_profile(self.profile, self.cfg.profile_path)
             advice = clean.get("advice") or []

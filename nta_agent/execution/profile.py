@@ -156,8 +156,20 @@ def apply_edits(profile: Profile, clean: dict) -> bool:
             if lg.get(k) != v:
                 lg[k] = v
                 changed = True
+    # A preset being active makes THAT preset the source of truth (active_formation
+    # reads it). A direct formation edit — e.g. the farm-group picker posting
+    # army.group — must therefore land in the active preset, or the preset->flat
+    # sync below reverts it to the preset's (empty) group. Mirror edited formation
+    # fields into the active preset first, then sync preset -> flat.
     active = profile.army.get("active") or ""
-    preset = (profile.army.get("presets") or {}).get(active)
+    presets = profile.army.get("presets") or {}
+    edited_army = clean.get("army") if isinstance(clean.get("army"), dict) else {}
+    if active in presets and isinstance(presets[active], dict):
+        for k in ("group", "roles", "onetile", "composition"):
+            if k in edited_army and presets[active].get(k) != edited_army[k]:
+                presets[active][k] = edited_army[k]
+                changed = True
+    preset = presets.get(active)
     if preset:
         for k in ("group", "roles", "onetile", "composition"):
             if k in preset and profile.army.get(k) != preset[k]:

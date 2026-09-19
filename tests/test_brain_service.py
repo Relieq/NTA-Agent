@@ -22,13 +22,14 @@ def test_applies_sanitized_edits_in_place_and_emits(tmp_path):
     prof = load_profile("none")
     events = []
     actions = SimpleNamespace(get_player_armys=lambda: [{"uid": "A", "name": "D1", "pawns": []}])
+    before_group = list(prof.army.get("group") or [])
     svc = BrainService(prof, _cfg(tmp_path), on_event=lambda k, d: events.append((k, d)),
                        actions=actions, policy=BrainPolicy(every_ticks=1, max_calls=5),
                        llm_propose=lambda dg, p: {"occupy": {"max_loss": 12},
                                                   "army": {"group": ["A"]}, "rationale": "tune"})
     svc.tick(_state())
     assert prof.occupy["max_loss"] == 12       # mutated in place
-    assert prof.army["group"] == ["A"]
+    assert prof.army.get("group") == before_group  # army is human-owned; brain ignores it
     assert any(k == "brain_plan" for k, d in events)
     assert (tmp_path / "profile.json").exists()  # persisted
 
@@ -117,7 +118,8 @@ def test_brain_never_edits_build_order(tmp_path):
     build.order/skip (set via dashboard) is never clobbered."""
     from pathlib import Path
 
-    from nta_agent.execution.profile import load_profile as _load, save_profile as _save
+    from nta_agent.execution.profile import load_profile as _load
+    from nta_agent.execution.profile import save_profile as _save
     cfg = _cfg(tmp_path)
     Path(cfg.profile_path).parent.mkdir(parents=True, exist_ok=True)
     disk = _load(str(cfg.profile_path))               # the human's build, on disk
@@ -145,7 +147,8 @@ def test_brain_save_does_not_clobber_dashboard_build_edit(tmp_path):
     cfg = _cfg(tmp_path)
     Path(cfg.profile_path).parent.mkdir(parents=True, exist_ok=True)
     # "dashboard" wrote a newer build to disk mid-tick
-    from nta_agent.execution.profile import save_profile as _save, load_profile as _load
+    from nta_agent.execution.profile import load_profile as _load
+    from nta_agent.execution.profile import save_profile as _save
     disk = _load(str(cfg.profile_path)); disk.build = {"order": [2001, 2004], "skip": [2000]}
     _save(disk, str(cfg.profile_path))
     actions = SimpleNamespace(get_player_armys=lambda: [{"uid": "A", "name": "D1", "pawns": []}])
@@ -156,3 +159,30 @@ def test_brain_save_does_not_clobber_dashboard_build_edit(tmp_path):
     saved = _json.loads(Path(cfg.profile_path).read_text(encoding="utf-8"))
     assert saved["build"] == {"order": [2001, 2004], "skip": [2000]}  # dashboard's, not [1]
     assert saved["occupy"]["max_loss"] == 7                            # brain edit persisted
+
+
+def test_brain_save_does_not_clobber_dashboard_farm_group(tmp_path):
+    """The user sets the farm group (army.group) via the dashboard mid-tick; the
+    brain's save must re-read it from disk, not overwrite it with its stale copy.
+    Without this, leveling/occupy never see the group and never run."""
+    import json as _json
+    from pathlib import Path
+
+    from nta_agent.execution.profile import load_profile as _load
+    from nta_agent.execution.profile import save_profile as _save
+    prof = load_profile("none")
+    prof.army = {**prof.army, "group": []}            # brain's stale/empty copy
+    cfg = _cfg(tmp_path)
+    Path(cfg.profile_path).parent.mkdir(parents=True, exist_ok=True)
+    # "dashboard" wrote the user's farm group to disk mid-tick
+    disk = _load(str(cfg.profile_path))
+    disk.army = {**disk.army, "group": ["1789811706664002", "1789755140946001"]}
+    _save(disk, str(cfg.profile_path))
+    actions = SimpleNamespace(get_player_armys=lambda: [{"uid": "A", "name": "D1", "pawns": []}])
+    svc = BrainService(prof, cfg, actions=actions,
+                       policy=BrainPolicy(every_ticks=1, max_calls=5),
+                       llm_propose=lambda dg, p: {"occupy": {"max_loss": 7}})  # brain edit -> save
+    svc.tick(_state())
+    saved = _json.loads(Path(cfg.profile_path).read_text(encoding="utf-8"))
+    assert saved["army"]["group"] == ["1789811706664002", "1789755140946001"]  # user's, not []
+    assert saved["occupy"]["max_loss"] == 7                                      # brain edit persisted
