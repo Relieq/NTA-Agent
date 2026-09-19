@@ -171,6 +171,29 @@ def from_entry_rst(rst: dict[str, Any], user: dict[str, Any] | None = None) -> G
     return state
 
 
+def expire_build_queue(build_queue: list[dict], deadlines: dict[str, float],
+                       now: float) -> tuple[list[dict], dict[str, float]]:
+    """Drop build-queue items whose time is up, so a missed build-complete push
+    never freezes construction. ``deadlines`` maps a queue item's uid to its
+    absolute completion time; a uid is stamped ``now + surplusTime`` the first
+    time it is seen (surplusTime is the ms remaining at that moment). Returns the
+    kept list and the pruned deadlines. Pure — the caller owns the deadline map.
+    """
+    kept, seen = [], set()
+    for item in build_queue or []:
+        uid = str(item.get("uid", ""))
+        if not uid:
+            kept.append(item)  # can't track it -> keep, let the server correct us
+            continue
+        seen.add(uid)
+        if uid not in deadlines:
+            deadlines[uid] = now + int(item.get("surplusTime", 0) or 0) / 1000.0
+        if now < deadlines[uid]:
+            kept.append(item)
+    deadlines = {u: d for u, d in deadlines.items() if u in seen}
+    return kept, deadlines
+
+
 def apply_update_output(state: GameState, out: dict[str, Any]) -> None:
     """Apply an UpdateOutPut block (from ClaimCityOutput or a resource notify)."""
     r = state.resources

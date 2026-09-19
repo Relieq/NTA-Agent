@@ -58,6 +58,7 @@ class GameSession:
     _distinct_id: str = ""
     _sid: int | None = None
     _in_game: bool = False
+    _bt_deadlines: dict = field(default_factory=dict)  # build uid -> completion time
     _login_opts: dict = field(default_factory=lambda: {
         "lang": "vi", "os": "Android 9", "platform": "google", "version": "4.4.4"})
 
@@ -225,8 +226,18 @@ class GameSession:
 
     def sync(self) -> GameState:
         """Apply pending player/user update pushes into state, keeping it current."""
-        from nta_agent.state.store import apply_notify
+        from nta_agent.state.store import apply_notify, expire_build_queue
         for p in self.drain_pushes():
             if isinstance(p.data, dict) and "list" in p.data:
                 apply_notify(self.state, p.data)
+        # Belt-and-suspenders: drop finished builds by wall-clock even if the
+        # build-complete push was missed, so construction never freezes.
+        self.state.build_queue, self._bt_deadlines = expire_build_queue(
+            self.state.build_queue, self._bt_deadlines, time.time())
+        # Stamp an absolute completion time so the dashboard can count down live
+        # (surplusTime alone is static between server updates -> looks frozen).
+        for item in self.state.build_queue:
+            uid = str(item.get("uid", ""))
+            if uid in self._bt_deadlines:
+                item["endAt"] = int(self._bt_deadlines[uid] * 1000)
         return self.state

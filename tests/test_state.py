@@ -144,3 +144,20 @@ def test_apply_notify_updates_building_level():
         "index": 5, "uid": "b1", "id": 2001, "lv": 6, "point": {"x": 1, "y": 2}}}]})
     b = next(b for b in st.builds if b.uid == "b1")
     assert b.lv == 6
+
+
+def test_expire_build_queue_drops_finished():
+    from nta_agent.state.store import expire_build_queue
+    q = [{"uid": "b1", "id": 2001, "lv": 6, "surplusTime": 60000}]  # 60s remaining
+    dl = {}
+    # first sight at t=1000: stamp deadline 1000+60=1060, still building
+    kept, dl = expire_build_queue(q, dl, 1000.0)
+    assert [i["uid"] for i in kept] == ["b1"]
+    # well past the deadline -> dropped (deadline retained while the item is still
+    # sent, so it stays expired rather than being re-stamped)
+    kept, dl = expire_build_queue(q, dl, 1100.0)
+    assert kept == []
+    assert dl == {"b1": 1060.0}
+    # once the server stops sending it, the deadline is pruned
+    kept, dl = expire_build_queue([], dl, 1200.0)
+    assert kept == [] and dl == {}
