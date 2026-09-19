@@ -3,7 +3,7 @@
 from dataclasses import dataclass, field
 
 from nta_agent.execution.heuristics import OccupyCell
-from nta_agent.execution.occupy_planner import discover_targets
+from nta_agent.execution.occupy_planner import discover_around, discover_targets
 from nta_agent.execution.predictors.battle import BattlePrediction, BattlePredictor
 from nta_agent.execution.predictors.sim_bridge import SimUnavailable
 from nta_agent.state.schema import GameState
@@ -48,6 +48,24 @@ def test_discover_skips_cells_whose_probe_errors():
 
     cands = discover_targets(probe, center, 1, my_uid="me")
     assert {c.index for c in cands} == {center - 1}
+
+
+def test_discover_around_covers_army_frontier():
+    # City far from a frontier army; a defended cell sits next to the ARMY, not the
+    # city. discover_around (centers = city + army) must find it; probing only the
+    # city (radius 1) would miss it.
+    city = 100 * W + 100
+    army = 100 * W + 110          # 10 cells east of the city (owned frontier)
+    world = {
+        city: _cell(owner="me"),
+        army: _cell(owner="me"),               # army stands on an owned cell
+        army + 1: _cell(owner="", pawns=[100]),  # defended cell next to the army
+    }
+    # city-only discovery (radius 1) misses it
+    assert discover_targets(lambda i: world.get(i, {}), city, 1, "me") == []
+    # multi-center discovery finds the army-adjacent target
+    cands = discover_around(lambda i: world.get(i, {}), {city, army}, 1, "me")
+    assert {c.index for c in cands} == {army + 1}
 
 
 @dataclass

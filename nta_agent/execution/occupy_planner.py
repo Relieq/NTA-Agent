@@ -76,6 +76,60 @@ def discover_targets(
     return out
 
 
+def discover_around(
+    get_area: Callable[[int], dict],
+    centers,
+    radius: int,
+    my_uid: str,
+    map_width: int = MAP_WIDTH,
+) -> list[Candidate]:
+    """Discover occupiable cells around SEVERAL centers in one deduped probe pass.
+
+    Occupy needs an army on a cell orthogonally adjacent to the target, so the
+    reachable targets sit next to where armies already are — probe around the city
+    AND each idle army, not just the city. Each map cell is fetched at most once.
+    """
+    centers = {int(c) for c in centers if c}
+    probe: set[int] = set()
+    for ctr in centers:
+        cx, cy = ctr % map_width, ctr // map_width
+        for dy in range(-radius, radius + 1):
+            for dx in range(-radius, radius + 1):
+                probe.add((cy + dy) * map_width + (cx + dx))
+
+    owned: set[int] = set()
+    occupiable: list[Candidate] = []
+    for idx in probe:
+        try:
+            area = get_area(idx) or {}
+        except Exception:
+            area = {}
+        if str(area.get("owner", "")) == my_uid:
+            owned.add(idx)
+            continue
+        if area.get("cityId"):
+            continue
+        pawns = [p for g in area.get("armys", []) or [] for p in g.get("pawns", []) or []]
+        if pawns:
+            hp = area.get("hp") or [0, 0]
+            occupiable.append(Candidate(index=idx, defenders=pawns,
+                                        hp=(int(hp[0]), int(hp[-1])),
+                                        land_id=int(area.get("landId", 0) or 0)))
+
+    def owned_nbrs(idx: int) -> int:
+        x, y = idx % map_width, idx // map_width
+        return sum((y + ny) * map_width + (x + nx) in owned
+                   for nx, ny in ((-1, 0), (1, 0), (0, -1), (0, 1)))
+
+    out = []
+    for c in occupiable:
+        n = owned_nbrs(c.index)
+        if n:
+            c.owned_neighbors = n
+            out.append(c)
+    return out
+
+
 def land_yield(config: GameConfig, land_id: int) -> dict[str, int]:
     """The per-collection resource yield of a land type (cereal/timber/stone)."""
     row = config.table("land").get(land_id) or {}

@@ -294,10 +294,19 @@ class OccupyCell:
         if self._cooldown > 0:
             self._cooldown -= 1
             return False
-        from nta_agent.execution.occupy_planner import discover_targets
-        cands = discover_targets(
+        from nta_agent.execution.army_health import is_idle as _idle
+        from nta_agent.execution.occupy_planner import discover_around
+        # Probe around the city AND each idle army: occupy needs an army adjacent to
+        # the target, so the reachable frontier is next to where armies already sit.
+        centers = {state.main_city_index}
+        try:
+            centers |= {int(a.get("index", 0) or 0)
+                        for a in actions.get_player_armys() if _idle(a)}
+        except Exception:
+            pass
+        cands = discover_around(
             lambda i: actions.get_area(i).get("data", {}),
-            state.main_city_index, self.radius, state.user.uid,
+            centers, self.radius, state.user.uid,
         )
         self._cooldown = self.discover_every  # throttle regardless of outcome
         predictor = self._pred()      # stats: fallback verdict
@@ -310,9 +319,13 @@ class OccupyCell:
 
         def plans_for(i):
             # Candidate selection-orders from the active formation group (or all reachable).
-            # Only IDLE armies can be sent (skip marching/fighting/recruiting/leveling).
+            # Only IDLE armies can be sent (skip marching/fighting/recruiting/leveling),
+            # and — verified live — the server only accepts an occupy whose armies sit on
+            # a cell ORTHOGONALLY ADJACENT to the target (else ecode.500000). Filter to
+            # adjacent idle armies so we never send a doomed cross-map occupy.
             from nta_agent.execution.army_health import is_idle
-            avail = [a for a in actions.select_armies(i) if is_idle(a)]
+            avail = [a for a in actions.select_armies(i)
+                     if is_idle(a) and self._dist(int(a.get("index", 0) or 0), i) == 1]
             grp = []
             if self.profile is not None:
                 from nta_agent.execution.profile import active_formation
