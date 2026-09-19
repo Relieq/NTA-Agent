@@ -97,3 +97,22 @@ def test_full_mark_cleared_when_army_pawn_count_changes():
     # a pawn leaves A (count changes) -> stale full mark dropped, A eligible again
     act.armys[0]["pawns"] = [{}]
     assert r.applies(st, act) is True
+
+
+def test_500054_stops_creating_new_armies():
+    from nta_agent.io.api.client import ApiError
+    st = _state([3101])
+
+    class FullActions(FakeActions):
+        def drill_pawn(self, build_uid, pawn_id, *, index=None, army_uid="", army_name=""):
+            if not army_uid:  # creating a new army -> server: at army cap
+                raise ApiError("game/HD_DrillPawn: ecode.500054")
+            self.calls.append((build_uid, pawn_id, army_uid, army_name)); return {}
+
+    # one full army -> rule wants to create a new one -> 500054 -> learn the cap
+    act = FullActions(st, armys=[{"uid": "A", "pawns": [{}] * 9, "state": None}])
+    r = Recruit(config=False)
+    assert r.applies(st, act) is True
+    r.act(act)                       # 500054 -> _max_army_count learned
+    assert act.calls == []
+    assert r.applies(st, act) is False   # won't try to create a new army again

@@ -14,7 +14,7 @@ from dataclasses import dataclass, field
 from nta_agent.execution.actions import Actions
 from nta_agent.execution.captcha import CaptchaRequired
 from nta_agent.execution.heuristics import RuleEngine
-from nta_agent.io.api.client import ApiError, NotConnected
+from nta_agent.io.api.client import ApiError, NotConnected, is_session_error
 from nta_agent.io.api.session import GameSession, TokenChainBroken
 
 # Errors that mean "connection/session is stale" — recoverable by reconnecting.
@@ -89,6 +89,14 @@ class Agent:
                 self._emit("connection_lost", e)
                 self._recover()
                 continue  # retry the tick immediately after recovery
+            except ApiError as e:
+                # A session-down ApiError (e.g. "Service(type:game) not found",
+                # re-raised from a rule) is recoverable; a real ecode is not.
+                if is_session_error(e):
+                    self._emit("connection_lost", e)
+                    self._recover()
+                    continue
+                raise
             if on_tick:
                 on_tick(i, fired, self.session.state)
             i += 1
