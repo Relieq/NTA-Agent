@@ -186,13 +186,40 @@ def apply_update_output(state: GameState, out: dict[str, Any]) -> None:
 def apply_player_update(state: GameState, item: dict[str, Any]) -> None:
     """Apply one OnUpdatePlayerInfoNotify item (a tagged union keyed by ``type``).
 
-    Only resource updates (data_1/data_41 = UpdateOutPut) are promoted so far;
-    everything else is left for later handlers.
+    Fields are named ``data_<type>``; only the one matching ``type`` is set.
+    Handled: resources (data_1/data_41 = UpdateOutPut), the build queue
+    (data_6 = repeated BTInfo) and a completed/upgraded building (data_5 =
+    AreaBuildInfo). Without the build ones, a finished upgrade never clears
+    ``build_queue`` nor bumps the building level, so the state (and dashboard)
+    stayed frozen on "đang xây" and build_order saw the slot permanently full.
     """
     for key in ("data_1", "data_41"):
         block = item.get(key)
         if isinstance(block, dict):
             apply_update_output(state, block)
+    # UPDATE_BT_QUEUE: the authoritative build queue. A finished build sends the
+    # queue without it (often empty) — replace wholesale so it can clear.
+    if item.get("type") == 6:
+        q = item.get("data_6")
+        state.build_queue = list(q) if isinstance(q, list) else []
+    # A single building at its new level (build complete / upgraded).
+    bld = item.get("data_5")
+    if isinstance(bld, dict):
+        _apply_build_update(state, bld)
+
+
+def _apply_build_update(state: GameState, info: dict[str, Any]) -> None:
+    """Merge one AreaBuildInfo (index,uid,id,lv,point) into ``state.builds``."""
+    b = _building(info)
+    if not b.index:
+        b.index = state.main_city_index
+    for existing in state.builds:
+        if (b.uid and existing.uid == b.uid) or (existing.id == b.id and existing.index == b.index):
+            existing.lv = b.lv
+            if b.uid:
+                existing.uid = b.uid
+            return
+    state.builds.append(b)
 
 
 def apply_notify(state: GameState, notify: dict[str, Any]) -> GameState:

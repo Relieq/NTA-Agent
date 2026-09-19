@@ -116,3 +116,31 @@ def test_apply_notify_updates_resources():
     assert st.resources.timber == 300
     assert st.resources.iron == 5
     assert st.resources.gold == 42
+
+
+def test_apply_notify_updates_build_queue():
+    from nta_agent.state import apply_notify, from_entry_rst
+    st = from_entry_rst({"player": {"uid": "1",
+        "btQueues": [{"index": 5, "uid": "b1", "id": 2001, "lv": 6,
+                      "needTime": 820000, "surplusTime": 543894}]}})
+    assert len(st.build_queue) == 1
+    # UPDATE_BT_QUEUE (type 6, data_6 = repeated BTInfo). A finished build sends the
+    # queue WITHOUT it — here empty -> the stale queue must clear.
+    apply_notify(st, {"list": [{"type": 6, "data_6": []}]})
+    assert st.build_queue == []
+    # a fresh queue replaces the list
+    apply_notify(st, {"list": [{"type": 6, "data_6": [
+        {"index": 5, "uid": "b2", "id": 2002, "lv": 3, "surplusTime": 1000}]}]})
+    assert [b["id"] for b in st.build_queue] == [2002]
+
+
+def test_apply_notify_updates_building_level():
+    from nta_agent.state import apply_notify, from_entry_rst
+    st = from_entry_rst({"player": {"uid": "1", "mainCityIndex": 5,
+        "builds": [{"index": 5, "uid": "b1", "id": 2001, "lv": 5}]}})
+    assert [(b.id, b.lv) for b in st.builds] == [(2001, 5)]
+    # AreaBuildInfo (type 5, data_5): the completed build at its new level.
+    apply_notify(st, {"list": [{"type": 5, "data_5": {
+        "index": 5, "uid": "b1", "id": 2001, "lv": 6, "point": {"x": 1, "y": 2}}}]})
+    b = next(b for b in st.builds if b.uid == "b1")
+    assert b.lv == 6
