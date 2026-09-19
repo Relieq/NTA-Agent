@@ -1,5 +1,9 @@
-"""Tests for the army-logistics planner (dồn/kéo về/sẵn sàng)."""
+"""Tests for the army-logistics planner (dồn/kéo về/sẵn sàng) + the Logistics rule."""
+from types import SimpleNamespace
+
+from nta_agent.execution.heuristics import Logistics
 from nta_agent.execution.logistics import plan_logistics, ready_armies
+from nta_agent.state.schema import GameState, User
 
 
 def _pawn(uid, hp):  # hp as live protobuf map {0:cur,1:max}
@@ -68,3 +72,110 @@ def test_ready_armies_are_full_idle_at_city():
     marching = _army("M", MAIN, 9, state=1)
     ready = ready_armies([full_city, part_city, full_field, marching], MAIN, target=9)
     assert [a["uid"] for a in ready] == ["R"]
+
+
+# --- Logistics rule ---------------------------------------------------------- #
+def _state(main):
+    st = GameState(source="api")
+    st.user = User(uid="me")
+    st.main_city_index = main
+    st.raw = {"player": {"mainCityIndex": main, "fortAutoSupports": []}}
+    return st
+
+
+class FakeActions:
+    def __init__(self, armies, main):
+        self._armies, self._main = armies, main
+        self.moved, self.changed = [], []
+
+    def get_player_armys(self):
+        return self._armies
+
+    def main_city_index(self):
+        return self._main
+
+    def move_cell_army(self, armies, target, **kw):
+        self.moved.append(([a["uid"] for a in armies], target))
+        return {}
+
+    def change_pawn_army(self, index, army_uid, pawn_uid, new_army_uid, **kw):
+        self.changed.append((army_uid, pawn_uid, new_army_uid))
+        return {}
+
+
+def _prof(**over):
+    lg = {"enabled": True, "target": 9, "heal_skip_frac": 0.2, "exclude": [],
+          "min_shortfall": 1, "redeploy": {}}
+    lg.update(over)
+    return SimpleNamespace(logistics=lg)
+
+
+def test_rule_disabled_by_default():
+    st = _state(MAIN)
+    acts = FakeActions([_army("A", 5555, 5)], MAIN)
+    rule = Logistics(check_every=0, profile=SimpleNamespace(logistics={"enabled": False}))
+    assert rule.applies(st, acts) is False
+
+
+def test_rule_brings_home_field_army():
+    st = _state(MAIN)
+    acts = FakeActions([_army("A", 5555, 5)], MAIN)
+    rule = Logistics(check_every=0, profile=_prof())
+    assert rule.applies(st, acts) is True
+    rule.act(acts)
+    assert acts.moved == [(["A"], MAIN)]
+
+
+def test_rule_consolidates_pawns():
+    st = _state(MAIN)
+    keeper = _army("K", 5555, 6)
+    donor = _army("D", 5555, [80, 95, 90, 85])
+    acts = FakeActions([keeper, donor], MAIN)
+    rule = Logistics(check_every=0, profile=_prof())
+    assert rule.applies(st, acts) is True
+    rule.act(acts)
+    assert {c[1] for c in acts.changed} == {"Dp1", "Dp2", "Dp3"}
+    assert all(c[0] == "D" and c[2] == "K" for c in acts.changed)
+
+
+def test_rule_redeploy_consumes_instruction():
+    st = _state(MAIN)
+    prof = _prof(redeploy={"R": 7777})
+    acts = FakeActions([_army("R", MAIN, 9)], MAIN)
+    rule = Logistics(check_every=0, profile=prof)
+    assert rule.applies(st, acts) is True
+    rule.act(acts)
+    assert acts.moved == [(["R"], 7777)]
+    assert prof.logistics["redeploy"] == {}  # one-shot consumed
+
+
+# --- brain seam -------------------------------------------------------------- #
+def test_sanitize_logistics_redeploy_valid_uid_only():
+    from nta_agent.brain.guard import sanitize_edits
+    from nta_agent.execution.profile import load_profile
+    prof = load_profile("/nonexistent")  # defaults
+    edits = {"logistics": {"enabled": True, "target": 9,
+                           "redeploy": {"R": 7777, "GHOST": 5, "R2": 0}}}
+    clean = sanitize_edits(edits, prof, valid_army_uids=["R", "R2"])
+    assert clean["logistics"]["enabled"] is True
+    # GHOST dropped (unknown uid); R2 dropped (index 0 invalid); R kept
+    assert clean["logistics"]["redeploy"] == {"R": 7777}
+
+
+def test_apply_edits_merges_logistics():
+    from nta_agent.execution.profile import apply_edits, load_profile
+    prof = load_profile("/nonexistent")
+    assert apply_edits(prof, {"logistics": {"enabled": True, "redeploy": {"R": 42}}})
+    assert prof.logistics["enabled"] is True
+    assert prof.logistics["redeploy"] == {"R": 42}
+
+
+def test_digest_lists_ready_to_redeploy():
+    from nta_agent.brain.digest import digest
+    from nta_agent.execution.profile import load_profile
+    st = _state(MAIN)
+    prof = load_profile("/nonexistent")
+    armies = [_army("R", MAIN, 9), _army("Q", 5555, 4)]
+    d = digest(st, prof, armies=armies)
+    assert d["ready_to_redeploy"] == ["R"]
+    assert {r["uid"]: r["index"] for r in d["armies"]} == {"R": MAIN, "Q": 5555}

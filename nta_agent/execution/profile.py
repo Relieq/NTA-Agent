@@ -20,6 +20,11 @@ DEFAULT_PROFILE = {
     # leveling army. max_leveling = how many pawns to buffer at once. Disabled
     # until configured. See memory nta-agent-forge-leveling.
     "leveling": {"enabled": False, "target_lv": 0, "max_leveling": 1},
+    # logistics: consolidate under-strength field armies + bring them home to recruit.
+    # redeploy = {armyUid: targetIndex} the brain fills to send topped-up armies out.
+    # See docs/superpowers/specs/2026-09-19-army-logistics-design.md.
+    "logistics": {"enabled": False, "target": 9, "heal_skip_frac": 0.2,
+                  "exclude": [], "min_shortfall": 1, "redeploy": {}},
     "notes": [],
     "build": {"order": [], "skip": []},
 }
@@ -46,6 +51,8 @@ class Profile:
     revive: dict = field(default_factory=lambda: {"enabled": True})
     leveling: dict = field(default_factory=lambda: {"enabled": False, "target_lv": 0,
                                                     "max_leveling": 1})
+    logistics: dict = field(default_factory=lambda: copy.deepcopy(
+        DEFAULT_PROFILE["logistics"]))
 
 
 def load_profile(path) -> Profile:
@@ -56,7 +63,8 @@ def load_profile(path) -> Profile:
         data = {}
     merged = _merge(DEFAULT_PROFILE, data if isinstance(data, dict) else {})
     return Profile(army=merged["army"], occupy=merged["occupy"], notes=merged["notes"],
-                   build=merged["build"], revive=merged["revive"], leveling=merged["leveling"])
+                   build=merged["build"], revive=merged["revive"], leveling=merged["leveling"],
+                   logistics=merged["logistics"])
 
 
 def save_profile(profile: Profile, path) -> None:
@@ -65,7 +73,8 @@ def save_profile(profile: Profile, path) -> None:
     p.write_text(json.dumps({"army": profile.army, "occupy": profile.occupy,
                              "notes": profile.notes, "build": profile.build,
                              "revive": getattr(profile, "revive", {"enabled": True}),
-                             "leveling": getattr(profile, "leveling", {})},
+                             "leveling": getattr(profile, "leveling", {}),
+                             "logistics": getattr(profile, "logistics", {})},
                             ensure_ascii=False, indent=1), encoding="utf-8")
 
 
@@ -121,6 +130,14 @@ def apply_edits(profile: Profile, clean: dict) -> bool:
         for k, v in clean["leveling"].items():
             if lv.get(k) != v:
                 lv[k] = v
+                changed = True
+    if isinstance(clean.get("logistics"), dict):
+        lg = getattr(profile, "logistics", None)
+        if lg is None:
+            profile.logistics = lg = {}
+        for k, v in clean["logistics"].items():
+            if lg.get(k) != v:
+                lg[k] = v
                 changed = True
     active = profile.army.get("active") or ""
     preset = (profile.army.get("presets") or {}).get(active)

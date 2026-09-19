@@ -20,6 +20,7 @@ _SYSTEM = (
     '"expansion":"none|spiral|octopus|hybrid",'
     '"loot":{"enabled":bool,"min_reward_per_chest":number>=0}},'
     '"revive":{"enabled":bool},'
+    '"logistics":{"enabled":bool,"target":1-9,"redeploy":{armyUid:cellIndex}},'
     '"advice":[{"text":"...","why":"..."}]}\n'
     "Only include fields you want to change. max_loss is the max acceptable "
     "predicted troop-loss % for occupying a cell (0 = never lose troops).\n"
@@ -39,7 +40,12 @@ _SYSTEM = (
     "army.active to a preset name to make it the active formation. notes is a "
     "list of durable free-form strategy reminders you should keep and consider.\n"
     "build.order is the building priority (list of build ids, high priority first) "
-    "and build.skip lists build ids to never auto-build/upgrade."
+    "and build.skip lists build ids to never auto-build/upgrade.\n"
+    "logistics.enabled turns on auto-filling under-strength armies (consolidate "
+    "pawns in the field, march short armies home to recruit). digest.ready_to_redeploy "
+    "lists armies now full+idle at the city awaiting orders: set logistics.redeploy["
+    "armyUid]=cellIndex to send one to farm/expand, or add its uid to army.group to "
+    "rejoin the farm — decide per the situation (keep defenders home if the enemy is near)."
 )
 
 

@@ -96,6 +96,33 @@ def sanitize_edits(edits: dict, profile, valid_army_uids, valid_build_ids=None) 
         out["revive"] = {"enabled": (v.lower() in ("1", "true", "yes")
                                      if isinstance(v, str) else bool(v))}
 
+    lg_in = edits.get("logistics") if isinstance(edits, dict) else None
+    if isinstance(lg_in, dict):
+        lg: dict = {}
+        if "enabled" in lg_in:
+            v = lg_in["enabled"]
+            lg["enabled"] = (v.lower() in ("1", "true", "yes")
+                             if isinstance(v, str) else bool(v))
+        if "target" in lg_in:
+            lg["target"] = int(_num(lg_in["target"], 1, 50, 9))
+        if "heal_skip_frac" in lg_in:
+            lg["heal_skip_frac"] = _num(lg_in["heal_skip_frac"], 0, 1, 0.2)
+        if "min_shortfall" in lg_in:
+            lg["min_shortfall"] = int(_num(lg_in["min_shortfall"], 1, 50, 1))
+        if isinstance(lg_in.get("exclude"), list):
+            lg["exclude"] = [str(u) for u in lg_in["exclude"] if str(u) in valid]
+        # redeploy: only known army uids -> a positive cell index
+        if isinstance(lg_in.get("redeploy"), dict):
+            rd = {}
+            for uid, idx in lg_in["redeploy"].items():
+                if str(uid) in valid:
+                    n = int(_num(idx, 0, 10 ** 9, 0))
+                    if n > 0:
+                        rd[str(uid)] = n
+            lg["redeploy"] = rd
+        if lg:
+            out["logistics"] = lg
+
     if isinstance(edits.get("advice"), list):
         advice = []
         for a in edits["advice"]:

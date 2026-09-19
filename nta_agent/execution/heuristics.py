@@ -903,6 +903,95 @@ class Leveling:
 
 
 @dataclass
+class Logistics:
+    """Consolidate under-strength field armies + bring them home to recruit, then
+    let the brain redeploy the topped-up ones (profile.logistics.redeploy).
+
+    Fills armies the way the player does when the pawn cap rises: pack high-hp
+    pawns into a co-located keeper, march the short army home for ``Recruit`` to
+    fill, and hand full+idle city armies to the brain. Opt-in (disabled by
+    default); never touches fort/excluded armies. See
+    docs/superpowers/specs/2026-09-19-army-logistics-design.md.
+    """
+    name: str = "logistics"
+    check_every: int = 4
+    fail_cooldown: int = 8
+    profile: object = None
+    on_event: object = None
+    _cooldown: int = 0
+    _pending: object = None   # ("plan", LogisticsAction) | ("redeploy", army, target)
+
+    # ecodes that mean "this exact move can't happen now" — back off, don't spam.
+    BUSY_ECODES = ("ecode.500019", "ecode.500036", "ecode.500037", "ecode.500020")
+
+    def _cfg(self) -> dict | None:
+        lg = getattr(self.profile, "logistics", None) if self.profile else None
+        return lg if isinstance(lg, dict) and lg.get("enabled") else None
+
+    def applies(self, state: GameState, actions: Actions) -> bool:
+        if self._cooldown > 0:
+            self._cooldown -= 1
+            return False
+        lg = self._cfg()
+        if not lg or not state.main_city_index:
+            return False
+        from nta_agent.execution.logistics import plan_logistics, ready_armies
+        from nta_agent.execution.territory import build_territory
+        terr = build_territory(state)
+        armies = actions.get_player_armys()
+        self._cooldown = self.check_every
+        main = terr.main_city
+        # B: the brain assigned a topped-up army a destination -> send it out.
+        redeploy = lg.get("redeploy") or {}
+        if redeploy:
+            ready = {str(a.get("uid")): a for a in ready_armies(
+                armies, main, target=int(lg.get("target", 9)))}
+            for uid, target in list(redeploy.items()):
+                army = ready.get(str(uid))
+                if army is not None:
+                    self._pending = ("redeploy", army, int(target))
+                    return True
+        # A: consolidate / bring under-strength field armies home.
+        act = plan_logistics(armies, main, [f.index for f in terr.forts],
+                             target=int(lg.get("target", 9)),
+                             heal_skip_frac=float(lg.get("heal_skip_frac", 0.2)),
+                             exclude=lg.get("exclude") or [],
+                             min_shortfall=int(lg.get("min_shortfall", 1)))
+        if act is None:
+            return False
+        self._pending = ("plan", act)
+        if self.on_event:
+            self.on_event("logistics", {"kind": act.kind, "index": act.index})
+        return True
+
+    def act(self, actions: Actions) -> None:
+        pending, self._pending = self._pending, None
+        if not pending:
+            return
+        try:
+            if pending[0] == "redeploy":
+                _, army, target = pending
+                actions.move_cell_army([army], target)
+                lg = self._cfg()
+                if lg:  # consume the brain's one-shot instruction
+                    (lg.get("redeploy") or {}).pop(str(army.get("uid")), None)
+                return
+            act = pending[1]
+            if act.kind == "consolidate":
+                for puid in act.pawn_uids:
+                    actions.change_pawn_army(act.index, act.from_uid, puid,
+                                             act.to_uid, only_change=True)
+            elif act.kind == "bring_home":
+                actions.move_cell_army([act.army], actions.main_city_index())
+        except Exception as e:
+            if any(code in str(e) for code in self.BUSY_ECODES):
+                self._cooldown = self.fail_cooldown
+                return
+            self._cooldown = self.fail_cooldown
+            raise
+
+
+@dataclass
 class RuleEngine:
     rules: list[Rule]
     on_error: object = None  # optional on_error(rule_name, exc): full error sink (ErrorLog)
@@ -939,4 +1028,5 @@ class RuleEngine:
                           HealRouting(),
                           OccupyCell(use_sim=True, profile=profile),
                           ClaimTreasures(), ReviveInjured(profile=profile),
-                          Leveling(profile=profile), ClaimTasks()])
+                          Leveling(profile=profile),
+                          Logistics(profile=profile), ClaimTasks()])
