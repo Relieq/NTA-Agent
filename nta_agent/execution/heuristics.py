@@ -578,10 +578,17 @@ class OccupyCell:
             actions.occupy_cell(target, armies)
         except Exception as e:
             self._cooldown = self.fail_cooldown
+            ecode = str(e).split("ecode.")[-1][:6] if "ecode." in str(e) else ""
+            # Benign duplicate/race — a march to this target already exists or an
+            # army is already there (500080 armyIndex==target / not-owner; 500081
+            # already enough armies marching there). Expansion is still happening;
+            # just back off quietly instead of logging an error every time.
+            if ecode in ("500080", "500081"):
+                return
             if self.on_event:  # capture what we actually sent, to debug rejections
                 w = 600
                 self.on_event("occupy_error", {
-                    "ecode": str(e).split("ecode.")[-1][:6] if "ecode." in str(e) else "",
+                    "ecode": ecode,
                     "target": target, "target_xy": [target % w, target // w],
                     "land_id": self._land_ref,
                     "starts": [[int(a.get("index", 0)) % w, int(a.get("index", 0)) // w]

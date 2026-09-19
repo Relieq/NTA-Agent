@@ -405,3 +405,29 @@ def test_discover_frontier_keeps_defended_unowned_cells():
     cands = discover_frontier(lambda i: world.get(i, {}), {10, 11, 12, 13, 14}, my_uid="me")
     assert {c.index for c in cands} == {10, 14}
     assert all(c.owned_neighbors == 1 for c in cands)
+
+
+def test_occupy_quiets_benign_500080():
+    """A 500080 (duplicate/race: army already at/marching to target) is benign —
+    expansion still happens. It must NOT raise or log an occupy_error."""
+    center = 182 * W + 526
+    st = GameState(source="api")
+    st.user.uid = "me"
+    st.main_city_index = center
+    st.resources.stamina = 10
+    areas = {
+        center: _cell(owner="me", city=1001),
+        center - 1: _cell(owner="", pawns=[50]),
+    }
+    my_army = [{"index": center, "uid": "A", "pawns": [{"hp": 500}, {"hp": 500}], "state": None}]
+
+    class Acts(FakeActions):
+        def occupy_cell(self, target, armies, **kw):
+            raise RuntimeError("game/HD_OccupyCell: ecode.500080")
+
+    act = Acts(areas=areas, armies=my_army)
+    events = []
+    rule = OccupyCell(radius=1, predictor=BattlePredictor(), on_event=lambda k, d: events.append(k))
+    assert rule.applies(st, act) is True
+    rule.act(act)   # must NOT raise
+    assert "occupy_error" not in events   # benign -> quiet
