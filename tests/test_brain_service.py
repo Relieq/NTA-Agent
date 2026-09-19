@@ -1,3 +1,4 @@
+import json
 from types import SimpleNamespace
 
 from nta_agent.brain.policies import BrainPolicy
@@ -114,13 +115,44 @@ def test_no_fire_when_quiet_off_cadence(tmp_path):
 def test_brain_never_edits_build_order(tmp_path):
     """The LLM echoes build from the digest; the brain must strip it so the human's
     build.order/skip (set via dashboard) is never clobbered."""
-    prof = load_profile("none")
-    prof.build = {"order": [2001, 2008], "skip": [2000]}
+    from pathlib import Path
+
+    from nta_agent.execution.profile import load_profile as _load, save_profile as _save
+    cfg = _cfg(tmp_path)
+    Path(cfg.profile_path).parent.mkdir(parents=True, exist_ok=True)
+    disk = _load(str(cfg.profile_path))               # the human's build, on disk
+    disk.build = {"order": [2001, 2008], "skip": [2000]}
+    _save(disk, str(cfg.profile_path))
+    prof = _load(str(cfg.profile_path))
     actions = SimpleNamespace(get_player_armys=lambda: [{"uid": "A", "name": "D1", "pawns": []}])
-    svc = BrainService(prof, _cfg(tmp_path),
+    svc = BrainService(prof, cfg,
                        actions=actions, policy=BrainPolicy(every_ticks=1, max_calls=5),
                        llm_propose=lambda dg, p: {"build": {"order": [], "skip": []},
                                                   "occupy": {"max_loss": 5}})
     svc.tick(_state())
-    assert prof.build == {"order": [2001, 2008], "skip": [2000]}  # untouched
-    assert prof.occupy["max_loss"] == 5                            # other edits still apply
+    saved = json.loads(Path(cfg.profile_path).read_text(encoding="utf-8"))
+    assert saved["build"] == {"order": [2001, 2008], "skip": [2000]}  # untouched
+    assert prof.occupy["max_loss"] == 5                               # other edits still apply
+
+
+def test_brain_save_does_not_clobber_dashboard_build_edit(tmp_path):
+    """Race: the dashboard writes a new build to disk after the tick started; the
+    brain's save must not overwrite it with its stale in-memory build."""
+    import json as _json
+    from pathlib import Path
+    prof = load_profile("none")
+    prof.build = {"order": [1], "skip": []}          # brain's stale copy
+    cfg = _cfg(tmp_path)
+    Path(cfg.profile_path).parent.mkdir(parents=True, exist_ok=True)
+    # "dashboard" wrote a newer build to disk mid-tick
+    from nta_agent.execution.profile import save_profile as _save, load_profile as _load
+    disk = _load(str(cfg.profile_path)); disk.build = {"order": [2001, 2004], "skip": [2000]}
+    _save(disk, str(cfg.profile_path))
+    actions = SimpleNamespace(get_player_armys=lambda: [{"uid": "A", "name": "D1", "pawns": []}])
+    svc = BrainService(prof, cfg, actions=actions,
+                       policy=BrainPolicy(every_ticks=1, max_calls=5),
+                       llm_propose=lambda dg, p: {"occupy": {"max_loss": 7}})  # brain edit -> save
+    svc.tick(_state())
+    saved = _json.loads(Path(cfg.profile_path).read_text(encoding="utf-8"))
+    assert saved["build"] == {"order": [2001, 2004], "skip": [2000]}  # dashboard's, not [1]
+    assert saved["occupy"]["max_loss"] == 7                            # brain edit persisted

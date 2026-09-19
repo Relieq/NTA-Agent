@@ -87,6 +87,18 @@ class BrainService:
         except Exception as e:
             sys.stderr.write(f"[brain] advice write failed: {e}\n")
 
+    def _refresh_human_fields(self) -> None:
+        """Re-read the dashboard-owned sections the brain never edits (build,
+        leveling, forge) from disk into the shared profile, right before saving, so
+        the brain's save can't clobber a dashboard edit made mid-tick."""
+        try:
+            from nta_agent.execution.profile import load_profile
+            disk = load_profile(self.cfg.profile_path)
+            for f in ("build", "leveling", "forge"):
+                setattr(self.profile, f, getattr(disk, f))
+        except Exception:
+            pass
+
     def _valid_build_ids(self):
         if self._build_ids is None:
             try:
@@ -124,6 +136,12 @@ class BrainService:
                                    valid_build_ids=self._valid_build_ids())
             changed = apply_edits(self.profile, clean)
             if changed:
+                # Human-owned config (build, leveling) is edited by the dashboard in
+                # another process. Even though the brain never edits it, saving the
+                # whole profile would write our possibly-stale copy and clobber a
+                # dashboard edit made since this tick started. Re-read those sections
+                # from disk right before saving so the latest dashboard value wins.
+                self._refresh_human_fields()
                 save_profile(self.profile, self.cfg.profile_path)
             advice = clean.get("advice") or []
             self._write_advice(advice)  # B2: human-facing recommendations
