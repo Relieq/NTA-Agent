@@ -62,12 +62,22 @@ def test_inert_without_farm_group():
     assert Leveling(profile=_prof(group=())).applies(_state(), acts) is False
 
 
-def test_pull_creates_leveling_army():
+def test_inplace_levels_farm_pawn_when_no_buffer():
+    # No leveling army can be created (ChangePawnArmy -> ecode.500011), so the
+    # lowest under-target farm pawn is leveled IN PLACE in its own army.
     acts = FakeActions([_army("F1", [("a", 3), ("b", 12)])])
     rule = Leveling(profile=_prof())
     assert rule.applies(_state(), acts) is True
     rule.act(acts)
-    assert acts.calls == [("pull", "F1", "a", "", True)]  # isNewCreate
+    assert acts.calls == [("level", "F1", "a")]   # PawnLving on the farm army
+
+
+def test_inplace_skips_marching_farm_army():
+    # a farm army that is out (state=march) can't be leveled in place
+    farm = _army("F1", [("a", 3)]); farm["state"] = 1
+    acts = FakeActions([farm])
+    rule = Leveling(profile=_prof())
+    assert rule.applies(_state(), acts) is False
 
 
 def test_levels_then_swaps():
