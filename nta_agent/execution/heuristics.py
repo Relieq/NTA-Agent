@@ -830,6 +830,7 @@ class ReviveInjured:
     capacity_hint: int = 9      # per-army pawn cap hint; server (500019) is truth
     min_cereal: int = 200       # resource floor: don't drain the economy reviving
     fail_cooldown: int = 8
+    full_cooldown: int = 60     # no revive room (armies + army cap full) -> wait longer
     on_event: object = None
     profile: object = None
     _cooldown: int = 0
@@ -864,8 +865,15 @@ class ReviveInjured:
             army_uid, army_name = revive_target(armies, main, self.capacity_hint)
             try:
                 actions.cure_injury_pawn(main, army_uid, army_name, str(pawn.get("uid")))
-            except Exception:
+            except Exception as e:
                 self._cooldown = self.fail_cooldown  # full army / no slot / cost -> back off
+                # Can't create a new army to revive into: the army cap is reached
+                # (500054) or the area is army-full (500037). Every city army being
+                # full made revive_target fall back to "create new", which then can't.
+                # Expected until an army frees up — back off quietly, don't spam.
+                if any(c in str(e) for c in ("ecode.500054", "ecode.500037")):
+                    self._cooldown = self.full_cooldown
+                    return
                 raise
             self._injured = [p for p in self._injured
                              if str(p.get("uid")) != str(pawn.get("uid"))]
