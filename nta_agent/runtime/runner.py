@@ -107,9 +107,13 @@ def run(cfg: RuntimeConfig, *, ticks: int = 0, session=None, engine=None) -> Non
             sys.stderr.write(f"[spine] {fn.__name__} failed: {e}\n")
             errlog.log(getattr(fn, "__name__", "service"), "service_error", e)
 
+    from nta_agent.execution.profile import reload_into
+
     def on_tick(i, fired, state):
         _safe(write_snapshot, state, cfg.snapshot_path)
         _safe(log.tick, i, fired, state)
+        # pick up dashboard edits + stop the brain from clobbering them (shared obj)
+        _safe(reload_into, profile, cfg.profile_path)
         run_services(state, cfg, service, brain, forts, _safe)
 
     try:

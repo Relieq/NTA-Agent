@@ -93,3 +93,21 @@ def test_apply_edits_expansion_and_revive(tmp_path):
     p2 = load_profile(path)
     assert p2.occupy["expansion"] == "octopus"
     assert p2.revive["enabled"] is False
+
+
+def test_reload_into_picks_up_disk_edits_in_place(tmp_path):
+    """The dashboard edits profile.json in another process; reload_into must refresh
+    the agent's shared Profile object in place so the brain's save won't clobber it."""
+    from nta_agent.execution.profile import load_profile, reload_into, save_profile
+    p = tmp_path / "profile.json"
+    prof = load_profile(str(p))           # defaults
+    prof.build = {"order": [1], "skip": [2005]}
+    save_profile(prof, str(p))
+    agent_copy = load_profile(str(p))     # agent's in-memory copy
+    # dashboard edits the file (load->edit->save) in "another process"
+    dash = load_profile(str(p)); dash.build["skip"] = [2005, 2003]; save_profile(dash, str(p))
+    # agent_copy is stale until reload_into refreshes it IN PLACE
+    ref = agent_copy
+    reload_into(agent_copy, str(p))
+    assert agent_copy is ref              # same object (rules hold this reference)
+    assert agent_copy.build["skip"] == [2005, 2003]

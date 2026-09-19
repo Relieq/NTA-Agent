@@ -208,9 +208,25 @@ class Actions:
     # ---- equipment (gear assignment) ------------------------------------ #
     def change_pawn_equip(self, pawn_id: int, equip_uid: str,
                           skin_id: int = 0, attack_speed: int = 0) -> dict:
-        """Assign an owned equip to a pawn config (GAME_HD_ChangeConfigPawnEquip)."""
+        """Set the equip CONFIG for a pawn type (GAME_HD_ChangeConfigPawnEquip).
+
+        This is the default applied to pawns drilled AFTER it — existing pawns keep
+        their gear. Use ``change_pawn_attr(..., sync_equip=1)`` to also equip the
+        pawns already on the field."""
         return self.session.request("game/HD_ChangeConfigPawnEquip", {
             "id": int(pawn_id), "equipUid": str(equip_uid),
+            "skinId": int(skin_id), "attackSpeed": int(attack_speed),
+        })
+
+    def change_pawn_attr(self, index: int, army_uid: str, pawn_uid: str,
+                         equip_uid: str, *, sync_equip: int = 1,
+                         skin_id: int = 0, attack_speed: int = 0) -> dict:
+        """Equip an EXISTING pawn (GAME_HD_ChangePawnAttr). ``sync_equip=1`` applies
+        the equip to every pawn of the same type across all non-marching armies (the
+        engine's changePawnEquip mode 1), =2 to the pawn's army, =0 to just it."""
+        return self.session.request("game/HD_ChangePawnAttr", {
+            "index": int(index), "armyUid": str(army_uid), "uid": str(pawn_uid),
+            "equipUid": str(equip_uid), "syncEquip": int(sync_equip),
             "skinId": int(skin_id), "attackSpeed": int(attack_speed),
         })
 

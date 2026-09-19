@@ -126,6 +126,11 @@ def from_entry_rst(rst: dict[str, Any], user: dict[str, Any] | None = None) -> G
         iron=_res_value(player.get("iron")),
         gold=_res_value(player.get("gold")),
         stamina=int(player.get("stamina", 0) or 0),
+        # entry carries these flat too; without them exp_book showed 0 despite the
+        # account holding books, blocking leveling. Field names verified live.
+        exp_book=_res_value(player.get("expBook")),
+        up_scroll=_res_value(player.get("upScroll")),
+        fixator=_res_value(player.get("fixator")),
     )
     heroes = [
         Hero(lv=int(h.get("lv", 0)), avatar_army_uid=str(h.get("avatarArmyUID", "")), raw=h)

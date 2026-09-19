@@ -70,6 +70,19 @@ def load_profile(path) -> Profile:
                    logistics=merged["logistics"], forge=merged["forge"])
 
 
+def reload_into(profile: Profile, path) -> Profile:
+    """Refresh a live Profile's fields IN PLACE from disk. The agent loads the
+    profile once at startup, but the dashboard edits profile.json in a separate
+    process; without this the agent's stale copy would ignore those edits AND the
+    brain's save would clobber them (e.g. build.skip getting reset). Rules share
+    this object by reference, so we reassign its attributes rather than the object."""
+    fresh = load_profile(path)
+    for f in ("army", "occupy", "notes", "build", "revive", "leveling",
+              "logistics", "forge"):
+        setattr(profile, f, getattr(fresh, f))
+    return profile
+
+
 def save_profile(profile: Profile, path) -> None:
     p = Path(path)
     p.parent.mkdir(parents=True, exist_ok=True)
