@@ -214,8 +214,10 @@ def apply_update_output(state: GameState, out: dict[str, Any]) -> None:
         if name in out and isinstance(out[name], (int, float)):
             setattr(r, attr, int(out[name]))
     # A push carries the authoritative value; restart local accrual from it so we
-    # don't double-add the production it already includes.
+    # don't double-add the production it already includes (and drop any carried
+    # fractional remainder, which belonged to the pre-push base).
     state._output_at = _time.time()
+    state._output_frac = {}
 
 
 def accrue_output(state: GameState, now: float | None = None) -> None:
@@ -238,15 +240,26 @@ def accrue_output(state: GameState, now: float | None = None) -> None:
     r = state.resources
     caps = {"cereal": state.granary_cap, "timber": state.warehouse_cap,
             "stone": state.warehouse_cap}
+    # Resources are ints; a single ~5s tick produces <1 unit, so truncating each
+    # tick would drop it all. Carry the fractional remainder between ticks.
+    frac = getattr(state, "_output_frac", None)
+    if not isinstance(frac, dict):
+        frac = state._output_frac = {}
     for name in ("cereal", "timber", "stone"):
         op = int(prod.get(name, 0) or 0)
         if op <= 0:
             continue
+        frac[name] = frac.get(name, 0.0) + op * dt_h
+        add = int(frac[name])
+        if add <= 0:
+            continue
+        frac[name] -= add
         cap = int(caps.get(name) or 0)
-        newv = getattr(r, name, 0) + op * dt_h
-        if cap:
-            newv = min(newv, cap)
-        setattr(r, name, int(newv))
+        newv = getattr(r, name, 0) + add
+        if cap and newv >= cap:
+            newv = cap
+            frac[name] = 0.0
+        setattr(r, name, newv)
 
 
 def apply_player_update(state: GameState, item: dict[str, Any]) -> None:

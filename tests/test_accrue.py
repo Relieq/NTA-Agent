@@ -39,3 +39,14 @@ def test_push_resets_accrual_base_no_double_count():
     # the push set _output_at to ~now; accruing at that same instant adds nothing
     accrue_output(st, now=st._output_at)
     assert st.resources.stone == 5000
+
+
+def test_accrue_carries_fraction_across_small_ticks():
+    """Sub-1-unit per-tick production must not be truncated away each tick."""
+    st = _state(stone=0)
+    st.production = {"stone": 720}          # 0.2 / sec
+    accrue_output(st, now=0.0)             # base
+    for k in range(1, 19):                  # 18 ticks of 5s = 90s
+        accrue_output(st, now=k * 5.0)
+    # 720/hr * 90s/3600 = 18 units accrued (not 0 from per-tick truncation)
+    assert st.resources.stone == 18
