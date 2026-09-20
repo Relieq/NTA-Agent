@@ -18,6 +18,16 @@ export default {
   const sX=(x)=> originX + x*scale;
   const sY=(y)=> originY + rowOf(y)*scale;
   const idx=(x,y)=> y*data.mw + x;
+  // Convex hull (Andrew's monotone chain) over [x,y] points — used to draw the
+  // territory boundary as a polygon connecting the outer boundary points.
+  function convexHull(pts){
+   if(pts.length<3) return pts.slice();
+   pts=pts.slice().sort((a,b)=> a[0]-b[0] || a[1]-b[1]);
+   const cr=(o,a,b)=> (a[0]-o[0])*(b[1]-o[1])-(a[1]-o[1])*(b[0]-o[0]);
+   const lo=[]; for(const p of pts){ while(lo.length>=2 && cr(lo[lo.length-2],lo[lo.length-1],p)<=0) lo.pop(); lo.push(p); }
+   const up=[]; for(let i=pts.length-1;i>=0;i--){ const p=pts[i]; while(up.length>=2 && cr(up[up.length-2],up[up.length-1],p)<=0) up.pop(); up.push(p); }
+   lo.pop(); up.pop(); return lo.concat(up);
+  }
   const cellAt=(px,py)=>({ x: Math.floor((px-originX)/scale),
                            y: (data.mw-1) - Math.floor((py-originY)/scale) });
 
@@ -90,10 +100,7 @@ export default {
     while(q.length){ const [x,y]=q.pop();
      for(const [dx,dy] of [[1,0],[-1,0],[0,1],[0,-1]]){ const nx=x+dx,ny=y+dy,k=nx+","+ny;
       if(own.has(k)&&!s.has(k)){ s.add(k); q.push([nx,ny]); } } }
-    let mnx=1e9,mny=1e9,mxx=-1e9,mxy=-1e9,any=false;
-    data.owned.forEach(([x,y])=>{ if(s.has(x+","+y)){ mnx=Math.min(mnx,x);mxx=Math.max(mxx,x);
-     mny=Math.min(mny,y);mxy=Math.max(mxy,y); any=true; } });
-    return { set:s, bbox:any?{mnx,mny,mxx,mxy}:null };
+    return { set:s };
    })();
    data.owned.forEach(([x,y])=>{ if(!inView(x,y)) return;
     if(core.set.has(x+","+y)){ box(x,y,"#199e70"); }          // core (contiguous) territory
@@ -123,11 +130,19 @@ export default {
    data.recs.forEach(r=>{ if(inView(r.x,r.y)){ ctx.strokeStyle="#e66767"; ctx.lineWidth=2; ctx.beginPath();
     ctx.arc(sX(r.x)+scale/2,sY(r.y)+scale/2,Math.max(3,scale/2-1),0,7); ctx.stroke(); } });
    [[mx,my],[mx+1,my],[mx,my+1],[mx+1,my+1]].forEach(([x,y])=>{ if(inView(x,y)) box(x,y,"#3987e5"); });
-   // Bounding box of the contiguous territory (containing the main city).
-   if(core.bbox){ const b=core.bbox;
-    const L=sX(b.mnx), Rt=sX(b.mxx)+scale, Tp=sY(b.mxy), Bt=sY(b.mny)+scale;   // y is flipped
-    ctx.strokeStyle="#39d0d8"; ctx.lineWidth=2; ctx.setLineDash([6,4]);
-    ctx.strokeRect(L, Tp, Rt-L, Bt-Tp); ctx.setLineDash([]); }
+   // Boundary of the contiguous territory: convex hull connecting the outer
+   // boundary points (the 4 corners of every core cell), not an axis-aligned box.
+   if(core.set.size){
+    const pts=[];
+    data.owned.forEach(([x,y])=>{ if(core.set.has(x+","+y)){
+     pts.push([sX(x),sY(y)],[sX(x+1),sY(y)],[sX(x),sY(y)+scale],[sX(x+1),sY(y)+scale]); } });
+    const h=convexHull(pts);
+    if(h.length>=3){
+     ctx.strokeStyle="#39d0d8"; ctx.lineWidth=2; ctx.setLineDash([6,4]);
+     ctx.beginPath(); ctx.moveTo(h[0][0],h[0][1]);
+     for(let i=1;i<h.length;i++) ctx.lineTo(h[i][0],h[i][1]);
+     ctx.closePath(); ctx.stroke(); ctx.setLineDash([]); }
+   }
    // zone outline along CELL EDGES (staircase): draw each in-zone cell's edges that
    // border an out-of-zone cell — matches the grid, no diagonal cut.
    ctx.strokeStyle="#F5E900"; ctx.lineWidth=1.5; ctx.setLineDash([4,3]); ctx.beginPath();
@@ -243,7 +258,7 @@ export default {
    <span><b style="color:#3987e5">■</b> thành chính</span>
    <span><b style="color:#199e70">■</b> ô đã chiếm (liền lãnh địa)</span>
    <span><b style="color:#e3b341">▢</b> ô đã chiếm nhưng RỜI (không nối với thành)</span>
-   <span><b style="color:#39d0d8">▭</b> bao chứa lãnh địa (vùng liền chứa thành)</span>
+   <span><b style="color:#39d0d8">⬡</b> bao lãnh địa (hull nối biên vùng liền chứa thành)</span>
    <span><b style="color:#d95926">■</b> Cứ Điểm / dự kiến</span>
    <span><b style="color:#e66767">◯</b> gợi ý</span>
    <span>quân (số=lính): <b style="color:#c3c2b7">▢</b>rảnh <b style="color:#58a6ff">▢</b>hành quân <b style="color:#da3633">▢</b>đang đánh</span>
