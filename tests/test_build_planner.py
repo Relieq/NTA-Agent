@@ -3,7 +3,12 @@
 from dataclasses import dataclass
 
 from nta_agent.data.config import BuildUpgrade
-from nta_agent.execution.build_planner import _prep_ok, next_upgrade, parse_prep_cond
+from nta_agent.execution.build_planner import (
+    _prep_ok,
+    next_build_action,
+    next_upgrade,
+    parse_prep_cond,
+)
 from nta_agent.state.schema import Building, GameState
 
 
@@ -98,3 +103,56 @@ def test_skips_build_already_queued():
     })
     b, _up = next_upgrade(st, cfg, sequence=[2004, 2001])
     assert b.id == 2001  # barracks skipped (queued), main hall chosen
+
+
+@dataclass
+class FakeBuildCfg:
+    """Fuller fake for next_build_action: upgrades + max_count + base + in-city.
+
+    ``max_count`` maps id->cap; ``bases`` maps id->buildBase row; every id is
+    treated as an in-city building.
+    """
+    table: dict
+    counts: dict
+    bases: dict = None
+
+    def build_upgrade(self, build_id, level):
+        return self.table.get((build_id, level))
+
+    def max_count(self, build_id):
+        return self.counts.get(build_id, 1)
+
+    def build_base(self, build_id):
+        return (self.bases or {}).get(build_id, {})
+
+    def in_city_build_ids(self, room_type=None):
+        return sorted({bid for bid, _lv in self.table} | set(self.counts))
+
+
+def test_no_duplicate_construct_until_existing_maxed():
+    # Granary (2002, bt_count -3 -> max_count 3) at lv2 with a lv3 available, so
+    # NOT maxed. The engine forbids a 2nd copy until every copy is maxed (500034):
+    # the planner must upgrade the existing one, not construct a duplicate.
+    st = _state([(2001, 9), (2002, 2)])
+    cfg = FakeBuildCfg(
+        table={
+            (2002, 1): _bu(2002, 1, {"timber": 1}),  # a fresh lv1 construct IS available
+            (2002, 3): _bu(2002, 3, {"timber": 1}),  # existing lv2 -> lv3 -> not maxed
+        },
+        counts={2001: 1, 2002: 3},
+    )
+    act = next_build_action(st, cfg, sequence=[2002])
+    assert act is not None
+    assert act.kind == "upgrade" and act.build_id == 2002  # not a construct
+
+
+def test_duplicate_construct_allowed_when_existing_maxed():
+    # Same granary but already maxed (no lv+1 upgrade) -> a 2nd copy is allowed.
+    st = _state([(2001, 9), (2002, 2)])
+    cfg = FakeBuildCfg(
+        table={(2002, 1): _bu(2002, 1, {"timber": 1})},  # only lv1 (fresh) exists
+        counts={2001: 1, 2002: 3},
+    )
+    act = next_build_action(st, cfg, sequence=[2002])
+    assert act is not None
+    assert act.kind == "construct" and act.build_id == 2002
