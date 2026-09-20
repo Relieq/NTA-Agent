@@ -188,6 +188,7 @@ class OccupyCell:
     _cooldown: int = 0
     _state_ref: object = None  # stashed for act()'s formation optimization
     _land_ref: int = 0
+    _sim_fail: str = ""        # last reason the engine sim was skipped (diagnostic)
 
     def _pred(self):
         if self.predictor is None:
@@ -372,13 +373,17 @@ class OccupyCell:
                         enemy = {"armys": [{"index": c.index, "uid": "npc", "owner": "",
                                             "state": 2, "pawns": c.defenders}],
                                  "hp": [c.hp[0], c.hp[1]]}
-                    return sim.predict_armies(
+                    pred = sim.predict_armies(
                         state, plan.armies, target_index=c.index, land_id=c.land_id,
                         distance=dist, enemy_army_conf=enemy)
-                except SimUnavailable:
-                    pass
+                    pred.source = "sim"
+                    return pred
+                except SimUnavailable as e:
+                    self._sim_fail = str(e)[:120]  # why the accurate sim was skipped
             pawns = [p for a in plan.armies for p in (a.get("pawns") or [])]
-            return predictor.predict(pawns, c.defenders)
+            pred = predictor.predict(pawns, c.defenders)
+            pred.source = "stats"
+            return pred
 
         # Selection priority: DEFENSE (claim a border cell an enemy is contesting)
         # > expansion preset > farming loot budget > plain safest-win.
@@ -444,11 +449,20 @@ class OccupyCell:
         self._state_ref = state
         self._land_ref = cand_by_index[plan.target].land_id
         if self.on_event:
+            pr = plan.prediction
+            surv = pr.pawn_survival or []
+            pred_deaths = sum(1 for s in surv
+                              if s.get("camp") == 2 and not s.get("alive", True))
             self.on_event(kind, {
                 "target": plan.target,
                 "label": plan.label,
                 "order": [a.get("name") or a.get("uid") for a in plan.armies],
-                "loss_percent": round(plan.prediction.loss_percent, 1),
+                "loss_percent": round(pr.loss_percent, 1),
+                # DIAGNOSTIC: which predictor decided this, its predicted deaths, and
+                # (if the accurate engine sim was skipped) why it fell back to stats.
+                "src": getattr(pr, "source", ""),
+                "pred_deaths": pred_deaths,
+                "sim_fail": self._sim_fail or None,
             })
         return True
 
