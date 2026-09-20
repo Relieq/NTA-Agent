@@ -201,14 +201,52 @@ def expire_build_queue(build_queue: list[dict], deadlines: dict[str, float],
 
 def apply_update_output(state: GameState, out: dict[str, Any]) -> None:
     """Apply an UpdateOutPut block (from ClaimCityOutput or a resource notify)."""
+    import time as _time
     r = state.resources
     for name in ("cereal", "timber", "stone"):
         if name in out:  # OutPutInfo {value, opHour}
             setattr(r, name, _res_value(out[name]))
+            # keep the production rate current (opHour rises when a producer levels)
+            if isinstance(out[name], dict) and "opHour" in out[name]:
+                state.production[name] = int(out[name].get("opHour", 0) or 0)
     for name, attr in (("iron", "iron"), ("gold", "gold"), ("stamina", "stamina"),
                        ("expBook", "exp_book"), ("upScroll", "up_scroll"), ("fixator", "fixator")):
         if name in out and isinstance(out[name], (int, float)):
             setattr(r, attr, int(out[name]))
+    # A push carries the authoritative value; restart local accrual from it so we
+    # don't double-add the production it already includes.
+    state._output_at = _time.time()
+
+
+def accrue_output(state: GameState, now: float | None = None) -> None:
+    """Grow resource stock by production elapsed since the last call.
+
+    The game client fills resources locally from ``opHour`` between server
+    pushes; the server only pushes on changes (spending/upgrades), so without
+    this the agent's stock freezes between pushes — after the agent spends
+    stone/cereal to 0 they stay 0 and every build/recruit stalls. Capped at
+    storage. No claiming needed (matches normal play).
+    """
+    import time as _time
+    now = _time.time() if now is None else now
+    last = getattr(state, "_output_at", None)
+    state._output_at = now
+    if last is None or now <= last:
+        return
+    dt_h = (now - last) / 3600.0
+    prod = state.production or {}
+    r = state.resources
+    caps = {"cereal": state.granary_cap, "timber": state.warehouse_cap,
+            "stone": state.warehouse_cap}
+    for name in ("cereal", "timber", "stone"):
+        op = int(prod.get(name, 0) or 0)
+        if op <= 0:
+            continue
+        cap = int(caps.get(name) or 0)
+        newv = getattr(r, name, 0) + op * dt_h
+        if cap:
+            newv = min(newv, cap)
+        setattr(r, name, int(newv))
 
 
 def apply_player_update(state: GameState, item: dict[str, Any]) -> None:

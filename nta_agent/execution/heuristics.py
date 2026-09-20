@@ -53,17 +53,14 @@ class CollectCityOutput:
         if self._cooldown > 0:
             self._cooldown -= 1
             return False
-        # Claiming city output is the ONLY thing that refreshes the true resource
-        # stock (the server sends UpdateOutPut in reply); our stored value is
-        # otherwise static and goes stale while the game keeps producing — which
-        # froze stone/cereal at 0 and stalled every build/recruit. So:
-        #  - caps known: collect only when storage has room (avoid a pointless
-        #    request the server would reject at cap);
-        #  - caps UNKNOWN: try anyway — the claim refreshes the stock, and the
-        #    500171 ("nothing yet") / cap-full backoff bounds the retries.
+        # Resources auto-fill from production (see store.accrue_output) — the agent
+        # does NOT need to claim to keep its stock fresh. ClaimCityOutput only
+        # gathers any separately-accrued city-output pile; collect it when storage
+        # has room. Caps unknown -> skip (don't spam claims; accrual keeps stock
+        # fresh regardless).
         granary, warehouse = _caps(state)
         if not (granary or warehouse):
-            return True  # caps unknown -> claim anyway to refresh the stale stock
+            return False  # caps unknown -> skip; local accrual keeps stock fresh
         r = state.resources
         return (
             (granary and r.cereal < granary)

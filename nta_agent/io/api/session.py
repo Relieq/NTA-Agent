@@ -226,10 +226,13 @@ class GameSession:
 
     def sync(self) -> GameState:
         """Apply pending player/user update pushes into state, keeping it current."""
-        from nta_agent.state.store import apply_notify, expire_build_queue
+        from nta_agent.state.store import accrue_output, apply_notify, expire_build_queue
         for p in self.drain_pushes():
             if isinstance(p.data, dict) and "list" in p.data:
                 apply_notify(self.state, p.data)
+        # Fill resources from production locally (the client does this; the server
+        # only pushes on changes) so stock never freezes between pushes.
+        accrue_output(self.state, time.time())
         # Belt-and-suspenders: drop finished builds by wall-clock even if the
         # build-complete push was missed, so construction never freezes.
         self.state.build_queue, self._bt_deadlines = expire_build_queue(
