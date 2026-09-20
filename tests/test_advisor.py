@@ -88,3 +88,33 @@ def test_best_plan_none_when_no_win():
     plans = {7: [Plan(armies=[{"uid": "a"}], target=7, label="x", prediction=None)]}
     got = best_plan([cell], lambda i: plans[i], lambda p: _pred(False, 100))
     assert got is None
+
+
+def test_best_plan_tie_prefers_nearer_group_over_fewer_armies():
+    # A far single-army group and a near 2-army group both win at 0 loss. The near
+    # group is preferred despite having MORE armies — it needs no long march/bridge.
+    cell = SimpleNamespace(index=7)
+    plans = {7: [
+        Plan(armies=[{"uid": "far"}], target=7, label="far-one", prediction=None),
+        Plan(armies=[{"uid": "n1"}, {"uid": "n2"}], target=7, label="near-two", prediction=None),
+    ]}
+    preds = {"far-one": _pred(True, 0), "near-two": _pred(True, 0)}
+    dist = {"far-one": 12, "near-two": 3}
+    got = best_plan([cell], lambda i: plans[i], lambda p: preds[p.label],
+                    distance=lambda p: dist[p.label])
+    assert got.label == "near-two"
+
+
+def test_best_plan_distance_yields_to_lower_loss():
+    # Distance only breaks TIES: a far plan with lower loss still wins over a near
+    # plan with higher loss.
+    cell = SimpleNamespace(index=7)
+    plans = {7: [
+        Plan(armies=[{"uid": "far"}], target=7, label="far-clean", prediction=None),
+        Plan(armies=[{"uid": "near"}], target=7, label="near-lossy", prediction=None),
+    ]}
+    preds = {"far-clean": _pred(True, 0), "near-lossy": _pred(True, 15)}
+    dist = {"far-clean": 20, "near-lossy": 1}
+    got = best_plan([cell], lambda i: plans[i], lambda p: preds[p.label],
+                    distance=lambda p: dist[p.label])
+    assert got.label == "far-clean"

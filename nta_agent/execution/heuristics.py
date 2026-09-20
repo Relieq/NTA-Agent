@@ -232,6 +232,14 @@ class OccupyCell:
     def _dist(a: int, b: int, width: int = 600) -> int:
         return abs(a % width - b % width) + abs(a // width - b // width)
 
+    def _plan_dist(self, plan) -> int:
+        """March distance for a plan: from its (co-located) armies to the target.
+        Used to prefer a group already near the target over a far one that ties on
+        loss — the near group needs no long march or bridging."""
+        if not plan.armies:
+            return 0
+        return self._dist(int(plan.armies[0].get("index", 0) or 0), plan.target)
+
     def _config(self):
         if self.config is None:
             from nta_agent.data.config import GameConfig
@@ -248,11 +256,11 @@ class OccupyCell:
         from nta_agent.execution.treasure_model import cell_loot, chest_budget
         cfg = self._config()
         if cfg is None:  # no treasure model -> fall back to safest win
-            return best_plan(cands, plans_for, predict)
+            return best_plan(cands, plans_for, predict, distance=self._plan_dist)
         occ = self.profile.occupy
         picks = plan_farm(
             cands,
-            lambda c: best_plan([c], plans_for, predict),
+            lambda c: best_plan([c], plans_for, predict, distance=self._plan_dist),
             lambda c: cell_loot(c.land_id, cfg),
             budget=chest_budget(state),
             max_loss=occ.get("max_loss", 0),
@@ -273,7 +281,7 @@ class OccupyCell:
         max_loss = float(self.profile.occupy.get("max_loss", 0) or 0) if self.profile else 0.0
         scored = []
         for c in cands:
-            plan = best_plan([c], plans_for, predict)
+            plan = best_plan([c], plans_for, predict, distance=self._plan_dist)
             if plan is None or not plan.prediction.win:
                 continue
             if plan.prediction.loss_percent > max_loss:
@@ -303,7 +311,7 @@ class OccupyCell:
             edist = min(abs(cx - ex) + abs(cy - ey) for ex, ey in epos)
             if edist > self.contest_range:
                 continue  # not contested by an enemy
-            plan = best_plan([c], plans_for, predict)
+            plan = best_plan([c], plans_for, predict, distance=self._plan_dist)
             if plan is None or not plan.prediction.win:
                 continue
             key = (edist, plan.prediction.loss_percent)  # closest-to-enemy, then safest
@@ -458,7 +466,7 @@ class OccupyCell:
             plan = self._farm_select(cands, plans_for, predict, state)
             kind = "farm_plan"
         else:
-            plan = best_plan(cands, plans_for, predict)
+            plan = best_plan(cands, plans_for, predict, distance=self._plan_dist)
             kind = "occupy_plan"
         if plan is None:
             # No single/co-located force wins outright. If the FULL idle group,

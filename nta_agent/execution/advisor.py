@@ -26,21 +26,28 @@ class Plan:
     prediction: object  # BattlePrediction, filled by best_plan
 
 
-def best_plan(candidates, plans_for, predict):
+def best_plan(candidates, plans_for, predict, distance=None):
     """Best plan over candidates x candidate orderings.
 
     ``plans_for(cell_index)`` yields :class:`Plan` objects (prediction unset);
     ``predict(plan)`` returns a BattlePrediction (or None). The winner is the
-    winnable plan with the lowest ``loss_percent``; ties break toward fewer
-    armies (don't waste troops).
+    winnable plan with the lowest ``loss_percent``; ties break toward the
+    NEAREST army group (``distance(plan)`` — a forward group already near the
+    target needs no long march / bridging, so prefer it over a far one that
+    ties on loss), then toward fewer armies (don't waste troops).
+
+    ``distance(plan)`` returns the plan's march distance (0 when not supplied,
+    which keeps the pure loss/army-count ordering for callers/tests that don't
+    care about position).
     """
-    best = None  # ((loss_percent, n_armies), Plan)
+    best = None  # ((loss_percent, distance, n_armies), Plan)
     for c in candidates:
         for plan in plans_for(c.index):
             pred = predict(plan)
             if pred is None or not pred.win:
                 continue
-            key = (pred.loss_percent, len(plan.armies))
+            d = distance(plan) if distance is not None else 0
+            key = (pred.loss_percent, d, len(plan.armies))
             if best is None or key < best[0]:
                 plan.prediction = pred
                 best = (key, plan)
