@@ -3,6 +3,7 @@ from __future__ import annotations
 
 _ROLES = {"archer", "tank"}
 _EXPANSION = {"none", "spiral", "octopus", "hybrid"}
+_OCCUPY_ORDER = {"auto", "tank_first", "dps_first"}
 
 
 def _num(v, lo, hi, default):
@@ -46,6 +47,10 @@ def sanitize_edits(edits: dict, profile, valid_army_uids, valid_build_ids=None) 
             occ["max_march_ms"] = int(_num(occ_in["max_march_ms"], 0, 10 ** 9, 0))
         if "expansion" in occ_in and str(occ_in["expansion"]) in _EXPANSION:
             occ["expansion"] = str(occ_in["expansion"])
+        pol_in = occ_in.get("policy")
+        if (isinstance(pol_in, dict) and "order" in pol_in
+                and str(pol_in["order"]) in _OCCUPY_ORDER):
+            occ["policy"] = {"order": str(pol_in["order"])}
         loot_in = occ_in.get("loot")
         if isinstance(loot_in, dict):
             loot: dict = {}

@@ -26,6 +26,34 @@ def test_candidate_orders_includes_archers_first_tanks_first_and_singles():
     assert [a["uid"] for a in af] == ["cung", "tank"]
 
 
+def test_candidate_orders_tank_first_policy_forces_melee_lead():
+    cung = _army("cung", [3305, 3305])   # archers
+    tank = _army("tank", [3101, 3101])   # melee/tank
+    orders = candidate_orders([cung, tank], order="tank_first")
+    labels = {lbl for lbl, _ in orders}
+    assert "tanks-first" in labels and "archers-first" not in labels
+    tf = next(o for lbl, o in orders if lbl == "tanks-first")
+    assert [a["uid"] for a in tf] == ["tank", "cung"]   # tank leads (frame-0 front)
+    assert "single:cung" in labels                       # singles still offered
+
+
+def test_candidate_orders_dps_first_policy_forces_archer_lead():
+    cung = _army("cung", [3305, 3305])
+    tank = _army("tank", [3101, 3101])
+    orders = candidate_orders([cung, tank], order="dps_first")
+    labels = {lbl for lbl, _ in orders}
+    assert "archers-first" in labels and "tanks-first" not in labels
+    af = next(o for lbl, o in orders if lbl == "archers-first")
+    assert [a["uid"] for a in af] == ["cung", "tank"]    # archers lead
+
+
+def test_colocated_orders_passes_order_policy_through():
+    cung = _army("cung", [3305, 3305], index=100)
+    tank = _army("tank", [3101, 3101], index=100)
+    labels = {lbl for lbl, _ in colocated_orders([cung, tank], order="tank_first")}
+    assert "tanks-first" in labels and "archers-first" not in labels
+
+
 def test_candidate_orders_homogeneous_group_uses_as_selected():
     a, b = _army("a", [3101]), _army("b", [3101])
     labels = {lbl for lbl, _ in candidate_orders([a, b])}

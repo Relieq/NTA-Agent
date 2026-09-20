@@ -420,8 +420,13 @@ class OccupyCell:
             # assumes the same-origin schedule (lead at frame 0, others a frame+
             # later). That matches same-cell armies; scattered origins (different
             # distances) arrive on a schedule the sim can't see. See colocated_orders.
+            # BRAIN policy: occupy.policy.order picks the lead army (tank_first /
+            # dps_first) or lets the planner choose by loss (auto). Hands execute it.
+            order_policy = "auto"
+            if self.profile is not None:
+                order_policy = (self.profile.occupy.get("policy") or {}).get("order") or "auto"
             return [Plan(armies=order, target=i, label=label, prediction=None)
-                    for label, order in colocated_orders(avail)]
+                    for label, order in colocated_orders(avail, order_policy)]
 
         def predict(plan):
             c = cand_by_index[plan.target]

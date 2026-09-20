@@ -13,8 +13,14 @@ from pathlib import Path
 DEFAULT_PROFILE = {
     "army": {"group": [], "roles": {}, "onetile": True, "composition": {},
              "active": "", "presets": {}},
+    # occupy.policy is the BRAIN's tactical channel (hands execute it token-free).
+    #   order = "auto" | "tank_first" | "dps_first": which army leads the attack
+    #   (frame-0 front line). auto lets the planner pick the lowest-loss ordering;
+    #   tank_first/dps_first force melee-first / archers-first. max_loss + army.group
+    #   stay HUMAN-owned (hard risk cap + army pool); the brain shapes tactics within.
     "occupy": {"max_loss": 0.0, "max_march_ms": 0, "expansion": "none",
-               "loot": {"enabled": True, "min_reward_per_chest": 0.0}},
+               "loot": {"enabled": True, "min_reward_per_chest": 0.0},
+               "policy": {"order": "auto"}},
     "revive": {"enabled": True},
     # leveling: exp-book cycle over the FARM GROUP (army.group) + an agent-created
     # leveling army. max_leveling = how many pawns to buffer at once. Disabled

@@ -18,6 +18,7 @@ _SYSTEM = (
     '"composition":{armyUid:{pawnId:count}}},'
     '"occupy":{"max_loss":0-100,"max_march_ms":int>=0,'
     '"expansion":"none|spiral|octopus|hybrid",'
+    '"policy":{"order":"auto|tank_first|dps_first"},'
     '"loot":{"enabled":bool,"min_reward_per_chest":number>=0}},'
     '"revive":{"enabled":bool},'
     '"logistics":{"enabled":bool,"target":1-9,"redeploy":{armyUid:cellIndex}},'
@@ -34,6 +35,13 @@ _SYSTEM = (
     "the enemy is near); 'octopus' = grab easy cells / reach toward resource-rich "
     "land fast; 'hybrid' = mix; 'none' = plain loot-first. Use territory.enemy_cells "
     "/ territory.nearest_enemy_dist to decide (near enemy -> spiral, safe -> octopus).\n"
+    "occupy.policy.order sets which army leads a multi-army attack (it fights the "
+    "opening exchange ALONE at frame 0 before the others reinforce): 'tank_first' "
+    "leads with melee/tank armies so they absorb the first hits (protect squishy "
+    "archers); 'dps_first' leads with archers for max early damage (the 1-tile "
+    "tactic); 'auto' lets the planner pick the lowest-predicted-loss ordering. "
+    "Prefer tank_first when the target out-levels you or losses appear; the "
+    "max_loss cap still gates every attack.\n"
     "revive.enabled toggles auto-reviving dead pawns (costs resources); disable it "
     "when resources are tight (see digest.injured for dead-pawn count).\n"
     "army.presets is a map of named formations you can create/recall; set "

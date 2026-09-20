@@ -16,14 +16,28 @@ def is_archer_army(army: dict) -> bool:
     return archers * 2 > len(pawns)
 
 
-def candidate_orders(group: list[dict]) -> list[tuple[str, list[dict]]]:
-    """A few candidate (label, ordered-armies) plans for a group of armies."""
+def candidate_orders(group: list[dict], order: str = "auto") -> list[tuple[str, list[dict]]]:
+    """A few candidate (label, ordered-armies) plans for a group of armies.
+
+    ``order`` is the brain's tactic policy (``occupy.policy.order``):
+    - ``"auto"`` (default): offer BOTH archers-first and tanks-first and let the
+      planner pick the lowest-loss ordering.
+    - ``"tank_first"``: force melee/non-archer armies to lead (frame-0 front line
+      absorbs the opening exchange).
+    - ``"dps_first"``: force archers to lead (the 1-tile max-damage tactic).
+    Single-army plans are always offered too (a lone army that wins uses fewer
+    troops); a forced order never suppresses them.
+    """
     if not group:
         return []
     archers = [a for a in group if is_archer_army(a)]
     others = [a for a in group if not is_archer_army(a)]
     out: list[tuple[str, list[dict]]] = []
-    if archers and others:
+    if order == "tank_first":
+        out.append(("tanks-first", others + archers))
+    elif order == "dps_first":
+        out.append(("archers-first", archers + others))
+    elif archers and others:  # auto: evaluate both, planner picks by loss
         out.append(("archers-first", archers + others))
         out.append(("tanks-first", others + archers))
     else:
@@ -33,7 +47,7 @@ def candidate_orders(group: list[dict]) -> list[tuple[str, list[dict]]]:
     return out
 
 
-def colocated_orders(group: list[dict]) -> list[tuple[str, list[dict]]]:
+def colocated_orders(group: list[dict], order: str = "auto") -> list[tuple[str, list[dict]]]:
     """Candidate orders that never mix armies from different cells.
 
     The sim models the engine's real arrival schedule: the lead army fights at
@@ -54,10 +68,10 @@ def colocated_orders(group: list[dict]) -> list[tuple[str, list[dict]]]:
     out: list[tuple[str, list[dict]]] = []
     seen: set[tuple[str, ...]] = set()
     for idx in sorted(by_index):
-        for label, order in candidate_orders(by_index[idx]):
-            key = tuple(str(a.get("uid")) for a in order)
+        for label, ordered in candidate_orders(by_index[idx], order):
+            key = tuple(str(a.get("uid")) for a in ordered)
             if key in seen:
                 continue
             seen.add(key)
-            out.append((label, order))
+            out.append((label, ordered))
     return out
