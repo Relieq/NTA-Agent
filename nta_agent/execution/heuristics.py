@@ -407,10 +407,11 @@ class OccupyCell:
             if grp:
                 chosen = [a for a in avail if str(a.get("uid")) in {str(x) for x in grp}]
                 avail = chosen or avail
-            # Only combine CO-LOCATED armies: a multi-army occupy marches each army
-            # from its own cell, so scattered origins arrive staggered and lose
-            # pawns the sim (one force, one distance) can't predict. Same-cell
-            # armies depart+arrive together; lone armies fight alone regardless.
+            # Only combine CO-LOCATED armies: the sim models the engine's wave
+            # schedule from per-army marchTime, but we feed marchTime=0, so it
+            # assumes the same-origin schedule (lead at frame 0, others a frame+
+            # later). That matches same-cell armies; scattered origins (different
+            # distances) arrive on a schedule the sim can't see. See colocated_orders.
             return [Plan(armies=order, target=i, label=label, prediction=None)
                     for label, order in colocated_orders(avail)]
 

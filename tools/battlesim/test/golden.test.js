@@ -114,7 +114,7 @@ test("oracle: real reinforcement record — un-arrived wave counts alive, not de
   assert.strictEqual(simDead, (fixture.summary.deadInfo || []).length);
 });
 
-test("co-located multi-army forecast is one combined battle and order-sensitive", (t) => {
+test("co-located multi-army forecast staggers armies (lead at frame 0) and is order-sensitive", (t) => {
   const enginePath = process.env.NTA_ENGINE_JS || "tools/re/decrypted/index.js";
   if (!fs.existsSync(enginePath)) {
     t.skip("engine bundle absent");
@@ -140,6 +140,12 @@ test("co-located multi-army forecast is one combined battle and order-sensitive"
   assert.strictEqual(b.isWin, true, "tank-first should win");
   assert.ok(a.lossPercent <= b.lossPercent,
     `cung-first (${a.lossPercent}) should be <= tank-first (${b.lossPercent})`);
+  // A multi-army attack MUST go through the reinforcement path (lead army alone at
+  // frame 0, others as waves at frame >= 1) — matching the engine's startForecast.
+  // Only that path returns per-pawn survivors, so its presence proves we did not
+  // fall back to the old single combined battle (all armies at frame 0).
+  assert.ok(Array.isArray(a.survivors.pawns),
+    "co-located multi-army must use the reinforce path (per-pawn survivors present)");
 });
 
 test("formation: beefy-front survives more than squishy-front", (t) => {

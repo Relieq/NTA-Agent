@@ -36,13 +36,16 @@ def candidate_orders(group: list[dict]) -> list[tuple[str, list[dict]]]:
 def colocated_orders(group: list[dict]) -> list[tuple[str, list[dict]]]:
     """Candidate orders that never mix armies from different cells.
 
-    A multi-army occupy sends each army from its OWN index, so armies at
-    different cells arrive in staggered waves (different distances/speeds) and
-    fight piecemeal — losing pawns the sim can't predict (it models one
-    simultaneous force at a single distance). So multi-army orders are formed
-    only WITHIN a same-index group (they depart together and arrive together,
-    matching the sim); every army also gets a single-army order (a lone army
-    fights alone regardless of when it arrives, so its origin is harmless).
+    The sim models the engine's real arrival schedule: the lead army fights at
+    frame 0 and every other army joins as a reinforcement wave at frame
+    max(1, floor((marchTime_i - marchTime_0)/frameMs)). But we don't feed real
+    per-army marchTimes (all 0), so the sim assumes the same-origin schedule
+    (waves one frame apart). That's accurate only for armies that DO share an
+    origin+distance — i.e. a same-index group, which departs and arrives on that
+    schedule. Truly scattered armies (different distances) would arrive on a
+    different schedule the sim can't see, so multi-army orders are formed only
+    WITHIN a same-index group; every army also gets a single-army order (a lone
+    army fights alone regardless, so its origin is harmless).
     """
     from collections import defaultdict
     by_index: dict[int, list[dict]] = defaultdict(list)
