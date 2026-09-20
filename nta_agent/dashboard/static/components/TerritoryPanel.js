@@ -77,7 +77,28 @@ export default {
    const zx0=Math.max(x0,bx0-R), zx1=Math.min(x1,bx1+R), zy0=Math.max(yLo,by0-R), zy1=Math.min(yHi,by1+R);
    ctx.fillStyle="rgba(245,233,0,0.10)";
    for(let y=zy0;y<=zy1;y++) for(let x=zx0;x<=zx1;x++) if(inZone(x,y)) ctx.fillRect(sX(x),sY(y),scale,scale);
-   data.owned.forEach(([x,y])=>{ if(inView(x,y)) box(x,y,"#199e70"); });
+   // "Bao chứa lãnh địa": the CONNECTED component of our owned cells that contains
+   // the main city (4-connectivity). Cells reachable only through allied/other land
+   // aren't our cells, so they naturally fall outside this component. Core cells are
+   // solid green; owned-but-disconnected cells are drawn hollow/brown so they stand
+   // out, and the component's bounding box is outlined.
+   const core=(()=>{
+    const own=new Set(data.owned.map(([x,y])=>x+","+y));
+    const seeds=[[mx,my],[mx+1,my],[mx,my+1],[mx+1,my+1]];
+    const s=new Set(); const q=[];
+    for(const [x,y] of seeds){ const k=x+","+y; if(!s.has(k)){ s.add(k); q.push([x,y]); } }
+    while(q.length){ const [x,y]=q.pop();
+     for(const [dx,dy] of [[1,0],[-1,0],[0,1],[0,-1]]){ const nx=x+dx,ny=y+dy,k=nx+","+ny;
+      if(own.has(k)&&!s.has(k)){ s.add(k); q.push([nx,ny]); } } }
+    let mnx=1e9,mny=1e9,mxx=-1e9,mxy=-1e9,any=false;
+    data.owned.forEach(([x,y])=>{ if(s.has(x+","+y)){ mnx=Math.min(mnx,x);mxx=Math.max(mxx,x);
+     mny=Math.min(mny,y);mxy=Math.max(mxy,y); any=true; } });
+    return { set:s, bbox:any?{mnx,mny,mxx,mxy}:null };
+   })();
+   data.owned.forEach(([x,y])=>{ if(!inView(x,y)) return;
+    if(core.set.has(x+","+y)){ box(x,y,"#199e70"); }          // core (contiguous) territory
+    else { box(x,y,"#5a4a2a");                                  // owned but disconnected
+     ctx.strokeStyle="#e3b341"; ctx.lineWidth=1.5; ctx.strokeRect(sX(x)+2,sY(y)+2,scale-4,scale-4); } });
    data.enemy.forEach(([x,y])=>{ if(inView(x,y)){ box(x,y,"#da3633");        // ô địch (đỏ)
     ctx.strokeStyle="#0b1320"; ctx.lineWidth=1; ctx.strokeRect(sX(x)+1.5,sY(y)+1.5,scale-3,scale-3); } });
    data.enemyCities.forEach(c=>{ if(inView(c.x,c.y)){ ctx.strokeStyle="#0b1320"; ctx.lineWidth=2;
@@ -102,6 +123,11 @@ export default {
    data.recs.forEach(r=>{ if(inView(r.x,r.y)){ ctx.strokeStyle="#e66767"; ctx.lineWidth=2; ctx.beginPath();
     ctx.arc(sX(r.x)+scale/2,sY(r.y)+scale/2,Math.max(3,scale/2-1),0,7); ctx.stroke(); } });
    [[mx,my],[mx+1,my],[mx,my+1],[mx+1,my+1]].forEach(([x,y])=>{ if(inView(x,y)) box(x,y,"#3987e5"); });
+   // Bounding box of the contiguous territory (containing the main city).
+   if(core.bbox){ const b=core.bbox;
+    const L=sX(b.mnx), Rt=sX(b.mxx)+scale, Tp=sY(b.mxy), Bt=sY(b.mny)+scale;   // y is flipped
+    ctx.strokeStyle="#39d0d8"; ctx.lineWidth=2; ctx.setLineDash([6,4]);
+    ctx.strokeRect(L, Tp, Rt-L, Bt-Tp); ctx.setLineDash([]); }
    // zone outline along CELL EDGES (staircase): draw each in-zone cell's edges that
    // border an out-of-zone cell — matches the grid, no diagonal cut.
    ctx.strokeStyle="#F5E900"; ctx.lineWidth=1.5; ctx.setLineDash([4,3]); ctx.beginPath();
@@ -215,7 +241,9 @@ export default {
   </div>
   <div class="muted" style="margin-top:6px;font-size:12px;display:flex;gap:12px;flex-wrap:wrap">
    <span><b style="color:#3987e5">■</b> thành chính</span>
-   <span><b style="color:#199e70">■</b> ô đã chiếm</span>
+   <span><b style="color:#199e70">■</b> ô đã chiếm (liền lãnh địa)</span>
+   <span><b style="color:#e3b341">▢</b> ô đã chiếm nhưng RỜI (không nối với thành)</span>
+   <span><b style="color:#39d0d8">▭</b> bao chứa lãnh địa (vùng liền chứa thành)</span>
    <span><b style="color:#d95926">■</b> Cứ Điểm / dự kiến</span>
    <span><b style="color:#e66767">◯</b> gợi ý</span>
    <span>quân (số=lính): <b style="color:#c3c2b7">▢</b>rảnh <b style="color:#58a6ff">▢</b>hành quân <b style="color:#da3633">▢</b>đang đánh</span>
