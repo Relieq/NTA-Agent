@@ -98,6 +98,13 @@ def test_from_entry_rst_live_shape():
     assert st.resources.stamina == 97
     assert [h.lv for h in st.heroes] == [1, 10, 15]
     assert st.raw["mapSize"] == {"x": 600, "y": 600}
+    assert st.build_queue_slots == 2  # engine DEFAULT_BT_QUEUE_COUNT; no top-up here
+
+
+def test_build_queue_slots_adds_topup():
+    from nta_agent.state import from_entry_rst
+    st = from_entry_rst({"player": {"uid": "1", "extraBTQueueCount": 1}})
+    assert st.build_queue_slots == 3  # base 2 + 1 paid slot
 
 
 def test_apply_notify_updates_resources():

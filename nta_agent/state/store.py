@@ -162,7 +162,10 @@ def from_entry_rst(rst: dict[str, Any], user: dict[str, Any] | None = None) -> G
         land_score=int(player.get("landCount", 0) or 0),
         main_city_index=main_city_index,
         build_queue=list(player.get("btQueues") or []),
-        build_queue_slots=1 + int(player.get("extraBTQueueCount", 0) or 0),
+        # Engine: getBtQueueCount() = DEFAULT_BT_QUEUE_COUNT(2) + policy effect +
+        # extra (top-up). Base is 2, not 1; extraBTQueueCount adds paid slots. (A
+        # policy that grants a slot isn't in this field — rare; add it if surfaced.)
+        build_queue_slots=2 + int(player.get("extraBTQueueCount", 0) or 0),
         production=production,
         granary_cap=int(player.get("granaryCap", 0) or 0),
         warehouse_cap=int(player.get("warehouseCap", 0) or 0),
