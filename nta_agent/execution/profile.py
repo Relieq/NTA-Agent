@@ -13,12 +13,7 @@ from pathlib import Path
 DEFAULT_PROFILE = {
     "army": {"group": [], "roles": {}, "onetile": True, "composition": {},
              "active": "", "presets": {}},
-    # max_lv_gap: refuse to attack a cell whose defenders out-level our pawns by
-    # more than this (0 = only attack cells at/below our level). The battle sim
-    # under-predicts our deaths vs higher-level guardians, so this prevents "won
-    # but lost pawns" attacks; raise it to expand faster at the risk of losses.
     "occupy": {"max_loss": 0.0, "max_march_ms": 0, "expansion": "none",
-               "max_lv_gap": 0,
                "loot": {"enabled": True, "min_reward_per_chest": 0.0}},
     "revive": {"enabled": True},
     # leveling: exp-book cycle over the FARM GROUP (army.group) + an agent-created

@@ -431,33 +431,3 @@ def test_occupy_quiets_benign_500080():
     assert rule.applies(st, act) is True
     rule.act(act)   # must NOT raise
     assert "occupy_error" not in events   # benign -> quiet
-
-
-def test_occupy_refuses_when_defenders_outlevel_us():
-    """Level-gap guard: don't attack a cell whose defenders out-level our pawns
-    (the sim under-predicts our deaths there). With max_lv_gap=0, a lv1 army must
-    not attack a lv5 cell even if the predictor calls it a win."""
-    center = 182 * W + 526
-    st = GameState(source="api")
-    st.user.uid = "me"
-    st.main_city_index = center
-    st.resources.stamina = 10
-    areas = {
-        center: _cell(owner="me", city=1001),
-        center - 1: _cell(owner="", pawns=[50]),   # weak by power, but lv5 below
-    }
-    # give the defender an explicit high level; our pawns are lv1
-    areas[center - 1]["armys"][0]["pawns"] = [{"id": 4112, "lv": 5, "hp": [10, 10]}]
-    my_army = [{"index": center, "uid": "A",
-                "pawns": [{"uid": "p1", "id": 3101, "lv": 1, "hp": [500, 500]}], "state": None}]
-    from types import SimpleNamespace
-    prof = SimpleNamespace(occupy={"max_loss": 0, "expansion": "none", "max_lv_gap": 0,
-                                   "loot": {"enabled": False}},
-                           army={"group": [], "presets": {}, "active": ""})
-    act = FakeActions(areas=areas, armies=my_army)
-    rule = OccupyCell(radius=1, predictor=BattlePredictor(), profile=prof)
-    assert rule.applies(st, act) is False        # lv5 vs lv1 -> refused
-    # raising the gap allows it again
-    prof.occupy["max_lv_gap"] = 9
-    rule2 = OccupyCell(radius=1, predictor=BattlePredictor(), profile=prof)
-    assert rule2.applies(st, act) is True
