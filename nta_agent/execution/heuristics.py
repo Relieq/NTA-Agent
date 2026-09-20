@@ -95,10 +95,18 @@ class BuildOrder:
     sequence: list[int] | None = None
     config: object | None = None
     profile: object = None   # tactics profile: build.order / build.skip
+    queue_cooldown: int = 24  # back off when the build queue is busy (~2min)
     _pending: object = None  # BuildAction chosen in applies()
     _city: int = 0           # main-city index for construction
+    _cooldown: int = 0        # global back-off (queue full / already queued)
     _blocked: set = field(default_factory=set)  # server-rejected steps (2 key shapes)
     _sig: tuple = ()  # last builds signature; changing it clears blocks (retry)
+
+    # Global (not per-build) queue conditions: the drill/recruit task holds the
+    # build slot but isn't always synced into our build_queue, so the pre-check
+    # passes and the server rejects. Back off quietly instead of churning every
+    # tick through the whole build list. 500014 = queue full, 500013 = already queued.
+    QUEUE_ECODES = ("ecode.500014", "ecode.500013")
 
     def _cfg(self):
         if self.config is None:
@@ -110,6 +118,9 @@ class BuildOrder:
         return self.config or None
 
     def applies(self, state: GameState, actions: Actions) -> bool:
+        if self._cooldown > 0:
+            self._cooldown -= 1
+            return False
         cfg = self._cfg()
         if not cfg:
             return False
@@ -148,9 +159,15 @@ class BuildOrder:
                 actions.add_build(self._city, action.build_id)
             else:
                 actions.upgrade_build(action.build.index, uid=action.build.uid)
-        except Exception:
-            # Server rejected (a condition we can't verify locally) — back off this
-            # exact step until the builds signature changes, and surface the error.
+        except Exception as e:
+            # Queue busy (full / already-queued) is GLOBAL, not this step's fault —
+            # back off quietly for the whole queue rather than blocking one id and
+            # churning the rest against the same full queue.
+            if any(q in str(e) for q in self.QUEUE_ECODES):
+                self._cooldown = self.queue_cooldown
+                return
+            # Otherwise it's a per-step rejection (e.g. 500034 duplicate-not-maxed):
+            # block just this step until the builds signature changes, and surface it.
             if action.kind == "construct":
                 self._blocked.add(("construct", action.build_id))
             else:
