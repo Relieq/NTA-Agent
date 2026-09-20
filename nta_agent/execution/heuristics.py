@@ -53,11 +53,17 @@ class CollectCityOutput:
         if self._cooldown > 0:
             self._cooldown -= 1
             return False
-        # Collect only when storage has room; at cap the server rejects it and the
-        # gathered output would overflow anyway.
+        # Claiming city output is the ONLY thing that refreshes the true resource
+        # stock (the server sends UpdateOutPut in reply); our stored value is
+        # otherwise static and goes stale while the game keeps producing — which
+        # froze stone/cereal at 0 and stalled every build/recruit. So:
+        #  - caps known: collect only when storage has room (avoid a pointless
+        #    request the server would reject at cap);
+        #  - caps UNKNOWN: try anyway — the claim refreshes the stock, and the
+        #    500171 ("nothing yet") / cap-full backoff bounds the retries.
         granary, warehouse = _caps(state)
         if not (granary or warehouse):
-            return False  # caps unknown -> don't guess
+            return True  # caps unknown -> claim anyway to refresh the stale stock
         r = state.resources
         return (
             (granary and r.cereal < granary)

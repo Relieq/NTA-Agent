@@ -42,9 +42,12 @@ def test_collect_rule_skips_when_at_cap():
     assert rule.applies(_state(cereal=1000, granary=1000, warehouse=1000), None) is False
 
 
-def test_collect_rule_skips_when_caps_unknown():
+def test_collect_rule_tries_when_caps_unknown():
+    # Caps unknown -> still claim: it's the only thing that refreshes the true
+    # stock, and a static stored value goes stale (froze stone/cereal at 0 and
+    # stalled builds). The 500171/cap-full backoff bounds the retries.
     st = GameState(source="api")  # no player caps
-    assert CollectCityOutput().applies(st, None) is False
+    assert CollectCityOutput().applies(st, None) is True
 
 
 class _RaisingActions:
