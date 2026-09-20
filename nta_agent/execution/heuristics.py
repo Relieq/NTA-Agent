@@ -183,6 +183,7 @@ class OccupyCell:
     contest_range: int = 1     # a winnable candidate within this of an enemy is contested
     _pending: object = None    # (armies_list, target_index)
     _rally: object = None       # (armies_to_move, city, for_target) — consolidate then attack
+    _heal: object = None        # (army_move, node) — route a wounded army to heal first
     _cooldown: int = 0
     _state_ref: object = None  # stashed for act()'s formation optimization
     _land_ref: int = 0
@@ -293,6 +294,45 @@ class OccupyCell:
                 best_key = key
                 best = plan
         return best
+
+    def _heal_diversion(self, cands, predict, idle_grp, state):
+        """Route a wounded army to heal when its wounds tip its nearest target from
+        clean (0-loss) to lossy AND it's convenient (route near, or <4 cells from a
+        heal node). Returns (army_move, node_index, name) or None. Cheap: only the
+        most-wounded army × its single nearest candidate (2 sims)."""
+        if self.territory_source is None or not cands or not idle_grp:
+            return None
+        from nta_agent.execution.advisor import Plan
+        from nta_agent.execution.army_health import army_wound_frac
+        from nta_agent.execution.occupy_planner import full_hp_pawns, heal_convenient
+        try:
+            _owned, centers = self.territory_source()
+        except Exception:
+            return None
+        main = int(state.main_city_index)
+        block = {main, main + 1, main + 600, main + 601}
+        heal_nodes = [main] + [c for c in centers if c not in block]  # city + forts
+        wounded = sorted((a for a in idle_grp if army_wound_frac(a) > 0),
+                         key=army_wound_frac, reverse=True)
+        for a in wounded:
+            ai = int(a.get("index", 0) or 0)
+            c = min(cands, key=lambda c: self._dist(ai, c.index))
+            if not heal_convenient(ai, c.index, heal_nodes):
+                continue
+            actual = {"uid": str(a.get("uid")), "index": ai, "pawns": a.get("pawns") or []}
+            full = {**actual, "pawns": full_hp_pawns(a.get("pawns") or [])}
+            try:
+                pa = predict(Plan(armies=[actual], target=c.index, label="heal?", prediction=None))
+                pf = predict(Plan(armies=[full], target=c.index, label="heal?", prediction=None))
+            except Exception:  # noqa: S112 - a sim hiccup on one army: just skip it
+                continue
+            actual_clean = bool(pa and pa.win and pa.loss_percent == 0)
+            full_clean = bool(pf and pf.win and pf.loss_percent == 0)
+            if full_clean and not actual_clean:
+                node = min(heal_nodes, key=lambda n: self._dist(ai, n))
+                return ({"uid": str(a.get("uid")), "index": ai}, node,
+                        a.get("name") or a.get("uid"))
+        return None
 
     def applies(self, state: GameState, actions: Actions) -> bool:
         if state.resources.stamina < self.min_stamina or not state.main_city_index:
@@ -425,6 +465,20 @@ class OccupyCell:
                         and (not grp or str(a.get("uid")) in grp)]
             max_loss = float(self.profile.occupy.get("max_loss", 0) or 0) if self.profile else 0.0
 
+            # HEAL first: a wounded army that would clean-win its nearest target at
+            # FULL hp but not now (wounds tip it from 0-loss to lossy), and is
+            # convenient to a heal node (route passes near, or < 4 cells from the
+            # city/a fort), is routed to heal — then attacks once recovered.
+            hd = self._heal_diversion(cands, predict, idle_grp, state)
+            if hd is not None:
+                self._heal = hd
+                self._pending = None
+                if self.on_event:
+                    w = 600
+                    self.on_event("heal_divert", {
+                        "army": hd[2], "to": hd[1], "to_xy": [hd[1] % w, hd[1] // w]})
+                return True
+
             def _eval(armies, tgt):
                 if tgt not in cand_by_index:
                     return None
@@ -443,6 +497,7 @@ class OccupyCell:
                 return True
             return False
         self._rally = None
+        self._heal = None
         self._pending = (list(plan.armies), plan.target)
         self._state_ref = state
         self._land_ref = cand_by_index[plan.target].land_id
@@ -541,6 +596,24 @@ class OccupyCell:
                 pass  # never block the occupy
 
     def act(self, actions: Actions) -> None:
+        if self._heal is not None:
+            move, node, _name = self._heal
+            self._heal = None
+            # move the wounded army to the heal node (city/fort) to recover; it
+            # attacks again once healed. Re-validate it's still idle with pawns.
+            from nta_agent.execution.army_health import is_idle
+            try:
+                fresh = {str(a.get("uid")): a for a in actions.get_player_armys()}
+            except Exception:
+                fresh = {}
+            cur = fresh.get(str(move.get("uid"))) if fresh else move
+            if cur is not None and is_idle(cur) and (cur.get("pawns") or []):
+                try:
+                    actions.move_cell_army(
+                        [{"uid": str(move["uid"]), "index": int(cur.get("index", 0) or 0)}], node)
+                except Exception:
+                    self._cooldown = self.fail_cooldown
+            return
         if self._rally is not None:
             armies, city, _tgt = self._rally
             self._rally = None

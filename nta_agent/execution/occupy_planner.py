@@ -293,3 +293,48 @@ def bridge_hop(launch: int, target: int, owned, zone_centers, *, radius: int = 6
     if best is not None and (direct - best_d) >= min_gain:
         return best
     return None
+
+
+def full_hp_pawns(pawns):
+    """Copy pawns with hp restored to full (cur = max) — to simulate 'if healed'.
+    Handles hp shapes {0:cur,1:max}/{"0":..}/[cur,max]."""
+    out = []
+    for p in pawns or []:
+        q = dict(p)
+        hp = p.get("hp")
+        mx = None
+        if isinstance(hp, dict):
+            mx = hp.get(1, hp.get("1"))
+        elif isinstance(hp, (list, tuple)) and len(hp) > 1:
+            mx = hp[-1]
+        if mx is not None:
+            q["hp"] = [int(mx), int(mx)]
+        out.append(q)
+    return out
+
+
+def _seg_point_dist(px, py, ax, ay, bx, by) -> float:
+    """Euclidean distance from point (px,py) to segment (ax,ay)-(bx,by)."""
+    dx, dy = bx - ax, by - ay
+    if dx == 0 and dy == 0:
+        return ((px - ax) ** 2 + (py - ay) ** 2) ** 0.5
+    t = ((px - ax) * dx + (py - ay) * dy) / (dx * dx + dy * dy)
+    t = max(0.0, min(1.0, t))
+    cx, cy = ax + t * dx, ay + t * dy
+    return ((px - cx) ** 2 + (py - cy) ** 2) ** 0.5
+
+
+def heal_convenient(army_index, target, heal_nodes, *, radius: int = 4,
+                    path_margin: float = 1.5, map_width: int = MAP_WIDTH) -> bool:
+    """'Tiện đường' to heal: the army is within ``radius`` cells (Manhattan) of a
+    heal node, OR its straight route to ``target`` passes within ``path_margin``
+    of one (i.e. it goes through/near the main city or a fort)."""
+    ax, ay = army_index % map_width, army_index // map_width
+    tx, ty = target % map_width, target // map_width
+    for n in heal_nodes:
+        nx, ny = int(n) % map_width, int(n) // map_width
+        if abs(ax - nx) + abs(ay - ny) < radius:
+            return True
+        if _seg_point_dist(nx, ny, ax, ay, tx, ty) <= path_margin:
+            return True
+    return False
