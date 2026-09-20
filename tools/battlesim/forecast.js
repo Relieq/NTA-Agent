@@ -73,7 +73,17 @@ function forecastReinforce(input, req) {
 
 function forecast(input) {
   const req = bootstrap(input.playerUid);
-  if ((input.armies || []).length > 1) {
+  const armies = input.armies || [];
+  // Use the reinforcement path ONLY for genuinely staggered arrivals (armies with
+  // different marchTimes). Co-located armies (same arrival — e.g. all launched
+  // together from the city) fight as ONE combined force from frame 0, which the
+  // single-battle path below models correctly. The reinforce path wrongly staggers
+  // co-located armies into waves and re-begins the battle at each wave, resetting
+  // our pawns to full hp (healing them) — which made it predict 0 deaths while the
+  // real battle lost 5-6 pawns.
+  const staggered = armies.length > 1 &&
+    new Set(armies.map((a) => a.marchTime || 0)).size > 1;
+  if (staggered) {
     return forecastReinforce(input, req);
   }
   const { area, fighters, seed } = buildArea(input, req);

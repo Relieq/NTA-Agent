@@ -114,7 +114,7 @@ test("oracle: real reinforcement record — un-arrived wave counts alive, not de
   assert.strictEqual(simDead, (fixture.summary.deadInfo || []).length);
 });
 
-test("multi-army forecast routes through reinforcement and is order-sensitive", (t) => {
+test("co-located multi-army forecast is one combined battle and order-sensitive", (t) => {
   const enginePath = process.env.NTA_ENGINE_JS || "tools/re/decrypted/index.js";
   if (!fs.existsSync(enginePath)) {
     t.skip("engine bundle absent");
