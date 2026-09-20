@@ -1159,7 +1159,10 @@ class Leveling:
     # error). 500079 = pawn already in the leveling queue (a PawnLving succeeded
     # but the queue/LVING state isn't synced into our snapshot yet — state
     # freshness, like the build queue); 500020 = the army started marching.
-    QUIET_ECODES = ("500079", "500020")
+    # 500079 already-queued, 500020 army-marching, 500012 not-enough-resources
+    # (exp-book ran out; a stale estimate let it try — wait, don't spam).
+    QUIET_ECODES = ("500079", "500020", "500012")
+    res_cooldown: int = 120    # ~10min: exp-books won't appear soon
 
     def act(self, actions: Actions) -> None:
         a = self._pending
@@ -1180,8 +1183,9 @@ class Leveling:
         except Exception as e:
             ecode = str(e).split("ecode.")[-1][:6] if "ecode." in str(e) else ""
             if ecode in self.QUIET_ECODES:
-                # expected transient — a pawn is already leveling / army moved.
-                self._cooldown = self.quiet_cooldown
+                # expected transient — already leveling / marching / out of books.
+                # Out-of-resources waits longer (books are slow to arrive).
+                self._cooldown = self.res_cooldown if ecode == "500012" else self.quiet_cooldown
                 return
             # a real rejection — back off and surface it instead of spamming.
             self._cooldown = self.fail_cooldown
@@ -1302,6 +1306,7 @@ class Forge:
     name: str = "forge"
     fail_cooldown: int = 8
     forge_cooldown: int = 48   # ~4min: a forge takes time; don't poll it every tick
+    res_cooldown: int = 120    # ~10min: not enough iron — wait, don't spam
     config: object = None
     profile: object = None
     on_event: object = None
@@ -1309,6 +1314,7 @@ class Forge:
     _pending: str = ""   # equip uid to forge
 
     FORGE_BUSY_ECODE = "ecode.500058"  # a forge is already running
+    LOW_RES_ECODE = "ecode.500012"     # not enough resources (iron) yet
 
     def _cfg(self):
         if self.config is None:
@@ -1365,6 +1371,10 @@ class Forge:
             # back off quietly for the forge duration rather than surfacing an error.
             if self.FORGE_BUSY_ECODE in str(e):
                 self._cooldown = self.forge_cooldown
+                return
+            if self.LOW_RES_ECODE in str(e):
+                # not enough iron (a stale estimate let it try) — wait quietly.
+                self._cooldown = self.res_cooldown
                 return
             self._cooldown = self.fail_cooldown
             raise

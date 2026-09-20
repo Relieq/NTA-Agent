@@ -78,3 +78,18 @@ def test_forge_500058_quiet_backoff():
     assert rule.applies(st, BusyActions()) is True
     rule.act(BusyActions())              # 500058 -> swallowed, no raise
     assert rule._cooldown == rule.forge_cooldown
+
+
+class LowResActions:
+    """forge_equip raises 500012 (not enough iron)."""
+    def forge_equip(self, uid):
+        from nta_agent.io.api.client import ApiError
+        raise ApiError("game/HD_ForgeEquip: ecode.500012")
+
+
+def test_forge_500012_quiet_backoff():
+    st = _state({"1": {"id": 6005, "lv": 1}}, iron=100)  # thinks affordable, then rejected
+    rule = Forge(config=FakeConfig(BASE), profile=SimpleNamespace(forge={"enabled": True}))
+    assert rule.applies(st, LowResActions()) is True
+    rule.act(LowResActions())            # 500012 -> swallowed, no raise
+    assert rule._cooldown == rule.res_cooldown

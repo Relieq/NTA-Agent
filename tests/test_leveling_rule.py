@@ -127,3 +127,16 @@ def test_raises_on_real_leveling_error():
     else:
         raise AssertionError("should have raised on a real error")
     assert any(k == "leveling_error" for k, _ in errored)
+
+
+def test_quiet_backoff_on_low_resources():
+    """500012 (out of exp-books; a stale estimate let it try) is a benign wait,
+    not an error — quiet, with the longer resource cooldown."""
+    class RaisingActions(FakeActions):
+        def pawn_lving(self, index, army_uid, pawn_uid):
+            raise RuntimeError("game/HD_PawnLving: ecode.500012")
+    acts = RaisingActions([_army("F1", [("a", 3)])])
+    rule = Leveling(profile=_prof())
+    assert rule.applies(_state(), acts) is True
+    rule.act(acts)                       # must NOT raise
+    assert rule._cooldown == rule.res_cooldown
