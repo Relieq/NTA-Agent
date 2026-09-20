@@ -182,6 +182,7 @@ class OccupyCell:
     config: object = None      # GameConfig for treasure model (lazy)
     _sim_off: bool = False     # sidecar checked and unavailable -> stop retrying
     threats_source: object = None  # callable -> enemy index set (P2 defense); wired in runner
+    territory_source: object = None  # callable -> (owned_set, zone_centers) for bridging
     contest_range: int = 1     # a winnable candidate within this of an enemy is contested
     _pending: object = None    # (armies_list, target_index)
     _rally: object = None       # (armies_to_move, city, for_target) — consolidate then attack
@@ -593,6 +594,33 @@ class OccupyCell:
         if not armies:
             self._cooldown = self.fail_cooldown
             return
+        # BRIDGING: to reach a FAR target (outside the speed zone), relay through
+        # the in-zone owned cell nearest it — a fast in-zone march then a short
+        # hop beats a long un-boosted direct march (engine isCanUpSpeed needs both
+        # endpoints in-zone). Move there this tick and attack from it next tick.
+        # Only fires for far targets; near targets attack directly. Forts extend
+        # the zone, so late game this rarely triggers.
+        if self.territory_source is not None and armies:
+            try:
+                owned, centers = self.territory_source()
+            except Exception:
+                owned, centers = set(), []
+            launch = int(armies[0].get("index", 0) or 0)
+            from nta_agent.execution.occupy_planner import bridge_hop
+            hop = bridge_hop(launch, target, owned, centers) if centers else None
+            if hop is not None and hop != launch:
+                try:
+                    actions.move_cell_army(
+                        [{"uid": str(a["uid"]), "index": int(a.get("index", 0) or 0)}
+                         for a in armies], hop)
+                    if self.on_event:
+                        w = 600
+                        self.on_event("bridge", {
+                            "stage": hop, "stage_xy": [hop % w, hop // w],
+                            "target": target, "target_xy": [target % w, target // w]})
+                except Exception:
+                    self._cooldown = self.fail_cooldown
+                return  # attack next tick from the forward staging cell
         self._optimize_formations(actions, armies, target)
         try:
             actions.occupy_cell(target, armies)

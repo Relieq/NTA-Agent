@@ -431,3 +431,50 @@ def test_occupy_quiets_benign_500080():
     assert rule.applies(st, act) is True
     rule.act(act)   # must NOT raise
     assert "occupy_error" not in events   # benign -> quiet
+
+
+def test_occupy_bridges_to_forward_cell_for_far_target():
+    """For a FAR target, act() stages the army at the in-zone owned cell nearest
+    the target (MoveCellArmy) instead of attacking directly this tick."""
+    from types import SimpleNamespace
+    city = 100 * W + 100
+    target = 100 * W + 112          # 12 east — outside the radius-6 zone
+    fwd = 100 * W + 106             # owned, in-zone, near target
+    rule = OccupyCell(radius=1)
+    rule._pending = ([{"uid": "A", "index": city}], target)
+    rule._state_ref = SimpleNamespace(main_city_index=city)
+    rule.territory_source = lambda: ({city + 1, city + 600, fwd, 100 * W + 103}, [city])
+    calls = []
+
+    class Acts:
+        def get_player_armys(self):
+            return [{"uid": "A", "index": city, "state": 0, "pawns": [{"id": 3101}]}]
+        def move_cell_army(self, armies, tgt):
+            calls.append(("move", tgt, [a["uid"] for a in armies]))
+        def occupy_cell(self, tgt, armies):
+            calls.append(("occupy", tgt))
+
+    rule.act(Acts())
+    assert calls == [("move", fwd, ["A"])]   # bridged (staged), did not attack yet
+
+
+def test_occupy_no_bridge_for_near_target():
+    from types import SimpleNamespace
+    city = 100 * W + 100
+    target = 100 * W + 103          # within the zone -> attack directly
+    rule = OccupyCell(radius=1)
+    rule._pending = ([{"uid": "A", "index": city}], target)
+    rule._state_ref = SimpleNamespace(main_city_index=city)
+    rule.territory_source = lambda: ({city + 1, 100 * W + 102}, [city])
+    calls = []
+
+    class Acts:
+        def get_player_armys(self):
+            return [{"uid": "A", "index": city, "state": 0, "pawns": [{"id": 3101}]}]
+        def move_cell_army(self, armies, tgt):
+            calls.append(("move", tgt))
+        def occupy_cell(self, tgt, armies):
+            calls.append(("occupy", tgt))
+
+    rule.act(Acts())
+    assert calls == [("occupy", target)]     # near -> direct attack, no bridge

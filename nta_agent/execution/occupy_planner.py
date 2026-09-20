@@ -248,3 +248,48 @@ def plan_rally(idle_group, city, target_indices, evaluate, max_loss=0.0):
                 and getattr(pred, "loss_percent", 100.0) <= max_loss):
             return (scattered, t)
     return None
+
+
+def _manhattan(a: int, b: int, width: int = MAP_WIDTH) -> int:
+    return abs(a % width - b % width) + abs(a // width - b // width)
+
+
+def bridge_hop(launch: int, target: int, owned, zone_centers, *, radius: int = 6,
+               width: int = MAP_WIDTH, min_gain: int = 2):
+    """Pick a forward owned cell to relay through before attacking a FAR target.
+
+    March speed is only boosted between two speed-zone cells (engine
+    ``isCanUpSpeed``: both endpoints must be zone cells). A direct march to a
+    target OUTSIDE the zone gets no boost over its full (long) distance. Staging
+    at the in-zone owned cell NEAREST the target — reached by a fast in-zone
+    march — then hopping the short remaining distance is faster. Forts extend the
+    zone, so late game the target is already in-zone and no hop is needed.
+
+    ``zone_centers`` are cell indices whose ``radius`` (Manhattan) neighbourhood
+    is the speed zone (the main-city block corners + forts). Returns the staging
+    cell index, or ``None`` when attacking directly from ``launch`` is already
+    best (target near/in the zone, or no closer in-zone owned cell).
+    """
+    owned = {int(c) for c in owned}
+    centers = [int(c) for c in zone_centers]
+    if not centers:
+        return None
+
+    def in_zone(cell: int) -> bool:
+        return any(_manhattan(cell, c, width) <= radius for c in centers)
+
+    direct = _manhattan(launch, target, width)
+    if direct <= radius or in_zone(target):
+        return None  # target is near/in the zone already — a direct march is fine
+    # the in-zone owned cell closest to the target (must be closer than launch is)
+    best, best_d = None, _manhattan(launch, target, width)
+    for cell in owned:
+        if cell == launch or not in_zone(cell):
+            continue
+        d = _manhattan(cell, target, width)
+        if d < best_d:
+            best, best_d = cell, d
+    # only worth a relay if it shortens the final (un-boosted) hop meaningfully
+    if best is not None and (direct - best_d) >= min_gain:
+        return best
+    return None

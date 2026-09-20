@@ -91,11 +91,25 @@ def run(cfg: RuntimeConfig, *, ticks: int = 0, session=None, engine=None) -> Non
             return set()
         return {int(y) * 600 + int(x) for x, y in (data.get("enemy_cells") or [])}
 
+    def _territory_from_forts():
+        # (owned cell indices, speed-zone centers = main-city block + forts) for
+        # bridging — from the throttled FortService output, no extra request.
+        try:
+            data = json.loads(cfg.forts_path.read_text(encoding="utf-8"))
+        except Exception:
+            return set(), []
+        owned = {int(y) * 600 + int(x) for x, y in (data.get("owned_cells") or [])}
+        forts = [int(y) * 600 + int(x) for x, y in (data.get("accepted") or [])]
+        main = int(getattr(session.state, "main_city_index", 0) or 0)
+        centers = ([main, main + 1, main + 600, main + 601] if main else []) + forts
+        return owned, centers
+
     # Surface the occupy planner's reasoning (chosen army + predicted loss) to the log.
     for rule in getattr(agent.engine, "rules", []):
         if getattr(rule, "name", "") == "occupy_cell":
             rule.on_event = log.append
             rule.threats_source = _enemy_from_forts  # defend contested border cells (P2)
+            rule.territory_source = _territory_from_forts  # bridging (forward staging)
             if config is not None:  # pace discovery by the cheapest occupy cost
                 from nta_agent.execution.occupy_planner import min_occupy_stamina
                 rule.min_stamina = min_occupy_stamina(config)
