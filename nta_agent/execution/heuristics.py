@@ -706,9 +706,18 @@ class OccupyCell:
                         self.on_event("bridge", {
                             "stage": hop, "stage_xy": [hop % w, hop // w],
                             "target": target, "target_xy": [target % w, target // w]})
-                except Exception:
-                    self._cooldown = self.fail_cooldown
-                return  # attack next tick from the forward staging cell
+                    return  # relay launched; attack next tick from the staging cell
+                except Exception as e:
+                    # The relay cell can't take the armies (e.g. ecode.500037 — the
+                    # staging area is already full of armies). Bridging is only a
+                    # SPEED optimization; don't get stuck retrying it forever. Fall
+                    # through to a direct (un-boosted) occupy so expansion advances.
+                    if self.on_event:
+                        ecode = str(e).split("ecode.")[-1][:6] if "ecode." in str(e) else ""
+                        w = 600
+                        self.on_event("bridge_skip", {
+                            "ecode": ecode, "stage": hop, "stage_xy": [hop % w, hop // w],
+                            "target": target, "target_xy": [target % w, target // w]})
         self._optimize_formations(actions, armies, target)
         try:
             actions.occupy_cell(target, armies)

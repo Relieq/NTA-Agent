@@ -478,3 +478,32 @@ def test_occupy_no_bridge_for_near_target():
 
     rule.act(Acts())
     assert calls == [("occupy", target)]     # near -> direct attack, no bridge
+
+
+def test_occupy_bridge_failure_falls_back_to_direct_attack():
+    """If the relay cell can't take the armies (ecode.500037 — staging area full),
+    bridging must NOT get stuck: fall through to a direct occupy so expansion still
+    advances (bridging is only a speed optimization)."""
+    from types import SimpleNamespace
+    city = 100 * W + 100
+    target = 100 * W + 112          # far -> would bridge
+    fwd = 100 * W + 106             # owned, in-zone relay (but full)
+    rule = OccupyCell(radius=1)
+    rule._pending = ([{"uid": "A", "index": city}], target)
+    rule._state_ref = SimpleNamespace(main_city_index=city)
+    rule.territory_source = lambda: ({city + 1, city + 600, fwd, 100 * W + 103}, [city])
+    events = []
+    rule.on_event = lambda k, d: events.append((k, d))
+    calls = []
+
+    class Acts:
+        def get_player_armys(self):
+            return [{"uid": "A", "index": city, "state": 0, "pawns": [{"id": 3101}]}]
+        def move_cell_army(self, armies, tgt):
+            raise RuntimeError("game/HD_MoveCellArmy: ecode.500037")  # area full
+        def occupy_cell(self, tgt, armies):
+            calls.append(("occupy", tgt))
+
+    rule.act(Acts())
+    assert calls == [("occupy", target)]                 # fell back to a direct attack
+    assert any(k == "bridge_skip" for k, _ in events)     # surfaced the skipped relay
