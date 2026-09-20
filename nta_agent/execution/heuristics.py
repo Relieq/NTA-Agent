@@ -355,6 +355,23 @@ class OccupyCell:
         def predict(plan):
             c = cand_by_index[plan.target]
             dist = self._dist(state.main_city_index, c.index)
+            # Level-gap safety: the battle sim under-predicts OUR deaths when the
+            # defenders out-level our pawns — the agent "wins" but loses 5-6 pawns
+            # (verified from in-game battle reports). Refuse a target whose max
+            # defender level exceeds our attacking pawns' max level by more than
+            # occupy.max_lv_gap (default 0: only attack cells at/below our level).
+            # Raise it in the dashboard to allow attacking stronger cells at the
+            # risk of casualties; leveling raises our pawns to unlock harder cells.
+            if c.defenders:
+                gap = int((self.profile.occupy.get("max_lv_gap", 0) or 0)
+                          if self.profile else 0)
+                enemy_lv = max((int(p.get("lv", 0) or 0) for p in c.defenders), default=0)
+                our_lv = max((int(p.get("lv", 0) or 0)
+                              for a in plan.armies for p in (a.get("pawns") or [])), default=0)
+                if enemy_lv - our_lv > gap:
+                    from nta_agent.execution.predictors.battle import BattlePrediction
+                    return BattlePrediction(win=False, my_power=0.0, enemy_power=0.0,
+                                            ratio=0.0, loss_percent=100.0, loss_lv=4)
             if sim is not None:
                 try:
                     # Pass the REAL guardians (from get_area) as the enemy — letting the
