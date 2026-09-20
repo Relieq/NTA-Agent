@@ -94,6 +94,11 @@ class DecisionService:
                         equip_uid, sync_equip=1, skin_id=skin_id, attack_speed=atk)
                     break
             return
+        if action == "build_fort":
+            # User picked an owned cell in the fort zone -> build a Cứ Điểm there.
+            from nta_agent.runtime.fort_service import FORT_BUILD_ID
+            self.actions.add_build(int(cmd["index"]), FORT_BUILD_ID)
+            return
         track = cmd.get("track")
         tp = _TRACK_TP.get(track)
         if tp is None:

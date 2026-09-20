@@ -127,3 +127,44 @@ def plan_forts(main, owned, existing_forts, decisions, cap,
                            map_width=map_width, max_forts=slots, radius=radius,
                            enemy=enemy, danger_radius=danger_radius)
     return recs, accepted
+
+
+def fort_zone(main, owned, forts=None, *, map_width: int = 600, radius: int = 6,
+              enemy=None, danger_radius: int = 0):
+    """The RECOMMENDED ZONE for building a Cứ Điểm: the eligible owned cells the
+    user may pick one from (replaces the spammed per-cell recs + accept/reject).
+
+    Eligible = owned, OUTSIDE the free speed radius of the 2x2 main-city block,
+    not already a fort, and (when ``danger_radius`` > 0) not within that Manhattan
+    distance of an enemy. Pure. Returns a sorted list of cell indices.
+    """
+    fort_set = {int(f) for f in (forts or [])}
+    enemy_pts = [_pos(int(e), map_width) for e in (enemy or ())]
+    mpos = _pos(int(main), map_width)
+
+    def enemy_ok(cpos):
+        if danger_radius <= 0 or not enemy_pts:
+            return True
+        return min(_manh(cpos, ep) for ep in enemy_pts) > danger_radius
+
+    zone = [
+        int(c) for c in owned
+        if int(c) not in fort_set
+        and int(c) != int(main)
+        and _block_dist(_pos(int(c), map_width), mpos) > radius
+        and enemy_ok(_pos(int(c), map_width))
+    ]
+    return sorted(zone)
+
+
+def can_build_fort(index, main, owned, forts, cap, *, map_width: int = 600,
+                   radius: int = 6, enemy=None, danger_radius: int = 0):
+    """Validate a user's fort-build pick: the cell must be in the recommended zone
+    and the fort count must be under ``cap``. Returns (ok, reason)."""
+    if cap and len({int(f) for f in (forts or [])}) >= int(cap):
+        return False, "đã đủ số Cứ Điểm (đạt giới hạn)"
+    zone = set(fort_zone(main, owned, forts, map_width=map_width, radius=radius,
+                         enemy=enemy, danger_radius=danger_radius))
+    if int(index) not in zone:
+        return False, "ô không nằm trong vùng gợi ý (phải là đất mình, ngoài bán kính 6)"
+    return True, ""

@@ -10,8 +10,8 @@ export default {
  setup(){
   const canvas=ref(null), tip=ref(null), sel=ref(null);
   let scale=16, originX=0, originY=0, fitted=false, hover=null;
-  let data={main:0, mw:MAPW, owned:[], accepted:[], forts:[], garr:[], recs:[], armyCells:{}};
-  let stateMap=new Map();
+  let data={main:0, mw:MAPW, owned:[], accepted:[], forts:[], garr:[], zone:[], fortCount:0, fortCap:0, armyCells:{}};
+  let stateMap=new Map(), zoneSet=new Set();
   let dragging=false, moved=0, lastX=0, lastY=0;
 
   const rowOf=(y)=> (data.mw-1) - y;
@@ -37,8 +37,7 @@ export default {
    const mx=data.main%data.mw, my=Math.floor(data.main/data.mw);
    [[mx,my],[mx+1,my],[mx,my+1],[mx+1,my+1]].forEach(([x,y])=>put(x,y,"thành chính"));
    data.forts.forEach(([x,y])=>put(x,y,"Cứ Điểm"));
-   data.accepted.forEach(([x,y])=>put(x,y,"dự kiến xây"));
-   data.recs.forEach(r=>put(r.x,r.y,"gợi ý",r.index));
+   data.zone.forEach(([x,y])=>put(x,y,"gợi ý Cứ Điểm"));
    data.garr.forEach(([x,y])=>put(x,y,"quân trú"));
    data.owned.forEach(([x,y])=>put(x,y,"đã chiếm"));
    data.enemy.forEach(([x,y])=>put(x,y,"địch"));
@@ -50,7 +49,7 @@ export default {
    // Fit to MY territory + speed zone only (enemies/frontier can be far/large;
    // they still render where they are — pan/zoom to see them).
    const pts=[[mx,my],...data.owned,...data.accepted,...data.forts,...data.garr,...data.frontier,
-              ...data.recs.map(r=>[r.x,r.y]),[mx-R,my-R],[mx+1+R,my+1+R]];
+              ...data.zone,[mx-R,my-R],[mx+1+R,my+1+R]];
    const minX=Math.min(...pts.map(p=>p[0]))-1, maxX=Math.max(...pts.map(p=>p[0]))+1;
    const minY=Math.min(...pts.map(p=>p[1]))-1, maxY=Math.max(...pts.map(p=>p[1]))+1;
    const cols=maxX-minX+1, rows=maxY-minY+1;
@@ -127,8 +126,13 @@ export default {
    ctx.strokeStyle="#8b949e"; ctx.lineWidth=1; ctx.setLineDash([2,2]);   // biên giới trống
    data.frontier.forEach(([x,y])=>{ if(inView(x,y)) ctx.strokeRect(sX(x)+2,sY(y)+2,scale-4,scale-4); });
    ctx.setLineDash([]);
-   data.recs.forEach(r=>{ if(inView(r.x,r.y)){ ctx.strokeStyle="#e66767"; ctx.lineWidth=2; ctx.beginPath();
-    ctx.arc(sX(r.x)+scale/2,sY(r.y)+scale/2,Math.max(3,scale/2-1),0,7); ctx.stroke(); } });
+   // Recommended fort ZONE: a translucent orange fill + dotted outline on the
+   // eligible owned cells; click one to build a Cứ Điểm there.
+   ctx.fillStyle="rgba(217,89,38,0.22)";
+   data.zone.forEach(([x,y])=>{ if(inView(x,y)) ctx.fillRect(sX(x)+1,sY(y)+1,scale-2,scale-2); });
+   ctx.strokeStyle="#d95926"; ctx.lineWidth=1.5; ctx.setLineDash([3,2]);
+   data.zone.forEach(([x,y])=>{ if(inView(x,y)) ctx.strokeRect(sX(x)+2,sY(y)+2,scale-4,scale-4); });
+   ctx.setLineDash([]);
    [[mx,my],[mx+1,my],[mx,my+1],[mx+1,my+1]].forEach(([x,y])=>{ if(inView(x,y)) box(x,y,"#3987e5"); });
    // Boundary of the contiguous territory: convex hull connecting the outer
    // boundary points (the 4 corners of every core cell), not an axis-aligned box.
@@ -184,7 +188,8 @@ export default {
     forts:(t.forts||[]).map(x=>[x.x,x.y]),
     garr:(t.garrisons||[]).map(i=>[i%mw, Math.floor(i/mw)]),
     enemy:f.enemy_cells||[], enemyCities:f.enemy_cities||[], frontier:f.frontier||[],
-    recs:f.recommendations||[], armyCells };
+    zone:f.fort_zone||[], fortCount:f.fort_count||0, fortCap:f.fort_cap||0, armyCells };
+   zoneSet=new Set(data.zone.map(([x,y])=>x+","+y));
    buildStateMap();
    const cv=canvas.value;
    if(cv && data.main && !fitted){ fitView(cv); fitted=true; }
@@ -215,21 +220,26 @@ export default {
     if(px>=ML&&py>=MT){ const c=cellAt(px,py), st=stateMap.get(idx(c.x,c.y));
      const r=canvas.value.getBoundingClientRect();
      const ac=data.armyCells[idx(c.x,c.y)];
+     const inZone=zoneSet.has(c.x+","+c.y);
      sel.value={ x:c.x, y:c.y, index: st?st.index:idx(c.x,c.y), state: st?st.label:"trống",
-       armies: ac?ac.armies:null,
+       armies: ac?ac.armies:null, inZone,
+       capReached: data.fortCap>0 && data.fortCount>=data.fortCap,
        left:Math.min(ev.clientX-r.left, r.width-170), top:(ev.clientY-r.top) }; } } }
   function onLeave(){ hover=null; tip.value=null; render(); }
   function onWheel(ev){ ev.preventDefault(); const [px,py]=toCanvas(ev); zoomAt(px,py, ev.deltaY<0?1.15:1/1.15); }
   function zoomBtn(f){ const cv=canvas.value; zoomAt(cv.width/2, cv.height/2, f); }
   function recenterBtn(){ recenter(canvas.value); render(); }
   function fitBtn(){ fitView(canvas.value); render(); }
-  async function decide(decision){ if(!sel.value) return;
-   await postJSON("/api/forts/decide",{index:sel.value.index,decision}); sel.value=null; load(); }
+  const built=ref("");
+  async function buildFort(){ if(!sel.value) return;
+   const r=await postJSON("/api/forts/build",{index:sel.value.index});
+   built.value=(r&&r.ok)?`Đã gửi lệnh xây Cứ Điểm @(${sel.value.x},${sel.value.y})`:((r&&r.error)||"Lỗi");
+   sel.value=null; setTimeout(()=>{built.value="";}, 4000); load(); }
 
   onMounted(()=>{ const cv=canvas.value; if(cv) cv.addEventListener("wheel", onWheel, {passive:false}); });
   onUnmounted(()=>{ const cv=canvas.value; if(cv) cv.removeEventListener("wheel", onWheel); });
 
-  return { canvas, tip, sel, onDown, onMove, onUp, onLeave, zoomBtn, recenterBtn, fitBtn, decide };
+  return { canvas, tip, sel, built, onDown, onMove, onUp, onLeave, zoomBtn, recenterBtn, fitBtn, buildFort };
  },
  template:`<div class="card full"><h2>Lãnh thổ</h2>
   <div style="display:flex;gap:6px;align-items:center;margin-bottom:6px;flex-wrap:wrap">
@@ -249,18 +259,20 @@ export default {
     <div v-if="sel.armies" style="font-size:12px;margin:2px 0">
      <div v-for="(a,i) in sel.armies" :key="i">🛡️ {{ a.name }} · <b>{{ a.pawns }}</b> lính
       <span class="muted">({{ a.label }})</span></div></div>
-    <template v-if="sel.state==='gợi ý'">
-     <button @click="decide('accept')">✓ Chấp thuận</button>
-     <button @click="decide('reject')">✕ Từ chối</button></template>
+    <template v-if="sel.inZone">
+     <div v-if="sel.capReached" class="muted" style="font-size:12px;color:#e3b341">Đã đủ số Cứ Điểm</div>
+     <button v-else @click="buildFort">🏯 Xây Cứ Điểm ở đây</button></template>
     <button @click="sel=null">Đóng</button></div>
+   <div v-if="built" class="muted" style="position:absolute;left:8px;bottom:8px;background:#0d1117;
+     border:1px solid var(--border-hi);border-radius:4px;padding:2px 8px;font-size:12px;color:#199e70;z-index:8">{{ built }}</div>
   </div>
   <div class="muted" style="margin-top:6px;font-size:12px;display:flex;gap:12px;flex-wrap:wrap">
    <span><b style="color:#3987e5">■</b> thành chính</span>
    <span><b style="color:#199e70">■</b> ô đã chiếm (liền lãnh địa)</span>
    <span><b style="color:#e3b341">▢</b> ô đã chiếm nhưng RỜI (không nối với thành)</span>
    <span><b style="color:#39d0d8">⬡</b> bao lãnh địa (hull nối biên vùng liền chứa thành)</span>
-   <span><b style="color:#d95926">■</b> Cứ Điểm / dự kiến</span>
-   <span><b style="color:#e66767">◯</b> gợi ý</span>
+   <span><b style="color:#d95926">■</b> Cứ Điểm (đã có)</span>
+   <span><b style="color:#d95926">▨</b> vùng gợi ý xây Cứ Điểm — bấm 1 ô để agent xây</span>
    <span>quân (số=lính): <b style="color:#c3c2b7">▢</b>rảnh <b style="color:#58a6ff">▢</b>hành quân <b style="color:#da3633">▢</b>đang đánh</span>
    <span><b style="color:#da3633">■</b> ô địch</span>
    <span><b class="muted">▢</b> biên giới trống (xấp xỉ)</span>

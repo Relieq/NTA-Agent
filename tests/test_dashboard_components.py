@@ -86,7 +86,8 @@ def test_territory_map_viewport():
     assert "@mousedown" in terr and "@mousemove" in terr and "@mouseup" in terr
     assert "wheel" in terr and "getBoundingClientRect" in terr
     assert "Về thành chính" in terr                      # recenter control
-    assert "/api/forts/decide" in terr                   # accept/reject on a rec
+    assert "/api/forts/build" in terr                    # click a zone cell -> build fort
+    assert "fort_zone" in terr and "Xây Cứ Điểm" in terr
     assert "Math.min(60" in terr and "Math.max(6" in terr  # zoom clamp
     assert "bán kính 6 ô" in terr                        # legend explains the dashed zone
 
@@ -97,11 +98,12 @@ def test_territory_map_enemy_and_frontier():
     assert "địch" in terr and "biên giới" in terr        # state/legend text
 
 
-def test_forts_panel_decision_buttons():
+def test_forts_panel_shows_zone_instruction():
     fp = _c("FortsPanel.js")
-    assert "/api/forts/decide" in fp
-    assert "Chấp thuận" in fp and "Từ chối" in fp
-    assert "accepted" in fp and "rejected" in fp
+    # new UX: no per-cell accept/reject; show the recommended-zone count + how to build
+    assert "fort_zone" in fp and "vùng gợi ý" in fp
+    assert "/api/forts/decide" not in fp
+    assert "Chấp thuận" not in fp and "Từ chối" not in fp
 
 
 def test_build_order_panel():

@@ -135,6 +135,7 @@ def read_forts_view(cfg) -> dict:
     except (OSError, ValueError):
         return {"owned_count": 0, "owned_cells": [], "accepted": [], "rejected": [],
                 "enemy_cells": [], "enemy_cities": [], "frontier": [], "recommendations": [],
+                "fort_zone": [], "fort_count": 0, "fort_cap": 0,
                 "threats": [], "threat_summary": {"count": 0}}
     return {"owned_count": data.get("owned_count", 0),
             "owned_cells": data.get("owned_cells") or [],
@@ -144,6 +145,9 @@ def read_forts_view(cfg) -> dict:
             "enemy_cities": data.get("enemy_cities") or [],
             "frontier": data.get("frontier") or [],
             "recommendations": data.get("recommendations") or [],
+            "fort_zone": data.get("fort_zone") or [],
+            "fort_count": data.get("fort_count", 0),
+            "fort_cap": data.get("fort_cap", 0),
             "threats": data.get("threats") or [],
             "threat_summary": data.get("threat_summary") or {"count": 0}}
 
@@ -327,6 +331,30 @@ class Handler(BaseHTTPRequestHandler):
             from nta_agent.runtime import fort_decisions
             fort_decisions.update(cfg.fort_decisions_path, idx, decision)
             self._json(200, recompute_forts(cfg))
+            return
+        if parsed.path == "/api/forts/build":
+            # User picked an owned cell in the recommended zone -> queue a build_fort
+            # command for the agent (validated against the precomputed zone + cap).
+            try:
+                length = int(self.headers.get("Content-Length", "0"))
+                body = json.loads(self.rfile.read(length) or b"{}")
+                idx = int(body["index"])
+            except (ValueError, TypeError, KeyError):
+                self._json(400, {"ok": False, "error": "need index"})
+                return
+            fv = read_forts_view(cfg)
+            mw = int(read_territory_view(cfg).get("map_width") or 600)
+            zone = {int(y) * mw + int(x) for x, y in (fv.get("fort_zone") or [])}
+            cap = int(fv.get("fort_cap") or 0)
+            if cap and int(fv.get("fort_count") or 0) >= cap:
+                self._json(400, {"ok": False, "error": "đã đủ số Cứ Điểm (đạt giới hạn)"})
+                return
+            if idx not in zone:
+                self._json(400, {"ok": False,
+                                 "error": "ô không nằm trong vùng gợi ý (đất mình, ngoài bán kính 6)"})
+                return
+            append_command(cfg.commands_path, {"action": "build_fort", "index": idx})
+            self._json(200, {"ok": True, "index": idx, "xy": [idx % mw, idx // mw]})
             return
         if parsed.path == "/api/chat":
             try:

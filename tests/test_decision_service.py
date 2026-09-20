@@ -104,3 +104,11 @@ def test_profile_edit_command_applies_to_live_profile(tmp_path):
                           config=None, cfg=cfg, profile=prof)
     svc._execute({"action": "profile_edit", "edits": {"occupy": {"max_loss": 9}}})
     assert prof.occupy["max_loss"] == 9
+
+
+def test_build_fort_command_calls_add_build(tmp_path):
+    acts = FakeActions()
+    acts.add_build = lambda index, build_id: acts.calls.append(("add_build", index, build_id))
+    svc = DecisionService(acts, FakeConfig(), _cfg(tmp_path))
+    svc._execute({"action": "build_fort", "index": 123456})
+    assert acts.calls == [("add_build", 123456, 2102)]  # FORT_BUILD_ID
