@@ -1477,6 +1477,7 @@ class ArmyComposer:
     on_event: object = None          # on_event(kind, detail) -> surface to log/brain
     status_sink: object = None       # status_sink(dict) -> persist status for the brain advice loop
     fail_cooldown: int = 10
+    res_cooldown: int = 60           # back off when short on resources / recruit queue (pacing)
     blocked_cooldown: int = 60
     _cooldown: int = 0
     _city: int = 0
@@ -1583,12 +1584,17 @@ class ArmyComposer:
                         actions.drill_pawn(bu, a["pawn_id"], army_uid=a.get("army") or "")
             except Exception as e:
                 ecode = str(e).split("ecode.")[-1][:6] if "ecode." in str(e) else ""
-                # Expected mid-reorg / pacing — skip THIS action and continue the batch
-                # (a benign failure on one action must not abort the whole tick, or the
-                # recruit at the end never runs): army full/busy/not-found/insufficient,
-                # army-cap, recruit-queue-full (500018), duplicate-march (500080/81).
-                if ecode in ("500019", "500020", "500011", "500017", "500012",
-                             "500054", "500018", "500080", "500081"):
+                # Not enough resources (500012) / recruit-queue full (500018): can't make
+                # progress this tick — back off quietly for a while (recruiting the group
+                # is resource-paced) instead of hammering the API every tick.
+                if ecode in ("500012", "500018"):
+                    self._cooldown = self.res_cooldown
+                    return
+                # Other expected mid-reorg conditions — skip THIS action, continue the
+                # batch (a benign failure must not abort the tick / block the recruit):
+                # army full/busy/not-found, army-cap, duplicate-march (500080/81).
+                if ecode in ("500019", "500020", "500011", "500017", "500054",
+                             "500080", "500081"):
                     continue
                 # unexpected -> surface once and stop this tick's batch, back off.
                 self._cooldown = self.fail_cooldown
