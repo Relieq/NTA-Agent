@@ -117,6 +117,9 @@ def run(cfg: RuntimeConfig, *, ticks: int = 0, session=None, engine=None) -> Non
             if config is not None:  # pace discovery by the cheapest occupy cost
                 from nta_agent.execution.occupy_planner import min_occupy_stamina
                 rule.min_stamina = min_occupy_stamina(config)
+        elif getattr(rule, "name", "") == "recruit":
+            if _composer is not None:  # don't recruit into / compete on the composer's armies
+                rule.locked_source = lambda: getattr(_composer, "locked_uids", set())
         elif getattr(rule, "name", "") == "army_composer":
             rule.on_event = log.append
 

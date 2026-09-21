@@ -42,6 +42,18 @@ def test_recruits_into_army_with_room():
     assert act.calls == [("bar", 3101, "A", "")]
 
 
+def test_skips_locked_army():
+    # an army locked by the ArmyComposer must NOT be recruited into (it drives that
+    # army's composition). Without the lock it would recruit into A; with it, it won't.
+    st = _state([3101])
+    act = FakeActions(st, armys=[{"uid": "A", "pawns": [{}, {}], "state": None}])
+    r = Recruit(config=False)
+    r.locked_source = lambda: {"A"}
+    r.applies(st, act)
+    r.act(act)
+    assert all(c[2] != "A" for c in act.calls)   # never recruits into the locked army
+
+
 def test_creates_new_army_when_all_full():
     st = _state([3101])
     full = {"uid": "A", "pawns": [{}] * 9, "state": None}

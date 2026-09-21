@@ -791,6 +791,7 @@ class Recruit:
     fail_cooldown: int = 10
     config: object = None
     profile: object = None    # Profile: fill armies toward army.composition
+    locked_source: object = None  # callable -> army-uid set the ArmyComposer owns (skip them)
     _pending: object = None   # (build_uid, pawn_id, army_uid, army_name, pawn_count)
     _cooldown: int = 0
     # Armies the server rejected as full (ecode.500019), by uid -> pawn count when
@@ -848,6 +849,15 @@ class Recruit:
         if pawn is None:
             return False
         armys = actions.get_area(state.main_city_index).get("data", {}).get("armys", []) or []
+        # Skip armies the ArmyComposer is arranging (its lock): don't recruit into them
+        # (it drives their composition) and don't compete for the drill queue on them.
+        if self.locked_source is not None:
+            try:
+                locked = {str(u) for u in (self.locked_source() or ())}
+            except Exception:
+                locked = set()
+            if locked:
+                armys = [a for a in armys if str(a.get("uid")) not in locked]
         # profile-driven: fill the biggest composition gap into its own army.
         if self.profile is not None:
             from nta_agent.execution.profile import active_formation, composition_target
@@ -1554,11 +1564,17 @@ class ArmyComposer:
                     if bu:  # drill ONE pawn/tick into the short army; the queue paces the rest
                         actions.drill_pawn(bu, a["pawn_id"], army_uid=a.get("army") or "")
             except Exception as e:
-                self._cooldown = self.fail_cooldown
                 ecode = str(e).split("ecode.")[-1][:6] if "ecode." in str(e) else ""
-                # army busy/full/not-found/insufficient/army-cap are expected mid-reorg
-                if (ecode not in ("500019", "500020", "500011", "500017", "500012", "500054")
-                        and self.on_event):
+                # Expected mid-reorg / pacing — skip THIS action and continue the batch
+                # (a benign failure on one action must not abort the whole tick, or the
+                # recruit at the end never runs): army full/busy/not-found/insufficient,
+                # army-cap, recruit-queue-full (500018), duplicate-march (500080/81).
+                if ecode in ("500019", "500020", "500011", "500017", "500012",
+                             "500054", "500018", "500080", "500081"):
+                    continue
+                # unexpected -> surface once and stop this tick's batch, back off.
+                self._cooldown = self.fail_cooldown
+                if self.on_event:
                     self.on_event("composition_error", {"op": op, "ecode": ecode})
                 return
 

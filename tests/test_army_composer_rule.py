@@ -95,6 +95,35 @@ def test_dismisses_low_level_leftover_pawn():
     assert ("dismiss", "imp1", "k1") in acts.calls
 
 
+def test_act_continues_past_benign_action_failure():
+    # a benign per-action failure (e.g. 500017) must NOT abort the batch — the recruit
+    # at the end still runs (the live-run bug: act() returned on the first failure).
+    class Acts(FakeActions):
+        def change_pawn_army(self, index, army_uid, pawn_uid, new_army_uid, **kw):
+            raise RuntimeError("game/HD_ChangePawnArmy: ecode.500017")
+    acts = Acts([_army("imp1", [3305])])
+    r = ArmyComposer(profile=_profile(TARGET))
+    r._city = CITY
+    r._plan = {"actions": [
+        {"op": "move_pawn", "from": "d", "pawn": "p", "to": "imp1"},   # fails benign
+        {"op": "recruit", "pawn_id": 3305, "army": "imp1", "count": 5}]}
+    r.act(acts)
+    assert any(c[0] == "recruit" for c in acts.calls)   # recruit still executed
+
+
+def test_act_treats_queue_full_500018_as_benign():
+    class Acts(FakeActions):
+        def drill_pawn(self, bu, pid, army_uid="", army_name="", **kw):
+            raise RuntimeError("game/HD_DrillPawn: ecode.500018")   # recruit queue full
+    events = []
+    acts = Acts([_army("imp1", [3305])])
+    r = ArmyComposer(profile=_profile(TARGET), on_event=lambda k, d: events.append((k, d)))
+    r._city = CITY
+    r._plan = {"actions": [{"op": "recruit", "pawn_id": 3305, "army": "imp1", "count": 5}]}
+    r.act(acts)
+    assert not any(k == "composition_error" for k, _ in events)   # benign, not surfaced
+
+
 def test_recruits_deficit():
     armies = [_army("tank", [3206, 3206, 3206]), _army("imp1", [3305]), _army("imp2", [])]
     r = ArmyComposer(profile=_profile(TARGET))
