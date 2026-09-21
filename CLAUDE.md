@@ -34,24 +34,38 @@ Because reverse-engineering the API is incremental and risky, the system is **AP
 fallback**: crack a domain → use API for it; everything else keeps running on vision. Never let an
 API-migration break the vision path for a feature.
 
-## Environment (verified 2026-09-01 — re-verify before relying on)
+## Environment (LDPlayer since 2026-09-10 — re-verify before relying on)
 
-- Game `twgame.global.acers` **v4.4.0**; engine is **Cocos2d-x JavaScript**
-  (`org.cocos2dx.javascript.AppActivity`) — game logic/protocol live in a JS bundle inside
-  `base.apk/assets` (typically jsc-compiled or XXTEA-encrypted).
-- Emulator: BlueStacks_nxt, Android 9, x86_64, screen **1600x900**, density 240. Combat/coordinate
-  math in the old bot assumes 1600x900 — keep that assumption or make it explicit.
-- ADB binary: `C:\Program Files\BlueStacks_nxt\HD-Adb.exe` (not on PATH). Device `emulator-5554`,
-  adb port **5555** (read from `C:\ProgramData\BlueStacks_nxt\bluestacks.conf`).
-- The game speaks **HTTPS (443)**, so intercepting the protocol requires installing the mitmproxy
-  CA in the emulator **and** bypassing certificate pinning with Frida.
+- **Emulator: LDPlayer 9** (v9.5.31.0, Android 9, x86_64), NOT BlueStacks. Switched from
+  BlueStacks because LDPlayer's 1-click root is far easier (root confirmed: `su -c id` → uid=0).
+  BlueStacks is kept only as a cold fallback. See memory `nta-agent-lab-setup`.
+- **ADB binary: `D:\LDPlayer\LDPlayer9\adb.exe`** (device `emulator-5554`, also `127.0.0.1:5555`).
+  Do NOT use `C:\Program Files\BlueStacks_nxt\HD-Adb.exe` — its adb client (v36) mismatches
+  LDPlayer's adb server (v41) and spams "server version mismatch" + restarts the daemon every call.
+  LDPlayer CLI: `D:\LDPlayer\LDPlayer9\ldconsole.exe` (`modify --resolution/--root/...`).
+- Game `twgame.global.acers` **v4.4.4** on LDPlayer (newer than the old v4.4.0 BlueStacks build),
+  defaults to **English** (`__slg_lang__=en`); engine is **Cocos2d-x JavaScript**
+  (`org.cocos2dx.javascript.AppActivity`) — logic/protocol in a JS bundle inside `base.apk/assets`
+  (jsc-compiled + XXTEA-encrypted; decrypt with `tools/re/decrypt_jsc.py`).
+- Screen: the game **hard-locks portrait 900x1600** on LDPlayer (ADB/autorotate can't force it).
+  The old bot's 1600x900 combat/coordinate math is therefore outdated — the project is API-first,
+  so pixel math is being retired; don't assume 1600x900.
+- Protocol is **MQTT over TLS 1.2** to `nine-hk.twomiles.cn:3653` (payload is app-layer protobuf,
+  XXTEA key `2d5e8a49-a7f8-43`), not plain HTTPS. Intercepting needs Frida (TLS + pin bypass);
+  the RE lab (frida-server, tcpdump) is already set up — see `nta-agent-lab-setup` / `nta-agent-re-findings`.
+- **The agent connects to the game API directly (MQTT), not through ADB** — so which emulator is up
+  doesn't affect the agent loop; ADB is only for the vision fallback + manual inspection (screenshots).
+  Single game session: when the agent logs in it KICKS the emulator client, so close the agent before
+  reading the game UI, and vice-versa.
 
-Common ADB probes (quote the path — it contains a space):
+Common ADB probes (quote the path — it contains a space; do NOT prefix `MSYS_NO_PATHCONV` unless a
+`/sdcard/...` arg gets mangled, in which case use a `//sdcard/...` double-slash for device paths):
 ```bash
-ADB="/c/Program Files/BlueStacks_nxt/HD-Adb.exe"
+ADB="/d/LDPlayer/LDPlayer9/adb.exe"
 "$ADB" devices
 "$ADB" shell wm size
-"$ADB" exec-out screencap -p > screen.png
+# exec-out screencap can corrupt the PNG on Windows; pull via an on-device file instead:
+"$ADB" shell screencap -p //sdcard/s.png && "$ADB" pull //sdcard/s.png ./screen.png && "$ADB" shell rm //sdcard/s.png
 ```
 
 ## Reusing the old bot
