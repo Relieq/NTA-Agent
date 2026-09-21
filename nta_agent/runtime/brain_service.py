@@ -97,7 +97,15 @@ class BrainService:
             from nta_agent.execution.profile import load_profile
             disk = load_profile(self.cfg.profile_path)
             for f in ("build", "leveling", "forge", "army"):
-                setattr(self.profile, f, getattr(disk, f))
+                if f == "army":
+                    # army.strike_target is the brain's goal — keep the just-set value;
+                    # take the human-owned army fields (group/roles/...) from disk.
+                    brain_strike = (getattr(self.profile, "army", {}) or {}).get("strike_target")
+                    setattr(self.profile, f, getattr(disk, f))
+                    if brain_strike is not None:
+                        self.profile.army["strike_target"] = brain_strike
+                else:
+                    setattr(self.profile, f, getattr(disk, f))
         except Exception:
             pass
 
@@ -137,7 +145,11 @@ class BrainService:
             # occupy brain-editable).
             if isinstance(edits, dict):
                 edits.pop("build", None)
-                edits.pop("army", None)
+                # army.* is human-owned EXCEPT strike_target (the brain's composition
+                # goal) — keep only that from the brain's army edits, drop the rest.
+                army_e = edits.pop("army", None)
+                if isinstance(army_e, dict) and isinstance(army_e.get("strike_target"), list):
+                    edits["army"] = {"strike_target": army_e["strike_target"]}
                 if isinstance(edits.get("occupy"), dict):
                     edits["occupy"].pop("max_loss", None)
             valid = {str(a.get("uid")) for a in armies}

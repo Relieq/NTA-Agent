@@ -104,15 +104,21 @@ def run(cfg: RuntimeConfig, *, ticks: int = 0, session=None, engine=None) -> Non
         centers = ([main, main + 1, main + 600, main + 601] if main else []) + forts
         return owned, centers
 
+    _rules = getattr(agent.engine, "rules", [])
+    _composer = next((r for r in _rules if getattr(r, "name", "") == "army_composer"), None)
     # Surface the occupy planner's reasoning (chosen army + predicted loss) to the log.
-    for rule in getattr(agent.engine, "rules", []):
+    for rule in _rules:
         if getattr(rule, "name", "") == "occupy_cell":
             rule.on_event = log.append
             rule.threats_source = _enemy_from_forts  # defend contested border cells (P2)
             rule.territory_source = _territory_from_forts  # bridging (forward staging)
+            if _composer is not None:  # skip armies the composer is arranging (it locks them)
+                rule.locked_source = lambda: getattr(_composer, "locked_uids", set())
             if config is not None:  # pace discovery by the cheapest occupy cost
                 from nta_agent.execution.occupy_planner import min_occupy_stamina
                 rule.min_stamina = min_occupy_stamina(config)
+        elif getattr(rule, "name", "") == "army_composer":
+            rule.on_event = log.append
 
     def _safe(fn, *a):
         try:

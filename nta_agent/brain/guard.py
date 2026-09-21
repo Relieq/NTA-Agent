@@ -68,6 +68,18 @@ def sanitize_edits(edits: dict, profile, valid_army_uids, valid_build_ids=None) 
     army_in = edits.get("army") if isinstance(edits, dict) else None
     if isinstance(army_in, dict):
         army: dict = _formation(army_in, valid)  # flat group/roles/onetile/composition
+        # strike_target: the composition goal (list of {pawn_id, armies, size}) the
+        # ArmyComposer reconciles toward. Validate shape; [] clears the goal.
+        if isinstance(army_in.get("strike_target"), list):
+            st = []
+            for t in army_in["strike_target"]:
+                if isinstance(t, dict) and t.get("pawn_id"):
+                    pid = int(_num(t["pawn_id"], 1000, 99999, 0))
+                    if pid:
+                        st.append({"pawn_id": pid,
+                                   "armies": int(_num(t.get("armies", 1), 1, 20, 1)),
+                                   "size": int(_num(t.get("size", 9), 1, 9, 9))})
+            army["strike_target"] = st
         if isinstance(army_in.get("presets"), dict):
             presets = {str(n): _formation(f, valid) for n, f in army_in["presets"].items()
                        if isinstance(f, dict)}

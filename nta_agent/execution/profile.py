@@ -11,8 +11,12 @@ from dataclasses import dataclass, field
 from pathlib import Path
 
 DEFAULT_PROFILE = {
+    # army.strike_target = the BRAIN's army-composition goal: a list of
+    #   {pawn_id, armies, size} (N armies of one pawn type). The ArmyComposer rule
+    #   reconciles current armies toward it (rally/pull/recruit); [] = no goal.
+    #   Distinct from army.composition (per-army recruit-fill map used by Recruit).
     "army": {"group": [], "roles": {}, "onetile": True, "composition": {},
-             "active": "", "presets": {}},
+             "strike_target": [], "active": "", "presets": {}},
     # occupy.policy is the BRAIN's tactical channel (hands execute it token-free).
     #   order = "auto" | "tank_first" | "dps_first": which army leads the attack
     #   (frame-0 front line). auto lets the planner pick the lowest-loss ordering;

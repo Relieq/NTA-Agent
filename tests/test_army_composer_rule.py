@@ -1,0 +1,119 @@
+"""ArmyComposer rule: drives the composition planner against live-ish Actions."""
+
+from types import SimpleNamespace
+
+from nta_agent.execution.heuristics import ArmyComposer
+from nta_agent.execution.profile import load_profile
+
+CITY = 100
+TARGET = [{"pawn_id": 3206, "armies": 1, "size": 3},
+          {"pawn_id": 3305, "armies": 2, "size": 3}]
+
+
+def _profile(target):
+    p = load_profile("nonexistent")   # defaults
+    p.army["strike_target"] = target
+    return p
+
+
+def _army(uid, ids, index=CITY):
+    return {"uid": uid, "index": index, "state": 0,
+            "pawns": [{"uid": f"{uid}p{i}", "id": x, "lv": 1} for i, x in enumerate(ids)]}
+
+
+def _state(unlocked=(3206, 3305)):
+    slots = {str(i): {"id": pid} for i, pid in enumerate(unlocked, 1)}
+    return SimpleNamespace(main_city_index=CITY, raw={"player": {"pawnSlots": slots}})
+
+
+class FakeActions:
+    def __init__(self, armies):
+        self._armies = armies
+        self.calls = []
+
+    def get_player_armys(self):
+        return self._armies
+
+    def building_uid(self, bid):
+        return "barracks1"
+
+    def move_cell_army(self, armies, to):
+        self.calls.append(("rally", sorted(a["uid"] for a in armies), to))
+
+    def change_pawn_army(self, index, army_uid, pawn_uid, new_army_uid, **kw):
+        self.calls.append(("move", army_uid, pawn_uid, new_army_uid))
+
+    def drill_pawn(self, bu, pid, army_uid="", army_name="", **kw):
+        self.calls.append(("recruit", pid, army_uid or army_name))
+
+
+def test_no_target_stands_down_and_unlocks():
+    r = ArmyComposer(profile=_profile([]))
+    r.locked_uids = {"x"}
+    assert r.applies(_state(), FakeActions([_army("a", [3206] * 3)])) is False
+    assert r.locked_uids == set()
+
+
+def test_rallies_scattered_then_locks_strike():
+    armies = [_army("tank", [3206, 3206, 3206]), _army("imp1", [3305, 3305, 3305]),
+              _army("imp2", [3305, 3305, 3305]), _army("donor", [3305, 3305, 3305], index=250)]
+    r = ArmyComposer(profile=_profile(TARGET))
+    r._strike_uids = ["tank", "imp1", "imp2"]
+    acts = FakeActions(armies)
+    assert r.applies(_state(), acts) is True
+    r.act(acts)
+    assert any(c[0] == "rally" and "donor" in c[1] for c in acts.calls)
+    assert r.locked_uids == {"tank", "imp1", "imp2"}   # strike armies protected
+
+
+def test_moves_pawns_from_donor_when_colocated():
+    armies = [_army("tank", [3206, 3206, 3206]), _army("imp1", [3305]),
+              _army("imp2", [3305, 3305, 3305]), _army("donor", [3305, 3305, 3101])]
+    r = ArmyComposer(profile=_profile(TARGET))
+    r._strike_uids = ["tank", "imp1", "imp2"]
+    acts = FakeActions(armies)
+    assert r.applies(_state(), acts) is True
+    r.act(acts)
+    moves = [c for c in acts.calls if c[0] == "move"]
+    assert moves and all(c[1] == "donor" and c[3] == "imp1" for c in moves)
+
+
+def test_recruits_deficit():
+    armies = [_army("tank", [3206, 3206, 3206]), _army("imp1", [3305]), _army("imp2", [])]
+    r = ArmyComposer(profile=_profile(TARGET))
+    r._strike_uids = ["tank", "imp1", "imp2"]
+    acts = FakeActions(armies)
+    assert r.applies(_state(), acts) is True
+    r.act(acts)
+    assert any(c[0] == "recruit" and c[1] == 3305 for c in acts.calls)
+
+
+def test_blocked_emits_event_and_backs_off():
+    armies = [_army("imp1", [3305])]
+    events = []
+    r = ArmyComposer(profile=_profile(TARGET), on_event=lambda k, d: events.append((k, d)))
+    # 3305 locked (not in unlocked) and short -> infeasible
+    assert r.applies(_state(unlocked=(3206,)), FakeActions(armies)) is False
+    assert any(k == "composition_blocked" for k, _ in events)
+    assert r._cooldown > 0
+
+
+def test_done_when_target_met():
+    armies = [_army("tank", [3206, 3206, 3206]), _army("imp1", [3305, 3305, 3305]),
+              _army("imp2", [3305, 3305, 3305])]
+    r = ArmyComposer(profile=_profile(TARGET))
+    r._strike_uids = ["tank", "imp1", "imp2"]
+    assert r.applies(_state(), FakeActions(armies)) is False   # nothing to do
+
+
+def test_reserved_farm_group_not_pulled():
+    p = _profile(TARGET)
+    p.army["group"] = ["farm"]       # farm is the active group -> reserved
+    armies = [_army("farm", [3305, 3305, 3305]), _army("tank", [3206, 3206, 3206]),
+              _army("imp1", [3305]), _army("imp2", [3305, 3305, 3305])]
+    r = ArmyComposer(profile=p)
+    r._strike_uids = ["tank", "imp1", "imp2"]
+    acts = FakeActions(armies)
+    r.applies(_state(), acts)
+    r.act(acts)
+    assert all(c[1] != "farm" for c in acts.calls if c[0] == "move")

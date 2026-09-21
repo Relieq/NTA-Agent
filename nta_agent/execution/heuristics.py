@@ -197,6 +197,7 @@ class OccupyCell:
     _sim_off: bool = False     # sidecar checked and unavailable -> stop retrying
     threats_source: object = None  # callable -> enemy index set (P2 defense); wired in runner
     territory_source: object = None  # callable -> (owned_set, zone_centers) for bridging
+    locked_source: object = None   # callable -> army-uid set the ArmyComposer is arranging
     contest_range: int = 1     # a winnable candidate within this of an enemy is contested
     _pending: object = None    # (armies_list, target_index)
     _rally: object = None       # (armies_to_move, city, for_target) — consolidate then attack
@@ -406,8 +407,17 @@ class OccupyCell:
             # pawns) can't be sent and poisons the whole occupy with ecode.500000, so
             # exclude those (they show no busy `state`, so check the pawn queues).
             from nta_agent.execution.army_health import is_idle
+            # Armies the ArmyComposer is arranging are LOCKED — never send them to
+            # occupy (would fight over pawns / rally). Composer takes priority.
+            locked = set()
+            if self.locked_source is not None:
+                try:
+                    locked = {str(u) for u in (self.locked_source() or ())}
+                except Exception:
+                    locked = set()
             avail = [a for a in actions.select_armies(i)
-                     if is_idle(a) and not a.get("drillPawns") and not a.get("curingPawns")]
+                     if is_idle(a) and not a.get("drillPawns") and not a.get("curingPawns")
+                     and str(a.get("uid")) not in locked]
             grp = []
             if self.profile is not None:
                 from nta_agent.execution.profile import active_formation
@@ -1421,6 +1431,121 @@ class Forge:
 
 
 @dataclass
+class ArmyComposer:
+    """Reconcile armies toward the brain's strike-group target (army.strike_target),
+    e.g. 1 army of rìu khiên (3206) + 4 armies of IMP (3305). Each tick it asks the
+    pure planner for the next batch (rally scattered armies to the city, pull the right
+    pawns from the pool, recruit the deficit) and applies it. It LOCKS the armies it is
+    arranging (``locked_uids``) so occupy/logistics leave them alone, and persists the
+    strike-army assignment across ticks. Reorg only pulls from non-reserved armies and
+    never touches the farm group; heroes aren't fungible (handled in the planner).
+
+    When the target is infeasible (a pawn type isn't unlocked, or it exceeds the army
+    cap) it emits ``composition_blocked`` with the issues so the brain can tell the user.
+    """
+    name: str = "army_composer"
+    barracks_id: int = 2004
+    profile: object = None
+    on_event: object = None          # on_event(kind, detail) -> surface to log/brain
+    fail_cooldown: int = 10
+    blocked_cooldown: int = 60
+    _cooldown: int = 0
+    _city: int = 0
+    _strike_uids: list = field(default_factory=list)  # persisted assignment
+    locked_uids: set = field(default_factory=set)     # armies occupy/logistics must skip
+    _plan: object = None
+    _blocked_notified: bool = False
+    _done_notified: bool = False
+
+    def _target(self):
+        if self.profile is None:
+            return None
+        return list((getattr(self.profile, "army", None) or {}).get("strike_target") or [])
+
+    @staticmethod
+    def _unlocked(state) -> set:
+        slots = (getattr(state, "raw", None) or {}).get("player", {}).get("pawnSlots") or {}
+        return {int(v["id"]) for v in slots.values() if isinstance(v, dict) and v.get("id")}
+
+    def _reserved(self, state) -> set:
+        if self.profile is None:
+            return set()
+        from nta_agent.execution.profile import active_formation
+        return {str(u) for u in (active_formation(self.profile).get("group") or [])}
+
+    def applies(self, state: GameState, actions: Actions) -> bool:
+        if self._cooldown > 0:
+            self._cooldown -= 1
+            return False
+        target = self._target()
+        if not target:  # no goal -> release any lock and stand down
+            self.locked_uids = set()
+            self._strike_uids = []
+            return False
+        city = int(getattr(state, "main_city_index", 0) or 0)
+        if not city:
+            return False
+        try:
+            armies = actions.get_player_armys() or []
+        except Exception:
+            return False
+        from nta_agent.execution.composition_plan import plan_composition_step
+        plan = plan_composition_step(target, armies, city, self._strike_uids,
+                                     self._reserved(state), self._unlocked(state), army_cap=0)
+        self._plan = plan
+        self._city = city
+        self._strike_uids = [a["uid"] for a in plan["assign"]]
+        self.locked_uids = set(self._strike_uids)  # protect the group from occupy/logistics
+        if plan["blocked"]:
+            if self.on_event and not self._blocked_notified:
+                self.on_event("composition_blocked", {"issues": plan["report"].issues})
+                self._blocked_notified = True
+            self._cooldown = self.blocked_cooldown
+            return False
+        self._blocked_notified = False
+        if plan["done"]:
+            if self.on_event and not self._done_notified:
+                self.on_event("composition_done", {"strike": self._strike_uids})
+                self._done_notified = True
+            return False
+        self._done_notified = False
+        return bool(plan["actions"])
+
+    def act(self, actions: Actions) -> None:
+        plan = self._plan
+        self._plan = None
+        if not plan:
+            return
+        try:
+            armies = {str(a.get("uid")): a for a in (actions.get_player_armys() or [])}
+        except Exception:
+            armies = {}
+        city = self._city
+        for a in plan["actions"]:
+            op = a["op"]
+            try:
+                if op == "rally":
+                    mv = [{"uid": u, "index": int(armies.get(u, {}).get("index", city) or city)}
+                          for u in a["uids"] if u in armies]
+                    if mv:
+                        actions.move_cell_army(mv, a["to"])
+                elif op == "move_pawn":
+                    actions.change_pawn_army(city, a["from"], a["pawn"], a["to"])
+                elif op == "recruit":
+                    bu = actions.building_uid(self.barracks_id)
+                    if bu:  # drill ONE pawn/tick into the short army; the queue paces the rest
+                        actions.drill_pawn(bu, a["pawn_id"], army_uid=a.get("army") or "")
+            except Exception as e:
+                self._cooldown = self.fail_cooldown
+                ecode = str(e).split("ecode.")[-1][:6] if "ecode." in str(e) else ""
+                # army busy/full/not-found/insufficient/army-cap are expected mid-reorg
+                if (ecode not in ("500019", "500020", "500011", "500017", "500012", "500054")
+                        and self.on_event):
+                    self.on_event("composition_error", {"op": op, "ecode": ecode})
+                return
+
+
+@dataclass
 class RuleEngine:
     rules: list[Rule]
     on_error: object = None  # optional on_error(rule_name, exc): full error sink (ErrorLog)
@@ -1454,6 +1579,7 @@ class RuleEngine:
     def default(cls, profile: object = None) -> RuleEngine:
         return cls(rules=[CollectCityOutput(), BuildOrder(profile=profile),
                           Recruit(profile=profile),
+                          ArmyComposer(profile=profile),
                           HealRouting(),
                           OccupyCell(use_sim=True, profile=profile, radius=4),
                           ClaimTreasures(), ReviveInjured(profile=profile),
