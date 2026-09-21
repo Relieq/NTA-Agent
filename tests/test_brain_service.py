@@ -90,6 +90,23 @@ def test_writes_brain_advice(tmp_path):
     assert adv == [{"text": "Nâng kho", "why": "sắp tràn"}]
 
 
+def test_blocked_composition_surfaced_as_advice(tmp_path):
+    import json
+    cfg = _cfg2(tmp_path)
+    cfg.composition_status_path = tmp_path / "composition_status.json"
+    cfg.composition_status_path.write_text(
+        json.dumps({"active": True, "blocked": True,
+                    "issues": ["pawn 3305 chưa unlock — không chiêu mộ được 35 lính còn thiếu"]}),
+        encoding="utf-8")
+    actions = SimpleNamespace(get_player_armys=list)
+    svc = BrainService(load_profile("none"), cfg, actions=actions,
+                       policy=BrainPolicy(every_ticks=1, max_calls=5),
+                       llm_propose=lambda dg, p: {"advice": []})
+    svc.tick(_state())
+    adv = json.loads((tmp_path / "brain_advice.json").read_text(encoding="utf-8"))
+    assert adv and "3305" in adv[0]["text"]      # the block was relayed to the user
+
+
 def test_event_trigger_fires_on_threat_off_cadence(tmp_path):
     import json
     cfg = _cfg2(tmp_path)

@@ -75,6 +75,26 @@ class BrainService:
             return True  # heavy casualties
         return bool(self._decisions(state))  # a reserved decision awaits a recommendation
 
+    def _composition_advice(self) -> list:
+        """If the ArmyComposer flagged the strike-group goal infeasible, relay it to the
+        user as advice (deterministic — not LLM-dependent), so a request that can't be
+        met (e.g. a pawn type isn't unlocked, or it exceeds the army cap) is surfaced."""
+        path = getattr(self.cfg, "composition_status_path", None)
+        if path is None:
+            return []
+        try:
+            import json
+            data = json.loads(path.read_text(encoding="utf-8"))
+        except (OSError, ValueError):
+            return []
+        if not (isinstance(data, dict) and data.get("blocked")):
+            return []
+        issues = data.get("issues") or []
+        if not issues:
+            return []
+        return [{"text": "Không tạo được nhóm quân theo yêu cầu: " + "; ".join(issues),
+                 "why": "army composition blocked — cần bạn xử lý (mở binh chủng / tăng slot đội)"}]
+
     def _write_advice(self, advice) -> None:
         try:  # best-effort: never let advice I/O break the brain tick
             import json
@@ -164,7 +184,8 @@ class BrainService:
                 # sections from disk right before saving so the latest dashboard wins.
                 self._refresh_human_fields()
                 save_profile(self.profile, self.cfg.profile_path)
-            advice = clean.get("advice") or []
+            advice = list(clean.get("advice") or [])
+            advice = self._composition_advice() + advice  # relay an infeasible comp goal
             self._write_advice(advice)  # B2: human-facing recommendations
             self._calls += 1
             self._last_call = self._tick

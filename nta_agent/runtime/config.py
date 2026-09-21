@@ -43,6 +43,10 @@ class RuntimeConfig:
         return self.log_dir / "brain_advice.json"
 
     @property
+    def composition_status_path(self) -> Path:
+        return self.log_dir / "composition_status.json"
+
+    @property
     def errors_path(self) -> Path:
         return self.log_dir / "errors.jsonl"
 

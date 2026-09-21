@@ -120,6 +120,15 @@ def run(cfg: RuntimeConfig, *, ticks: int = 0, session=None, engine=None) -> Non
         elif getattr(rule, "name", "") == "army_composer":
             rule.on_event = log.append
 
+            def _write_comp_status(s):  # persist for the brain advice loop / dashboard
+                try:
+                    p = cfg.composition_status_path
+                    p.parent.mkdir(parents=True, exist_ok=True)
+                    p.write_text(json.dumps(s, ensure_ascii=False), encoding="utf-8")
+                except Exception:
+                    pass
+            rule.status_sink = _write_comp_status
+
     def _safe(fn, *a):
         try:
             fn(*a)

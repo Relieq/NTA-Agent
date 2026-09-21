@@ -1447,6 +1447,7 @@ class ArmyComposer:
     barracks_id: int = 2004
     profile: object = None
     on_event: object = None          # on_event(kind, detail) -> surface to log/brain
+    status_sink: object = None       # status_sink(dict) -> persist status for the brain advice loop
     fail_cooldown: int = 10
     blocked_cooldown: int = 60
     _cooldown: int = 0
@@ -1481,6 +1482,7 @@ class ArmyComposer:
         if not target:  # no goal -> release any lock and stand down
             self.locked_uids = set()
             self._strike_uids = []
+            self._status({"active": False})
             return False
         city = int(getattr(state, "main_city_index", 0) or 0)
         if not city:
@@ -1496,20 +1498,34 @@ class ArmyComposer:
         self._city = city
         self._strike_uids = [a["uid"] for a in plan["assign"]]
         self.locked_uids = set(self._strike_uids)  # protect the group from occupy/logistics
+        issues = list(plan["report"].issues)
         if plan["blocked"]:
+            self._status({"active": True, "blocked": True, "done": False,
+                          "issues": issues, "strike": self._strike_uids})
             if self.on_event and not self._blocked_notified:
-                self.on_event("composition_blocked", {"issues": plan["report"].issues})
+                self.on_event("composition_blocked", {"issues": issues})
                 self._blocked_notified = True
             self._cooldown = self.blocked_cooldown
             return False
         self._blocked_notified = False
         if plan["done"]:
+            self._status({"active": True, "blocked": False, "done": True,
+                          "issues": issues, "strike": self._strike_uids})
             if self.on_event and not self._done_notified:
                 self.on_event("composition_done", {"strike": self._strike_uids})
                 self._done_notified = True
             return False
         self._done_notified = False
+        self._status({"active": True, "blocked": False, "done": False,
+                      "issues": issues, "strike": self._strike_uids})
         return bool(plan["actions"])
+
+    def _status(self, s: dict) -> None:
+        if self.status_sink is not None:
+            try:
+                self.status_sink(s)
+            except Exception:
+                pass
 
     def act(self, actions: Actions) -> None:
         plan = self._plan

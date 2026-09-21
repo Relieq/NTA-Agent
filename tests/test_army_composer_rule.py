@@ -108,11 +108,22 @@ def test_recruits_deficit():
 def test_blocked_emits_event_and_backs_off():
     armies = [_army("imp1", [3305])]
     events = []
-    r = ArmyComposer(profile=_profile(TARGET), on_event=lambda k, d: events.append((k, d)))
+    status = []
+    r = ArmyComposer(profile=_profile(TARGET), on_event=lambda k, d: events.append((k, d)),
+                     status_sink=status.append)
     # 3305 locked (not in unlocked) and short -> infeasible
     assert r.applies(_state(unlocked=(3206,)), FakeActions(armies)) is False
     assert any(k == "composition_blocked" for k, _ in events)
     assert r._cooldown > 0
+    # status persisted for the brain advice loop: blocked + issues
+    assert status and status[-1]["blocked"] is True and status[-1]["issues"]
+
+
+def test_status_active_false_when_no_target():
+    status = []
+    r = ArmyComposer(profile=_profile([]), status_sink=status.append)
+    r.applies(_state(), FakeActions([_army("a", [3206] * 3)]))
+    assert status[-1] == {"active": False}
 
 
 def test_done_when_target_met():
