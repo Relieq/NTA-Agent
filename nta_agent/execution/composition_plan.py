@@ -22,7 +22,7 @@ version handles assign / rally / pull-target / recruit / done, which is the core
 """
 from __future__ import annotations
 
-from nta_agent.execution.army_composer import _is_hero, assess_composition
+from nta_agent.execution.army_composer import _is_hero, assess_composition, count_owned
 
 
 def _count(army: dict, pawn_id: int) -> int:
@@ -69,7 +69,10 @@ def _assign(target: list[dict], armies: list[dict], reserved: set,
 def plan_composition_step(target, armies, city_index, strike_uids, reserved_uids,
                           unlocked_ids, army_cap):
     """Return {assign, actions, done, blocked, report} — the next step toward target."""
-    report = assess_composition(target, armies, unlocked_ids, army_cap)
+    # Feasibility is judged over the USABLE pool (reserved/farm pawns are never pulled),
+    # so a request isn't called feasible just because the farm holds the pawns.
+    usable_armies = [a for a in armies if a["uid"] not in set(reserved_uids)]
+    report = assess_composition(target, usable_armies, unlocked_ids, army_cap)
     assign = _assign(target, armies, set(reserved_uids), list(strike_uids or []))
     if not report.feasible:
         return {"assign": [a for a in assign if a["uid"]], "actions": [],
@@ -95,39 +98,70 @@ def plan_composition_step(target, armies, city_index, strike_uids, reserved_uids
                 "actions": [{"op": "rally", "uids": scatter, "to": city_index}],
                 "done": False, "blocked": False, "report": report}
 
-    # 2) co-located: pull target-type pawns from donors, then recruit the remainder.
+    # 2) co-located: purge non-target from strike armies, pull target from the pool,
+    #    then recruit the remainder. Everything uses only co-located, non-reserved donors.
     actions: list[dict] = []
-    # track donor pawns still available to move (co-located only)
+    co_donors = [d for d in donors if d.get("index") == city_index]
+    donor_room = {d["uid"]: max(0, 9 - len(d.get("pawns") or [])) for d in co_donors}
     donor_pool: dict[int, list[tuple[str, str]]] = {}  # pid -> [(donor_uid, pawn_uid)]
-    for d in donors:
-        if d.get("index") != city_index:
-            continue
+    for d in co_donors:
         for p in (d.get("pawns") or []):
             pid = int(p.get("id", 0) or 0)
             if pid in needed_types and not _is_hero(p):
                 donor_pool.setdefault(pid, []).append((d["uid"], p.get("uid")))
 
+    # 2a) PURGE non-target pawns out of each strike army (end state = pure target type).
+    #     Prefer MOVING to a co-located donor with room (preserve the unit), starting
+    #     with the highest-level pawns; DISMISS the rest lowest-level first (user: dismiss
+    #     low-level lính). Never empty a strike army that has no target pawns yet.
+    dismissals: list[tuple[int, dict]] = []
     for a in assign:
         if not a["uid"]:
-            continue  # a fresh army to create is handled by recruit below
+            continue
+        army = by_uid[a["uid"]]
+        pid = a["pawn_id"]
+        have = _count(army, pid)
+        pawns = army.get("pawns") or []
+        non_target = [p for p in pawns
+                      if int(p.get("id", 0) or 0) != pid and not _is_hero(p)]
+        non_target.sort(key=lambda p: -int(p.get("lv", 0) or 0))  # high-lv first (to preserve)
+        total = len(pawns)
+        for p in non_target:
+            if have == 0 and total <= 1:
+                break  # keep >=1 so an unfilled strike army's uid survives
+            dest = next((u for u, room in donor_room.items() if room > 0), None)
+            if dest:
+                actions.append({"op": "move_pawn", "from": a["uid"],
+                                "pawn": p.get("uid"), "to": dest})
+                donor_room[dest] -= 1
+            else:
+                dismissals.append((int(p.get("lv", 0) or 0),
+                                   {"op": "dismiss_pawn", "army": a["uid"], "pawn": p.get("uid")}))
+            total -= 1
+    dismissals.sort(key=lambda x: x[0])          # dismiss lowest-level first
+    actions.extend(d for _, d in dismissals)
+
+    # 2b) PULL target-type pawns from the pool into short strike armies.
+    for a in assign:
+        if not a["uid"]:
+            continue
         pid, sz = a["pawn_id"], a["size"]
-        have = _count(by_uid[a["uid"]], pid)
-        need = sz - have
+        need = sz - _count(by_uid[a["uid"]], pid)
         while need > 0 and donor_pool.get(pid):
             src_uid, pawn_uid = donor_pool[pid].pop()
             actions.append({"op": "move_pawn", "from": src_uid, "pawn": pawn_uid, "to": a["uid"]})
             need -= 1
 
-    # 3) RECRUIT any remaining per-type deficit (owned across strike+donors < needed).
-    for t in report.targets:
-        if t.deficit <= 0:
-            continue
-        # deficit already accounts for owned; subtract what donor moves will cover is
-        # implicit (moves come from owned, which deficit excluded). Recruit t.deficit.
-        # spread into the short strike armies of this type (executor picks the army).
-        shorts = [a["uid"] for a in assign if a["pawn_id"] == t.pawn_id]
-        actions.append({"op": "recruit", "pawn_id": t.pawn_id,
-                        "army": shorts[0] if shorts else None, "count": t.deficit})
+    # 2c) RECRUIT the remaining deficit — counted over the USABLE (non-reserved) pool
+    #     only, since reserved (farm) pawns are never pulled into the strike group.
+    usable = [a for a in armies if a["uid"] not in set(reserved_uids)]
+    for pid in sorted(needed_types):
+        want = sum(a["size"] for a in assign if a["pawn_id"] == pid)
+        deficit = max(0, want - count_owned(usable, pid))
+        if deficit > 0:
+            shorts = [a["uid"] for a in assign if a["pawn_id"] == pid and a["uid"]]
+            actions.append({"op": "recruit", "pawn_id": pid,
+                            "army": shorts[0] if shorts else None, "count": deficit})
 
     done = not actions and all(
         a["uid"] and _count(by_uid[a["uid"]], a["pawn_id"]) >= a["size"] for a in assign)

@@ -43,6 +43,9 @@ class FakeActions:
     def change_pawn_army(self, index, army_uid, pawn_uid, new_army_uid, **kw):
         self.calls.append(("move", army_uid, pawn_uid, new_army_uid))
 
+    def dismiss_pawn(self, index, army_uid, pawn_uid):
+        self.calls.append(("dismiss", army_uid, pawn_uid))
+
     def drill_pawn(self, bu, pid, army_uid="", army_name="", **kw):
         self.calls.append(("recruit", pid, army_uid or army_name))
 
@@ -76,6 +79,20 @@ def test_moves_pawns_from_donor_when_colocated():
     r.act(acts)
     moves = [c for c in acts.calls if c[0] == "move"]
     assert moves and all(c[1] == "donor" and c[3] == "imp1" for c in moves)
+
+
+def test_dismisses_low_level_leftover_pawn():
+    # imp1 clogged with a lv1 3101 and no donor room -> dismiss_pawn dispatched.
+    armies = [_army("tank", [3206, 3206, 3206]),
+              {"uid": "imp1", "index": CITY, "state": 0,
+               "pawns": [{"uid": "k0", "id": 3305, "lv": 1}, {"uid": "k1", "id": 3101, "lv": 1}]},
+              _army("imp2", [3305, 3305, 3305])]
+    r = ArmyComposer(profile=_profile(TARGET))
+    r._strike_uids = ["tank", "imp1", "imp2"]
+    acts = FakeActions(armies)
+    assert r.applies(_state(), acts) is True
+    r.act(acts)
+    assert ("dismiss", "imp1", "k1") in acts.calls
 
 
 def test_recruits_deficit():

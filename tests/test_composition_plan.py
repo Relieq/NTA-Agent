@@ -94,6 +94,43 @@ def test_done_when_all_strike_armies_match_target():
     assert r["actions"] == []
 
 
+def test_purge_dismisses_lowest_level_non_target_when_no_donor_room():
+    # imp1 (strike for 3305) is clogged with two 3101; no donor -> dismiss them,
+    # lowest level first. It keeps its 3305 (target) so it never empties.
+    armies = [_army("tank", [3206, 3206, 3206]),
+              _army("imp1", [3305, {"id": 3101, "lv": 5}, {"id": 3101, "lv": 2}]),
+              _army("imp2", [3305, 3305, 3305])]
+    r = plan_composition_step(TARGET, armies, CITY, strike_uids=["tank", "imp1", "imp2"],
+                              reserved_uids=set(), unlocked_ids={3206, 3305}, army_cap=9)
+    dis = [a for a in r["actions"] if a["op"] == "dismiss_pawn" and a["army"] == "imp1"]
+    assert [a["pawn"] for a in dis] == ["imp1p2", "imp1p1"]   # lv2 pawn before lv5
+
+
+def test_purge_prefers_moving_non_target_to_a_donor_with_room():
+    # a co-located donor has room -> the non-target pawn is moved (preserved), not dismissed.
+    armies = [_army("tank", [3206, 3206, 3206]),
+              _army("imp1", [3305, {"id": 3101, "lv": 5}]),
+              _army("imp2", [3305, 3305, 3305]),
+              _army("donor", [3305])]                 # room for more
+    r = plan_composition_step(TARGET, armies, CITY, strike_uids=["tank", "imp1", "imp2"],
+                              reserved_uids=set(), unlocked_ids={3206, 3305}, army_cap=9)
+    assert not any(a["op"] == "dismiss_pawn" for a in r["actions"])
+    assert any(a["op"] == "move_pawn" and a["pawn"] == "imp1p1" and a["to"] == "donor"
+               for a in r["actions"])
+
+
+def test_purge_never_empties_an_unfilled_strike_army():
+    # a strike army holding ONLY non-target pawns (no 3305 yet) must keep >=1 pawn
+    # so its uid survives until target pawns arrive.
+    armies = [_army("tank", [3206, 3206, 3206]),
+              _army("imp1", [3305, 3305, 3305]),
+              _army("imp2", [{"id": 3101, "lv": 1}])]      # only junk, no target
+    r = plan_composition_step(TARGET, armies, CITY, strike_uids=["tank", "imp1", "imp2"],
+                              reserved_uids=set(), unlocked_ids={3206, 3305}, army_cap=9)
+    dis = [a for a in r["actions"] if a["op"] == "dismiss_pawn" and a["army"] == "imp2"]
+    assert dis == []                                        # last pawn kept
+
+
 def test_reserved_armies_are_never_strike_or_donor():
     # 'farm' is reserved -> not chosen as strike, and its pawns are never pulled.
     armies = [_army("farm", [3305, 3305, 3305]),

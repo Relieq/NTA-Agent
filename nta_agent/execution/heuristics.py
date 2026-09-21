@@ -1531,6 +1531,8 @@ class ArmyComposer:
                         actions.move_cell_army(mv, a["to"])
                 elif op == "move_pawn":
                     actions.change_pawn_army(city, a["from"], a["pawn"], a["to"])
+                elif op == "dismiss_pawn":
+                    actions.dismiss_pawn(city, a["army"], a["pawn"])
                 elif op == "recruit":
                     bu = actions.building_uid(self.barracks_id)
                     if bu:  # drill ONE pawn/tick into the short army; the queue paces the rest

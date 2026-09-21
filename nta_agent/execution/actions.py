@@ -377,6 +377,13 @@ class Actions:
         return self.session.request("game/HD_DismissArmy",
                                     {"index": int(index), "armyUid": str(army_uid), "id": int(pawn_id)})
 
+    def dismiss_pawn(self, index: int, army_uid: str, pawn_uid: str) -> dict:
+        """Dismiss a SINGLE pawn by uid (GAME_HD_DismissPawn) — the normal way to drop
+        individual soldiers (returns a small resource refund). An army that reaches 0
+        pawns is auto-removed by the server."""
+        return self.session.request("game/HD_DismissPawn",
+                                    {"index": int(index), "armyUid": str(army_uid), "uid": str(pawn_uid)})
+
     def pawn_lving(self, index: int, army_uid: str, pawn_uid: str) -> dict:
         """Normal (exp-book) pawn level-up (GAME_HD_PawnLving). Queued/timed; locks
         the army (LVING). Reply carries updated queues + army."""
