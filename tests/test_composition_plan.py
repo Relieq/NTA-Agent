@@ -84,6 +84,18 @@ def test_recruit_when_owned_short_and_unlocked():
     assert recruits and all(x["pawn_id"] == 3305 for x in recruits)
 
 
+def test_recruit_targets_a_non_full_strike_army():
+    # imp1 is already FULL (3 of 3305); imp2 is short. The recruit must target imp2,
+    # not the full imp1 (else it loops on 500019 and imp2 never fills).
+    armies = [_army("tank", [3206, 3206, 3206]),
+              _army("imp1", [3305, 3305, 3305]),   # full for size 3
+              _army("imp2", [3305])]                # short
+    r = plan_composition_step(TARGET, armies, CITY, strike_uids=["tank", "imp1", "imp2"],
+                              reserved_uids=set(), unlocked_ids={3206, 3305}, army_cap=9)
+    rec = [a for a in r["actions"] if a["op"] == "recruit" and a["pawn_id"] == 3305]
+    assert rec and rec[0]["army"] == "imp2"      # not the full imp1
+
+
 def test_done_when_all_strike_armies_match_target():
     armies = [_army("tank", [3206, 3206, 3206]),
               _army("imp1", [3305, 3305, 3305]),

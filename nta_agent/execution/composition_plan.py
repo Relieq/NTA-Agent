@@ -159,7 +159,12 @@ def plan_composition_step(target, armies, city_index, strike_uids, reserved_uids
         want = sum(a["size"] for a in assign if a["pawn_id"] == pid)
         deficit = max(0, want - count_owned(usable, pid))
         if deficit > 0:
-            shorts = [a["uid"] for a in assign if a["pawn_id"] == pid and a["uid"]]
+            # target a strike army of this type that still has ROOM — NOT just the
+            # first one (which may already be full: recruiting into a full army loops
+            # on ecode.500019 and the other short armies never get filled).
+            shorts = [a["uid"] for a in assign if a["pawn_id"] == pid and a["uid"]
+                      and _count(by_uid[a["uid"]], pid) < a["size"]
+                      and len(by_uid[a["uid"]].get("pawns") or []) < 9]
             actions.append({"op": "recruit", "pawn_id": pid,
                             "army": shorts[0] if shorts else None, "count": deficit})
 
