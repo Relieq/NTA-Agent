@@ -37,6 +37,18 @@ def test_routes_wounded_army_to_main():
     assert acts.moved == [(["hurt"], main)]
 
 
+def test_skips_locked_army():
+    # a wounded army the ArmyComposer owns must not be routed away to heal.
+    main = 100 * 600 + 100
+    st = _state(main, forts=[])
+    armies = [{"index": 105 * 600 + 100, "uid": "hurt", "pawns": [{"hp": [10, 100]}]}]
+    acts = FakeActions(armies)
+    rule = HealRouting(check_every=0)
+    rule.locked_source = lambda: {"hurt"}
+    assert rule.applies(st, acts) is False
+    assert acts.moved == []
+
+
 def test_no_action_when_all_healthy():
     main = 100 * 600 + 100
     st = _state(main, forts=[])

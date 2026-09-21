@@ -1028,6 +1028,7 @@ class HealRouting:
     check_every: int = 4        # ticks between get_player_armys() sweeps
     max_route_per_tick: int = 1
     on_event: object = None
+    locked_source: object = None  # callable -> army-uid set the ArmyComposer owns (skip them)
     _cooldown: int = 0
     _pending: object = None
 
@@ -1045,6 +1046,13 @@ class HealRouting:
         )
         from nta_agent.execution.territory import build_territory
         armies = actions.get_player_armys()
+        if self.locked_source is not None:  # don't route the composer's strike armies
+            try:
+                locked = {str(u) for u in (self.locked_source() or ())}
+            except Exception:
+                locked = set()
+            if locked:
+                armies = [a for a in armies if str(a.get("uid")) not in locked]
         self._cooldown = self.check_every
         terr = build_territory(state)
         nodes = {terr.main_city} | {f.index for f in terr.forts}
@@ -1271,6 +1279,7 @@ class Logistics:
     fail_cooldown: int = 8
     profile: object = None
     on_event: object = None
+    locked_source: object = None  # callable -> army-uid set the ArmyComposer owns (skip them)
     _cooldown: int = 0
     _pending: object = None   # ("plan", LogisticsAction) | ("redeploy", army, target)
 
@@ -1292,6 +1301,15 @@ class Logistics:
         from nta_agent.execution.territory import build_territory
         terr = build_territory(state)
         armies = actions.get_player_armys()
+        # Never touch armies the ArmyComposer is arranging (its lock) — don't
+        # consolidate or redeploy a strike army out from under the composer.
+        if self.locked_source is not None:
+            try:
+                locked = {str(u) for u in (self.locked_source() or ())}
+            except Exception:
+                locked = set()
+            if locked:
+                armies = [a for a in armies if str(a.get("uid")) not in locked]
         self._cooldown = self.check_every
         main = terr.main_city
         # B: the brain assigned a topped-up army a destination -> send it out.

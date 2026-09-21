@@ -126,6 +126,16 @@ def test_rule_brings_home_field_army():
     assert acts.moved == [(["A"], MAIN)]
 
 
+def test_rule_skips_locked_army():
+    # an army the ArmyComposer owns must not be brought home / consolidated.
+    st = _state(MAIN)
+    acts = FakeActions([_army("A", 5555, 5)], MAIN)
+    rule = Logistics(check_every=0, profile=_prof())
+    rule.locked_source = lambda: {"A"}
+    assert rule.applies(st, acts) is False      # A locked -> nothing to do
+    assert acts.moved == []
+
+
 def test_rule_consolidates_pawns():
     st = _state(MAIN)
     keeper = _army("K", 5555, 6)
