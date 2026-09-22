@@ -1,9 +1,22 @@
-# NTA-Agent — Kế hoạch tổng cho phần còn lại (2026-09-17)
+# NTA-Agent — Kế hoạch tổng cho phần còn lại (2026-09-17, cập nhật 2026-09-22)
 
 Bản đồ **những gì còn lại**, phản ánh đúng hiện trạng (dự án đã đi **API-first thuần**, vượt xa
 [ROADMAP.md](../../ROADMAP.md) gốc). Mỗi workstream ở §2 sẽ có spec + implementation plan riêng khi
 bắt tay làm (theo flow brainstorming → write-plan). Đây là tài liệu **định hướng & trình tự**, không
 phải plan thực thi từng bước.
+
+> **Cập nhật 2026-09-22 (đã xong thêm kể từ 09-17):**
+> - **Army composition** (brain đặt strike_target, hands ArmyComposer dồn/chiêu mộ) — XONG, live.
+> - **Battle-sim fidelity** (reinforce tiêm vào trận đang chạy, 0 sai số) + battle-record replay tool — XONG.
+> - **B (Bộ não chiến lược) — thư viện chiến thuật THẬT qua "học-từ-thất-bại"** (Inc 1–3): FailureLedger +
+>   counterfactual sim + LessonStore (guard bắt buộc evidence, chống bịa) + contextual recall + dashboard.
+>   XONG cả 3 đợt, verified live (PR #69/#70/#71). Xem specs/plans `2026-09-22-brain-learn-from-failure*`.
+> - **F1 Auto-recover** — health monitor chủ động (probe khi staleness → recover half-open) + telemetry
+>   dashboard. XONG, verified live (PR #72).
+> - **F2 Regression guard** — version một-nguồn + config manifest + endpoint-catalog test. XONG.
+>
+> **Còn lại chính:** E1 Bazaar (chưa có code), brain Inc 4 (counterfactual đổi thành-phần-đội + recall
+> theo resource/goal), A3 expansion presets (đã có `execution/expansion.py`), G1 mở rộng (đã có khung).
 
 ---
 
@@ -23,8 +36,10 @@ nhiều). **Vision adapter (OpenCV/OCR) CHƯA dựng** — khác ROADMAP gốc.
   `fort_advisor.py` (C2 gợi ý Cứ Điểm, PR#16).
 - `occupy_planner` (discovery robust, PR#35), `formation`, `order_strategies`, `army_health` (PR#33).
 
-**Brain (LLM) — HẠ TẦNG có, dùng còn THƯA:** `brain/{llm,policies,digest,guard}.py`; `decision_service`
-(ceri unlock human-in-loop), `equipment`, `brain_service`, chat. **Chưa có thư viện chiến thuật thật.**
+**Brain (LLM):** `brain/{llm,policies,digest,guard,lessons}.py`; `decision_service` (ceri unlock
+human-in-loop), `equipment`, `brain_service`, chat. **Thư viện chiến thuật THẬT qua học-từ-thất-bại đã
+có** (2026-09-22): ledger → counterfactual → lessons có-evidence → contextual recall. Xem
+[[nta-agent-brain-scenarios]] / specs `2026-09-22-brain-learn-from-failure*`.
 
 **Vận hành:** dashboard Vue 3 (control agent, map, panels), `eventlog`, `fort_service`, `proc`
 (pidfile/supervisor). RE docs (`PROTOCOL.md`, `RE_FINDINGS.md`, `game-api.md`).
@@ -72,10 +87,12 @@ threat/cost-aware. Verify live: địch gần→spiral, cereal thấp→tắt re
   (bán dư, mua thiếu cho build/recruit). *Deps: RE shape + rule ROI.*
 
 ### E. Bền bỉ / vận hành (ROADMAP Phase 6)
-- **F1 — Auto-recover** (M, LIVE). Tự phục hồi khi token/session/emulator chập chờn; health check; backoff.
-  *Deps: none.* Cần trước khi chạy nền dài không giám sát.
-- **F2 — Regression khi game update** (M). Pin version config/protocol; test phát hiện đổi endpoint/asset;
-  quy trình cập nhật. *Deps: none.*
+- **F1 — Auto-recover** — ✅ **XONG (PR#72, 2026-09-22).** Reactive recovery (backoff, session/token/captcha)
+  ĐÃ có từ trước; nay thêm **proactive**: `last_activity` + HealthMonitor probe khi staleness → recover
+  half-open + telemetry `health.json` (dashboard header). Verify live.
+- **F2 — Regression khi game update** — ✅ **XONG.** `nta_agent/version.py` GAME_VERSION một-nguồn +
+  `tools/re/gen_config_manifest.py` (manifest hash/version) + tests `test_config_regression`/
+  `test_endpoint_catalog`/`test_game_version`. Quy trình cập nhật trong CLAUDE.md.
 - **F3 — Vision fallback adapter** (L, cố ý hoãn). OpenCV+OCR+ADB tap cho domain chưa crack / khi API đổi.
   Chỉ làm nếu đường API tỏ ra không đủ hoặc cần an toàn tài khoản cho hành động nhạy cảm. *Deps: lớn.*
 
