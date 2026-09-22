@@ -152,6 +152,24 @@ def read_forts_view(cfg) -> dict:
             "threat_summary": data.get("threat_summary") or {"count": 0}}
 
 
+def read_failures(cfg) -> dict:
+    """Recent failure-ledger events (failures.json) for the learning panel."""
+    try:
+        rows = json.loads(Path(cfg.failures_path).read_text(encoding="utf-8"))
+    except (OSError, ValueError):
+        rows = []
+    return {"failures": list(reversed(rows))[:30] if isinstance(rows, list) else []}
+
+
+def read_lessons(cfg) -> dict:
+    """Distilled lessons (lessons.json) for the learning panel."""
+    try:
+        rows = json.loads(Path(cfg.lessons_path).read_text(encoding="utf-8"))
+    except (OSError, ValueError):
+        rows = []
+    return {"lessons": rows if isinstance(rows, list) else []}
+
+
 def read_errors(cfg) -> dict:
     """Structured error summary (errors.jsonl) for a post-run review."""
     from nta_agent.runtime.errorlog import ErrorLog
@@ -292,6 +310,10 @@ class Handler(BaseHTTPRequestHandler):
             self._json(200, read_intel(cfg))
         elif parsed.path == "/api/errors":
             self._json(200, read_errors(cfg))
+        elif parsed.path == "/api/failures":
+            self._json(200, read_failures(cfg))
+        elif parsed.path == "/api/lessons":
+            self._json(200, read_lessons(cfg))
         elif parsed.path == "/api/agent/status":
             self._json(200, self.server.supervisor.status())
         elif parsed.path.startswith("/static/"):
@@ -318,6 +340,22 @@ class Handler(BaseHTTPRequestHandler):
                 self._json(404, {"ok": False, "error": "unknown agent action"})
                 return
             self._json(200, fn())
+            return
+        if parsed.path in ("/api/lessons/retire", "/api/lessons/pin"):
+            try:
+                length = int(self.headers.get("Content-Length", "0"))
+                body = json.loads(self.rfile.read(length) or b"{}")
+                lid = str(body["id"])
+            except (ValueError, TypeError, KeyError):
+                self._json(400, {"ok": False, "error": "need id"})
+                return
+            from nta_agent.brain.lessons import LessonStore
+            store = LessonStore(cfg.lessons_path)
+            if parsed.path.endswith("retire"):
+                store.retire(lid)
+            else:
+                store.pin(lid)
+            self._json(200, read_lessons(cfg))
             return
         if parsed.path == "/api/forts/decide":
             try:

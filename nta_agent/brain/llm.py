@@ -21,6 +21,9 @@ _SYSTEM = (
     '"loot":{"enabled":bool,"min_reward_per_chest":number>=0}},'
     '"revive":{"enabled":bool},'
     '"logistics":{"enabled":bool,"target":1-9,"redeploy":{armyUid:cellIndex}},'
+    '"lessons":[{"trigger":{"kind":"battle_loss|res_depletion|stuck_goal",'
+    '"match":{"monster_id":int?,"resource":str?,"goal":str?}},"diagnosis":"...",'
+    '"resolution":{"lever_edits":{...}}|{"advice":"..."},"evidence":["<event id>"]}],'
     '"advice":[{"text":"...","why":"..."}]}\n'
     "Only include fields you want to change. max_loss is the max acceptable "
     "predicted troop-loss % for occupying a cell (0 = never lose troops).\n"
@@ -57,6 +60,13 @@ _SYSTEM = (
     "counterfactual.best_order, set occupy.policy.order to it. digest.res_pressure "
     "is {resource: count} of recent shortage back-offs — when high, don't push "
     "recruit/build harder; advise the player (e.g. build storage, sell surplus).\n"
+    "lessons: distil a durable lesson from a failure so you don't repeat it. Each "
+    "lesson MUST cite evidence = one or more event ids taken from digest.failures "
+    "(a lesson with no real evidence is discarded). trigger.match keys allowed: "
+    "monster_id, resource, goal. resolution is EITHER lever_edits (a safe profile "
+    "change the hands auto-apply, same fields you may edit above — NOT max_loss/"
+    "build/army.group) OR advice (a human-owned or judgement fix). digest.lessons "
+    "shows what you already learned — reuse them, don't duplicate.\n"
     "revive.enabled toggles auto-reviving dead pawns (costs resources); disable it "
     "when resources are tight (see digest.injured for dead-pawn count).\n"
     "army.presets is a map of named formations you can create/recall; set "
