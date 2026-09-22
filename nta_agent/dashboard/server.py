@@ -170,6 +170,15 @@ def read_lessons(cfg) -> dict:
     return {"lessons": rows if isinstance(rows, list) else []}
 
 
+def read_health(cfg) -> dict:
+    """Connection-health telemetry (health.json) for the status header (F1)."""
+    try:
+        return json.loads(Path(cfg.health_path).read_text(encoding="utf-8"))
+    except (OSError, ValueError):
+        return {"connected": False, "last_activity_age": 0, "recover_count": 0,
+                "degraded": False}
+
+
 def read_errors(cfg) -> dict:
     """Structured error summary (errors.jsonl) for a post-run review."""
     from nta_agent.runtime.errorlog import ErrorLog
@@ -314,6 +323,8 @@ class Handler(BaseHTTPRequestHandler):
             self._json(200, read_failures(cfg))
         elif parsed.path == "/api/lessons":
             self._json(200, read_lessons(cfg))
+        elif parsed.path == "/api/health":
+            self._json(200, read_health(cfg))
         elif parsed.path == "/api/agent/status":
             self._json(200, self.server.supervisor.status())
         elif parsed.path.startswith("/static/"):

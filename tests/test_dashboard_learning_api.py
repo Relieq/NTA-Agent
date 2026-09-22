@@ -57,3 +57,24 @@ def test_failures_endpoint_empty_when_no_file(tmp_path):
         assert _get(srv.server_address[1], "/api/lessons") == {"lessons": []}
     finally:
         srv.shutdown()
+
+
+def test_health_endpoint(tmp_path):
+    cfg = _cfg(tmp_path)
+    cfg.health_path.write_text(json.dumps(
+        {"connected": True, "last_activity_age": 3.0, "recover_count": 2, "degraded": False}),
+        encoding="utf-8")
+    srv = _serve(cfg)
+    try:
+        h = _get(srv.server_address[1], "/api/health")
+        assert h["connected"] is True and h["recover_count"] == 2
+    finally:
+        srv.shutdown()
+
+
+def test_health_endpoint_default_when_missing(tmp_path):
+    srv = _serve(_cfg(tmp_path))
+    try:
+        assert _get(srv.server_address[1], "/api/health")["connected"] is False
+    finally:
+        srv.shutdown()
