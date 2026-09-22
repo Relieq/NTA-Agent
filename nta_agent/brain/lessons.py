@@ -48,6 +48,32 @@ def _canon(trigger: dict) -> str:
     return json.dumps(trigger or {}, sort_keys=True, ensure_ascii=False)
 
 
+def match_lessons(lessons, situation: dict) -> list[Lesson]:
+    """Active lessons whose trigger applies to the current situation (Inc 3 recall).
+
+    situation = {"kind": str, "monster_ids": [int]?, "resource": str?, "goal": str?}.
+    A lesson matches when trigger.kind == situation.kind AND every trigger.match
+    constraint is satisfied (monster_id in situation.monster_ids; resource/goal equal).
+    A lesson with no match constraints matches its kind broadly. Accepts Lesson
+    objects or dicts; returns Lesson objects."""
+    kind = situation.get("kind")
+    monster_ids = {int(m) for m in (situation.get("monster_ids") or [])}
+    out: list[Lesson] = []
+    for le in lessons or []:
+        lz = le if isinstance(le, Lesson) else Lesson.from_dict(le)
+        if lz.status == "retired" or (lz.trigger or {}).get("kind") != kind:
+            continue
+        match = (lz.trigger or {}).get("match") or {}
+        if "monster_id" in match and int(match["monster_id"]) not in monster_ids:
+            continue
+        if "resource" in match and match["resource"] != situation.get("resource"):
+            continue
+        if "goal" in match and match["goal"] != situation.get("goal"):
+            continue
+        out.append(lz)
+    return out
+
+
 class LessonStore:
     def __init__(self, path, cap: int = 50) -> None:
         self.path = Path(path)
