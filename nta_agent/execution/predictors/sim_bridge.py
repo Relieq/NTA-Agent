@@ -130,6 +130,20 @@ class SimBridge:
             raise SimUnavailable("sidecar returned no result")
         return result
 
+    def replay(self, record: dict) -> dict:
+        """Replay a real battle record → {summary, hits, enemy_ids, self_ids, ...}."""
+        result = self._send("replay", {"record": record})
+        if not isinstance(result, dict):
+            raise SimUnavailable("sidecar returned no result")
+        return result
+
+    def counterfactual(self, record: dict, orders: list[str]) -> dict:
+        """Re-forecast a lost battle with alternate army orders → {by_order:{...}}."""
+        result = self._send("counterfactual", {"record": record, "orders": list(orders)})
+        if not isinstance(result, dict):
+            raise SimUnavailable("sidecar returned no result")
+        return result
+
 
 _bridge: SimBridge | None = None
 
