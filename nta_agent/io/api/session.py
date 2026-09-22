@@ -22,6 +22,7 @@ from typing import Any
 from nta_agent.io.api.client import ApiError, GameClient, ServerConfig
 from nta_agent.state.schema import GameState
 from nta_agent.state.store import apply_user
+from nta_agent.version import GAME_VERSION
 
 # The server rotates the single-use accountToken; reusing a spent one fails here.
 TOKEN_INVALID = "ecode.500002"
@@ -60,7 +61,7 @@ class GameSession:
     _in_game: bool = False
     _bt_deadlines: dict = field(default_factory=dict)  # build uid -> completion time
     _login_opts: dict = field(default_factory=lambda: {
-        "lang": "vi", "os": "Android 9", "platform": "google", "version": "4.4.4"})
+        "lang": "vi", "os": "Android 9", "platform": "google", "version": GAME_VERSION})
 
     def __post_init__(self):
         self.client = GameClient(server=self.server)
@@ -81,7 +82,7 @@ class GameSession:
         lang: str = "vi",
         os: str = "Android 9",
         platform: str = "google",
-        version: str = "4.4.4",
+        version: str = GAME_VERSION,
         timeout: float = 15,
     ) -> dict:
         """lobby/HD_TryLogin; populates state.user and returns the raw reply.
@@ -137,7 +138,7 @@ class GameSession:
         sid: int | None = None,
         distinct_id: str = "",
         lang: str = "vi",
-        version: str = "4.4.4",
+        version: str = GAME_VERSION,
     ) -> dict:
         """Enter the assigned match server and load state into self.state.
 

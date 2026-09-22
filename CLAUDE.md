@@ -118,6 +118,23 @@ Python 3.12 in a venv at `.venv`. Use the venv interpreter explicitly (Windows):
 .venv/Scripts/python.exe -m ruff check nta_agent tests # lint
 ```
 
+### Regression guard khi game update (F2)
+
+Game version là **một-nguồn** ở `nta_agent/version.py` (`GAME_VERSION`); `io/api/session.py`
+import nó (đừng hardcode lại "4.4.x"). Config tables (`nta_agent/data/config/*.json`) extract từ
+engine bản quyền nên **gitignore** — chỉ `manifest.json` (hash + version, không có nội dung game)
+được commit làm mỏ neo. Khi game update:
+```bash
+# 1. Bump GAME_VERSION trong nta_agent/version.py + re-extract config (tools/re/extract_config.py)
+.venv/Scripts/python.exe tools/re/gen_config_manifest.py --check   # xem bảng nào đổi/thêm/mất
+.venv/Scripts/python.exe tools/re/gen_config_manifest.py           # ghi lại manifest.json
+.venv/Scripts/python.exe -m pytest tests/test_config_regression.py -q  # re-assert invariant
+```
+`tests/test_config_regression.py` (skip nếu máy không có config) canh: version khớp, file không
+biến mất, table load-bearing còn + non-empty, pawn 3206/3305 + ecode rule dùng còn tồn tại.
+`tests/test_endpoint_catalog.py` canh mọi `game/HD_*` trong `actions.py` phải có trong
+`docs/re/game-api.md`. `tests/test_game_version.py` canh version một-nguồn.
+
 ### Battle simulator sidecar (Node)
 
 `tools/battlesim/` reuses the game's own battle engine headlessly to predict
