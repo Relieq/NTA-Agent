@@ -1,0 +1,357 @@
+{
+  "game_version": "4.4.4",
+  "files": {
+    "_map_scene_grid.json": {
+      "sha256": "1144691f8e395cc2ad97a49fa59293c8b70f8dff2019ace66b085bb10ac44ea5",
+      "rows": 1
+    },
+    "_snailIsle_build.json": {
+      "sha256": "adb6179cbc7649e394bf1b44ddf7b34bd1a251144b4ddc057dad796b44458ef4",
+      "rows": 8
+    },
+    "achieveTask.json": {
+      "sha256": "20fb7212770286d673ef5569fa884528d26a9fa71f8d79c4feef6b6b9fe9154c",
+      "rows": 63
+    },
+    "antiCheat.json": {
+      "sha256": "7fcd6de0b4c603e9de404fa34cc73c66a32aac8bf36916d13890ab129974dbe5",
+      "rows": 34
+    },
+    "artofwarTask.json": {
+      "sha256": "6f6f46ad88db7a8495816ec14d2f69f9a106ba0284a166507c7865357a89d339",
+      "rows": 7
+    },
+    "battlePass.json": {
+      "sha256": "0a8c308428b4be14c8b19c9dc6b69be8fb27a358e2b2d8abb33fd79049cabf6c",
+      "rows": 445
+    },
+    "battlePassBase.json": {
+      "sha256": "9d37f20580185e46ef4ac9a251a34502941e148d238e5ac354eacac812daabac",
+      "rows": 14
+    },
+    "behavior.json": {
+      "sha256": "cd3fef99f5adb0d4c5ced72b031c1ce18e3d88fb33b9b0d768b732b151dad271",
+      "rows": 21
+    },
+    "botany.json": {
+      "sha256": "11db9a82052a01ba51abe9278126e46b3342c872bb933f05eca38ff6c14b29fd",
+      "rows": 4
+    },
+    "buffAttr.json": {
+      "sha256": "47e02da9fe725471cee9dfc2b24a8d957dc7343c8f462dd353d29077761ab3de",
+      "rows": 337
+    },
+    "buffBase.json": {
+      "sha256": "dd38ab127690bb8d5fc2b9818706214e9d80837416e38121154cf0e825a89e4b",
+      "rows": 167
+    },
+    "buffText.json": {
+      "sha256": "a4d5282f7a889431ea8709f0a88c95ac16d23a09bc7d2c701baf1b6d4636cb04",
+      "rows": 214
+    },
+    "buildAttr.json": {
+      "sha256": "d9ad5d9ff5eaf787fb017ff4620f050365626002cbbff8a94b26ce2db403e9ac",
+      "rows": 423
+    },
+    "buildBase.json": {
+      "sha256": "753ee4884795b0b3f79a2018bc4b1e5a26c1c1b379262fdeea64f213b4aa7a40",
+      "rows": 24
+    },
+    "buildMaster.json": {
+      "sha256": "b48e3894441c01476cfa71079375e47d6768de46f2fc7c70072c7b27427bf95b",
+      "rows": 40
+    },
+    "buildSkin.json": {
+      "sha256": "0d12ec29709b3238f14ac58c6f50a759abce164602db0814153e34e7547295a5",
+      "rows": 45
+    },
+    "buildText.json": {
+      "sha256": "44fae4cdf84d62efaccc858d710bb556d3bef5dca69f4c6723d90ea2f66a9fca",
+      "rows": 52
+    },
+    "ceri.json": {
+      "sha256": "59c635713d78df62d6f870125c2b256631fd7d11eaf9c9f524479571a783d2cb",
+      "rows": 99
+    },
+    "chatEmoji.json": {
+      "sha256": "78a90f74c932d04c5678af3b974ae0a4de3c3d5d8ce7988e45e6dd0cc56ab98f",
+      "rows": 113
+    },
+    "chatEmojiText.json": {
+      "sha256": "35869404150d4461585f5491d20aff9884f3defc69adf4b904c480b65f67a9e2",
+      "rows": 33
+    },
+    "city.json": {
+      "sha256": "04e8e97a94c1b512fb079a6b3a4655e5523c689b084c92a0a739f03db2e9c6d2",
+      "rows": 10
+    },
+    "cityResAttr.json": {
+      "sha256": "4b1a2b591750ac74752a6e2de659c34b983423b5ce284d1aa718629329542945",
+      "rows": 15
+    },
+    "citySkin.json": {
+      "sha256": "8bc55361c14d4cd030dcc39852cc2b04a53fdc9230f22d8eee21c8de153d7fc5",
+      "rows": 27
+    },
+    "cityText.json": {
+      "sha256": "c25d5b2fabb329cbfd56a2a0fa7561352ef2af6e9ad44215d6bef7a7d204e94e",
+      "rows": 14
+    },
+    "corsairArenaBase.json": {
+      "sha256": "1ff3a8634d5f499ccd3a9a2f89446f55d0cf0072a94b162239f7103176e5772d",
+      "rows": 1
+    },
+    "corsairArenaExchange.json": {
+      "sha256": "dca8147c4b1127892cea4812cd8e9bd5a6b3da743ced3bc11df8f9421918915b",
+      "rows": 9
+    },
+    "corsairBase.json": {
+      "sha256": "90f03097983cad618588ecd2f2fee255b5cc79135f2c90848ebd807f00705199",
+      "rows": 1
+    },
+    "corsairExchange.json": {
+      "sha256": "cafa9ac58267e2c46811603aaeb84cb6c97110abe6d5a778a02ccc5c12ef8341",
+      "rows": 38
+    },
+    "corsairReward.json": {
+      "sha256": "5e02c26a750779bde2353b759141a68d4b35dbfd6a5324a3f98e97373446724f",
+      "rows": 141
+    },
+    "decoration.json": {
+      "sha256": "005ec63ee836d0743f3df3add11ddc6033f41d28d72234577ccab92afbd26d55",
+      "rows": 150
+    },
+    "ecode.json": {
+      "sha256": "a7df79c77c4706a784da26f9cf46a4a9113c24bd1cced93e1c9d69f817e4832b",
+      "rows": 234
+    },
+    "equipBase.json": {
+      "sha256": "23229ebceabe92918af312e83a00f3f9e3b9289fca6a1f574883d14be9ed8341",
+      "rows": 68
+    },
+    "equipEffect.json": {
+      "sha256": "5de565e7935c14d27a9fed820faccb53c048e3371bbd4c48deb8f9f8675c8ebe",
+      "rows": 51
+    },
+    "equipText.json": {
+      "sha256": "2f8db8587066b5a3e2a31b15658941368f0b662ee7dcabe6fe05fc8243e9599e",
+      "rows": 119
+    },
+    "evaluateGift.json": {
+      "sha256": "9657e32d8294c6b052ec1a60bcd6ccf98d48ba725f57134c76c1c231afcf3196",
+      "rows": 10
+    },
+    "generalTask.json": {
+      "sha256": "916b53227d0eca3158373b8576155f0020724e18cd445485432e0c2ace2d5d85",
+      "rows": 58
+    },
+    "guideTask.json": {
+      "sha256": "617e4bca3675d3f22e60d06e0edaba673e49b704ed4fafd634e439c61dfa80a3",
+      "rows": 53
+    },
+    "guideText.json": {
+      "sha256": "418ee1bab6e4e606a19097cab20ac8a14fdbef41c6e9dfbb67fa4b0ff658cb9f",
+      "rows": 123
+    },
+    "headFrame.json": {
+      "sha256": "2edeb74c3bb8034c573d738fa801b5f63e2d2e8520b10941d51d09cbb9d6ff04",
+      "rows": 4
+    },
+    "headIcon.json": {
+      "sha256": "0af02af4837261dc15b79c355d9284d02e0fb33c645cb0853633e247f56c31f9",
+      "rows": 154
+    },
+    "headIconText.json": {
+      "sha256": "1f6f0d2965d11fa152a8867ba97f31abda9f70f30448863ef44e8eff6299ca22",
+      "rows": 28
+    },
+    "help.json": {
+      "sha256": "121bbc1370f6db55b61a761e9824a8c51388dae2ae47590092ec9b461558cd51",
+      "rows": 15
+    },
+    "img.json": {
+      "sha256": "d46390baf83a10fa7b0b0831552a9a8f95b672c1c207de2d8d5f82950f8732f4",
+      "rows": 8
+    },
+    "ingotGiftPack.json": {
+      "sha256": "90cdb1aaabcc2050b56179ff74b9d32472c762faefe1ae1cb1321ad19fa68b92",
+      "rows": 3
+    },
+    "jadeSealAchieveTask.json": {
+      "sha256": "3fd4d7cffd7c9009eceb85b40002cda6352db4bb3f514fa702138cdbc4d2d240",
+      "rows": 10
+    },
+    "jadeSealRank.json": {
+      "sha256": "06e1be60bfc4f0417bb75c081de1baf2c7359f074df512fdb943beb2af31b23f",
+      "rows": 21
+    },
+    "jadeSealTask.json": {
+      "sha256": "e582ef403eabf8568eb2588cdc7604f9529059b5f69fdad5e491d26074016fd0",
+      "rows": 87
+    },
+    "land.json": {
+      "sha256": "52486f0a0852e402d19029c257316c04893cb339db29bce4b9d80d3cfc333f68",
+      "rows": 184
+    },
+    "landAttr.json": {
+      "sha256": "0afc160a33a36343120c43394cec0ff8a075e2fe98cdcf7989327e287dce683b",
+      "rows": 67
+    },
+    "login.json": {
+      "sha256": "720f7cde133d86afd088583d8f5c7f76910231942d2dabfb2b85cf142f46779e",
+      "rows": 103
+    },
+    "luckyStarTask.json": {
+      "sha256": "1912dc8856a578294f8c4f810af6838e6a6de9868b8d49aa1d6b230a57db78fe",
+      "rows": 5
+    },
+    "mailText.json": {
+      "sha256": "b3756c3b63ccb04a6f7e4595d04ff92c5a9004b9fadd4ac4ab417fd6b7028756",
+      "rows": 112
+    },
+    "mythBlindBoxBase.json": {
+      "sha256": "99c7141131c2b051a3c43920c10ecfc87df31b00b2fd6a76ee2009621d3b4162",
+      "rows": 4
+    },
+    "mythBlindBoxExchange.json": {
+      "sha256": "427d3f92361f8a705f4832929b230010167b2d098295edfa5090859f592b68fb",
+      "rows": 68
+    },
+    "mythBlindBoxPool.json": {
+      "sha256": "fd15403bc93223c15bb555de2a591baaae6ce16ce955cce44b1918589c18d406",
+      "rows": 14
+    },
+    "mythBlindBoxReward.json": {
+      "sha256": "0dab6e058be4a0353be7714d2ac5a64bc8aee7e37858d0932a63fc80184a274c",
+      "rows": 84
+    },
+    "noviceGuideTask.json": {
+      "sha256": "55938adac248c78b3eb7571198afd27b7c60cadbf6923de31712375d86d46ae3",
+      "rows": 37
+    },
+    "npcBase.json": {
+      "sha256": "078d862c87ae5cca269fda90cee54c571a71416cb857d55c5b930ad80551beb4",
+      "rows": 9
+    },
+    "npcText.json": {
+      "sha256": "1df6c7f81dea6f73c12c8ce62b879fbb45e54ab62c5b0dc4015a660d963069c8",
+      "rows": 9
+    },
+    "otherTask.json": {
+      "sha256": "f4cfc5d599ee1107419264105ad5d1ad42c47f1cb6d7d1f9cfac0e4af95b473f",
+      "rows": 7
+    },
+    "pawnAttr.json": {
+      "sha256": "6f155d8f3c15aec4b1666ea905d33bbb0231dd2c8c9c33d5f25d697cef123d23",
+      "rows": 397
+    },
+    "pawnBase.json": {
+      "sha256": "587d49643f25f1952115112a59487af842a8143795766a0daea685641e5f4367",
+      "rows": 58
+    },
+    "pawnSkill.json": {
+      "sha256": "1a63dba207ba9be24ac331a844bb222b2796502f78759614099f521f0bca2afd",
+      "rows": 212
+    },
+    "pawnSkillText.json": {
+      "sha256": "59b9fb73b5f9b88e6446c52d19d23fe4d0c98f56146d49935a2c10cca10ebb20",
+      "rows": 149
+    },
+    "pawnSkin.json": {
+      "sha256": "23395ae8a2e79e68632ad1e83e8d1dbf0b99d88bb2137a4f54607c90080fbcc1",
+      "rows": 371
+    },
+    "pawnSkinText.json": {
+      "sha256": "4cfeb57a89cd7d1e032c57103b7750c2cd0a878f317713cc6f17dcaf4a8cf9fc",
+      "rows": 53
+    },
+    "pawnText.json": {
+      "sha256": "2a72beb896a64d9386cffc0ecc66d53b651bd08472911f46000190d8db8fa845",
+      "rows": 52
+    },
+    "policy.json": {
+      "sha256": "7ad53a8b0f6ef7801f9c3079128e3d2d74de6267ecb79d83836d55719ae47200",
+      "rows": 52
+    },
+    "policyText.json": {
+      "sha256": "e0c6349b51abd7f471dd2edb03d90eb293eb68a56a269e7e3a849fc80dd990cc",
+      "rows": 104
+    },
+    "portrayalBase.json": {
+      "sha256": "7e1cb1ec084046badf0180167a8a6a6cf815bc0f90ed678f79f51a8fc84af13a",
+      "rows": 59
+    },
+    "portrayalSkill.json": {
+      "sha256": "9363314d8461fa3e75e44d40c8eeb5b4b45d35287daa3d1293e4976f2df4591e",
+      "rows": 59
+    },
+    "portrayalSkillText.json": {
+      "sha256": "682b4fbd07f978e4e5021c8a8afe92dee833e2f2d14141dbf05a6c485de9e50c",
+      "rows": 124
+    },
+    "portrayalText.json": {
+      "sha256": "90aae146ac4e336758e434b4ec183d328ce3647627a47be345ff77320223c4fc",
+      "rows": 108
+    },
+    "recharge.json": {
+      "sha256": "0861e6766f204fae16aee7fa21eb5cb23f35fc81391a5d0318f8ee47d1a79ff5",
+      "rows": 28
+    },
+    "seasonReward.json": {
+      "sha256": "16840d18cb2baad3d2a7d74c7cfbc43ba80679f821c7399869052f8575fc680a",
+      "rows": 24
+    },
+    "strategy.json": {
+      "sha256": "423480db7340ec115343cd50d31f5704ab289d12d39d5e332a6206520e1c09a6",
+      "rows": 150
+    },
+    "strategyText.json": {
+      "sha256": "2323d63300293ca628759b4ec4a3d52450e05050028ee4c11379c67c0487823e",
+      "rows": 150
+    },
+    "sysMsgText.json": {
+      "sha256": "5d2d68a11c9e261747bd2a0f01fa712dc6000d49410a729585e85d795163ba32",
+      "rows": 17
+    },
+    "taskCondType.json": {
+      "sha256": "726475e185a90a5335380c2399e740d4fbfc3d4ec222d4e967f9d24340b21f5d",
+      "rows": 80
+    },
+    "taskText.json": {
+      "sha256": "c23e857f53d2764daa5a2f55fd1cd37333b8180f45942bd8c4931415f4c591e0",
+      "rows": 119
+    },
+    "title.json": {
+      "sha256": "230d5abdc974db5ea1c9bf4910109563076621db3f06a381f5c8914c59dc9bfd",
+      "rows": 67
+    },
+    "titleText.json": {
+      "sha256": "11f516555ad154898f0670a649188c4ff98578f09cc5e6e104dbaecfe5f8c688",
+      "rows": 67
+    },
+    "toast.json": {
+      "sha256": "08eecbaa54b0d02269a2f9f578206850799c8d52d8ebd6bcf3bd0133da060023",
+      "rows": 217
+    },
+    "todayTask.json": {
+      "sha256": "e01aac963be0f8e585945a7799f4a0626d83c6db6d9539b92e8b7975f2d97f4e",
+      "rows": 3
+    },
+    "treasure.json": {
+      "sha256": "e4884d3894937d35c9405db2fcee86571985ff6bebcaaa8de4138510000cc336",
+      "rows": 20
+    },
+    "ui.json": {
+      "sha256": "51a866f27334020063b1f92ab1a9df866748efade43ffae65192f794eec94b63",
+      "rows": 2423
+    },
+    "updateDescText.json": {
+      "sha256": "21f20562ee395621856d5933b774e2f107720b7bda14da75dc858d9ce4a16f47",
+      "rows": 1030
+    },
+    "wheel.json": {
+      "sha256": "d2140bf3f42dc4b6591021ddaa61aeb104dc57c384016a94909bb6278a07377c",
+      "rows": 9
+    }
+  }
+}

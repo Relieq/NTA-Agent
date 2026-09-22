@@ -60,6 +60,8 @@ Response: envelope `S2C_RESULT{data,error}`; `error` rỗng = OK, ngược lại
 | `HD_SetArmySpeed` | ❓ | — | Đặt tốc độ hành quân (isSameSpeed). |
 | `HD_ForceRevokeArmy` | ❓ | — | Ép thu hồi đạo quân. |
 | `HD_SendCellEmoji` / `HD_BattlePlayBack` | ❓ | — | Emoji ô / phát lại trận. |
+| `HD_GetBattleRecordsList` | ✅ | `{}` | Danh sách chiến báo đã lưu → `{list:[{uid,index,beginTime,endTime,...}]}`. `actions.get_battle_records_list`. |
+| `HD_GetBattleRecord` | ✅ | `{uid}` | 1 chiến báo đầy đủ (frames setup + randSeed) để replay từng lượt. `actions.get_battle_record`; xem `tools/re/fetch_battle_record.py` + `tools/battlesim/replay-log.js`. |
 
 ## 4. Tonden (đồn điền — sản lượng từ ô đã chiếm)
 Army có state `TONDEN` (屯田): trú trên ô để **sản xuất tài nguyên**. `getArmyTondenInfo(index,uid)`.
