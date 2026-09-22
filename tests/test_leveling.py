@@ -23,10 +23,29 @@ def test_find_leveling_army_by_name():
     assert find_leveling_army([a]) is None
 
 
-def test_pull_creates_leveling_army_when_none():
+def test_inplace_levels_farm_pawn_when_no_buffer():
+    """ChangePawnArmy can't create a buffer army (engine requires an existing
+    destination -> ecode.500011), so with no leveling army we level the lowest
+    under-target farm pawn IN PLACE (PawnLving on the farm army itself)."""
     farm = [_army("F1", [("a", 3), ("b", 12)])]
-    act = next_level_action(farm, None, TARGET, farm_home=True, max_leveling=1)
-    assert act.kind == "pull" and act.create is True and act.src_uid == "F1" and act.pawn_uid == "a"
+    act = next_level_action(farm, None, TARGET, farm_home=True, exp_book=5, max_leveling=1)
+    assert act.kind == "level" and act.create is False
+    assert act.level_uid == "F1" and act.pawn_uid == "a"   # levels in the farm army
+
+
+def test_inplace_needs_exp_and_skips_queued():
+    farm = [_army("F1", [("a", 3), ("c", 4)])]
+    # no exp -> nothing to do in place
+    assert next_level_action(farm, None, TARGET, farm_home=True, exp_book=0) is None
+    # 'a' already queued -> level the next lowest ('c')
+    act = next_level_action(farm, None, TARGET, farm_home=True, exp_book=5,
+                            queue_uids={"a"})
+    assert act.kind == "level" and act.level_uid == "F1" and act.pawn_uid == "c"
+
+
+def test_no_inplace_when_farm_not_home():
+    farm = [_army("F1", [("a", 3)], index=999)]
+    assert next_level_action(farm, None, TARGET, farm_home=False, exp_book=5) is None
 
 
 def test_pull_moves_into_existing_leveling_army():

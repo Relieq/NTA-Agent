@@ -3,6 +3,7 @@ from __future__ import annotations
 
 _ROLES = {"archer", "tank"}
 _EXPANSION = {"none", "spiral", "octopus", "hybrid"}
+_OCCUPY_ORDER = {"auto", "tank_first", "dps_first"}
 
 
 def _num(v, lo, hi, default):
@@ -46,6 +47,10 @@ def sanitize_edits(edits: dict, profile, valid_army_uids, valid_build_ids=None) 
             occ["max_march_ms"] = int(_num(occ_in["max_march_ms"], 0, 10 ** 9, 0))
         if "expansion" in occ_in and str(occ_in["expansion"]) in _EXPANSION:
             occ["expansion"] = str(occ_in["expansion"])
+        pol_in = occ_in.get("policy")
+        if (isinstance(pol_in, dict) and "order" in pol_in
+                and str(pol_in["order"]) in _OCCUPY_ORDER):
+            occ["policy"] = {"order": str(pol_in["order"])}
         loot_in = occ_in.get("loot")
         if isinstance(loot_in, dict):
             loot: dict = {}
@@ -63,6 +68,18 @@ def sanitize_edits(edits: dict, profile, valid_army_uids, valid_build_ids=None) 
     army_in = edits.get("army") if isinstance(edits, dict) else None
     if isinstance(army_in, dict):
         army: dict = _formation(army_in, valid)  # flat group/roles/onetile/composition
+        # strike_target: the composition goal (list of {pawn_id, armies, size}) the
+        # ArmyComposer reconciles toward. Validate shape; [] clears the goal.
+        if isinstance(army_in.get("strike_target"), list):
+            st = []
+            for t in army_in["strike_target"]:
+                if isinstance(t, dict) and t.get("pawn_id"):
+                    pid = int(_num(t["pawn_id"], 1000, 99999, 0))
+                    if pid:
+                        st.append({"pawn_id": pid,
+                                   "armies": int(_num(t.get("armies", 1), 1, 20, 1)),
+                                   "size": int(_num(t.get("size", 9), 1, 9, 9))})
+            army["strike_target"] = st
         if isinstance(army_in.get("presets"), dict):
             presets = {str(n): _formation(f, valid) for n, f in army_in["presets"].items()
                        if isinstance(f, dict)}
@@ -96,6 +113,33 @@ def sanitize_edits(edits: dict, profile, valid_army_uids, valid_build_ids=None) 
         out["revive"] = {"enabled": (v.lower() in ("1", "true", "yes")
                                      if isinstance(v, str) else bool(v))}
 
+    lg_in = edits.get("logistics") if isinstance(edits, dict) else None
+    if isinstance(lg_in, dict):
+        lg: dict = {}
+        if "enabled" in lg_in:
+            v = lg_in["enabled"]
+            lg["enabled"] = (v.lower() in ("1", "true", "yes")
+                             if isinstance(v, str) else bool(v))
+        if "target" in lg_in:
+            lg["target"] = int(_num(lg_in["target"], 1, 50, 9))
+        if "heal_skip_frac" in lg_in:
+            lg["heal_skip_frac"] = _num(lg_in["heal_skip_frac"], 0, 1, 0.2)
+        if "min_shortfall" in lg_in:
+            lg["min_shortfall"] = int(_num(lg_in["min_shortfall"], 1, 50, 1))
+        if isinstance(lg_in.get("exclude"), list):
+            lg["exclude"] = [str(u) for u in lg_in["exclude"] if str(u) in valid]
+        # redeploy: only known army uids -> a positive cell index
+        if isinstance(lg_in.get("redeploy"), dict):
+            rd = {}
+            for uid, idx in lg_in["redeploy"].items():
+                if str(uid) in valid:
+                    n = int(_num(idx, 0, 10 ** 9, 0))
+                    if n > 0:
+                        rd[str(uid)] = n
+            lg["redeploy"] = rd
+        if lg:
+            out["logistics"] = lg
+
     if isinstance(edits.get("advice"), list):
         advice = []
         for a in edits["advice"]:
@@ -108,6 +152,8 @@ def sanitize_edits(edits: dict, profile, valid_army_uids, valid_build_ids=None) 
     if isinstance(edits.get("notes"), list):
         out["notes"] = [str(s).strip()[:200] for s in edits["notes"] if str(s).strip()][:20]
 
+    # build.order/skip (the dashboard edits this; the brain must NOT — it strips
+    # build from its own edits before calling here, see BrainService.tick).
     build_in = edits.get("build") if isinstance(edits, dict) else None
     if isinstance(build_in, dict) and valid_build_ids is not None:
         valid_b = {int(x) for x in valid_build_ids}

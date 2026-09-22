@@ -154,6 +154,15 @@ def next_upgrade(
     return None
 
 
+def _all_instances_maxed(state: GameState, config: GameConfig, build_id: int) -> bool:
+    """True if every owned instance of ``build_id`` is at max level (its next
+    level has no buildAttr row). Used to gate constructing a duplicate copy
+    (engine bt_count == -3 → server 500034 until the current copy is maxed)."""
+    have = [b for b in state.builds if b.id == build_id]
+    return bool(have) and all(
+        config.build_upgrade(build_id, b.lv + 1) is None for b in have)
+
+
 def next_build_action(
     state: GameState,
     config: GameConfig,
@@ -195,6 +204,15 @@ def next_build_action(
             continue
         if (counts.get(build_id, 0) < config.max_count(build_id)
                 and ("construct", build_id) not in blocked):
+            # A duplicate copy (we already own >=1) is only allowed once EVERY
+            # existing copy is at max level — else the server rejects with
+            # ecode.500034 (HAS_ONE_BUILD_NOT_MAXLV). This is the engine's
+            # bt_count == -3 rule (isBuildsMaxLv); verified in tools/re/decrypted.
+            # Only 2002 (granary) / 2003 (warehouse) are multi. Leave the
+            # not-yet-maxed instance to the upgrade pass below.
+            if counts.get(build_id, 0) >= 1 and not _all_instances_maxed(
+                    state, config, build_id):
+                continue
             up1 = config.build_upgrade(build_id, 1)
             # The real unlock gate lives on the buildBase row (multi-condition,
             # AND). The level-1 upgrade's prep_cond is usually empty, so checking

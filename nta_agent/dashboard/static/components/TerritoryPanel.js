@@ -10,14 +10,24 @@ export default {
  setup(){
   const canvas=ref(null), tip=ref(null), sel=ref(null);
   let scale=16, originX=0, originY=0, fitted=false, hover=null;
-  let data={main:0, mw:MAPW, owned:[], accepted:[], forts:[], garr:[], recs:[]};
-  let stateMap=new Map();
+  let data={main:0, mw:MAPW, owned:[], accepted:[], forts:[], garr:[], zone:[], fortCount:0, fortCap:0, armyCells:{}};
+  let stateMap=new Map(), zoneSet=new Set();
   let dragging=false, moved=0, lastX=0, lastY=0;
 
   const rowOf=(y)=> (data.mw-1) - y;
   const sX=(x)=> originX + x*scale;
   const sY=(y)=> originY + rowOf(y)*scale;
   const idx=(x,y)=> y*data.mw + x;
+  // Convex hull (Andrew's monotone chain) over [x,y] points — used to draw the
+  // territory boundary as a polygon connecting the outer boundary points.
+  function convexHull(pts){
+   if(pts.length<3) return pts.slice();
+   pts=pts.slice().sort((a,b)=> a[0]-b[0] || a[1]-b[1]);
+   const cr=(o,a,b)=> (a[0]-o[0])*(b[1]-o[1])-(a[1]-o[1])*(b[0]-o[0]);
+   const lo=[]; for(const p of pts){ while(lo.length>=2 && cr(lo[lo.length-2],lo[lo.length-1],p)<=0) lo.pop(); lo.push(p); }
+   const up=[]; for(let i=pts.length-1;i>=0;i--){ const p=pts[i]; while(up.length>=2 && cr(up[up.length-2],up[up.length-1],p)<=0) up.pop(); up.push(p); }
+   lo.pop(); up.pop(); return lo.concat(up);
+  }
   const cellAt=(px,py)=>({ x: Math.floor((px-originX)/scale),
                            y: (data.mw-1) - Math.floor((py-originY)/scale) });
 
@@ -27,8 +37,7 @@ export default {
    const mx=data.main%data.mw, my=Math.floor(data.main/data.mw);
    [[mx,my],[mx+1,my],[mx,my+1],[mx+1,my+1]].forEach(([x,y])=>put(x,y,"thành chính"));
    data.forts.forEach(([x,y])=>put(x,y,"Cứ Điểm"));
-   data.accepted.forEach(([x,y])=>put(x,y,"dự kiến xây"));
-   data.recs.forEach(r=>put(r.x,r.y,"gợi ý",r.index));
+   data.zone.forEach(([x,y])=>put(x,y,"gợi ý Cứ Điểm"));
    data.garr.forEach(([x,y])=>put(x,y,"quân trú"));
    data.owned.forEach(([x,y])=>put(x,y,"đã chiếm"));
    data.enemy.forEach(([x,y])=>put(x,y,"địch"));
@@ -40,7 +49,7 @@ export default {
    // Fit to MY territory + speed zone only (enemies/frontier can be far/large;
    // they still render where they are — pan/zoom to see them).
    const pts=[[mx,my],...data.owned,...data.accepted,...data.forts,...data.garr,...data.frontier,
-              ...data.recs.map(r=>[r.x,r.y]),[mx-R,my-R],[mx+1+R,my+1+R]];
+              ...data.zone,[mx-R,my-R],[mx+1+R,my+1+R]];
    const minX=Math.min(...pts.map(p=>p[0]))-1, maxX=Math.max(...pts.map(p=>p[0]))+1;
    const minY=Math.min(...pts.map(p=>p[1]))-1, maxY=Math.max(...pts.map(p=>p[1]))+1;
    const cols=maxX-minX+1, rows=maxY-minY+1;
@@ -77,22 +86,67 @@ export default {
    const zx0=Math.max(x0,bx0-R), zx1=Math.min(x1,bx1+R), zy0=Math.max(yLo,by0-R), zy1=Math.min(yHi,by1+R);
    ctx.fillStyle="rgba(245,233,0,0.10)";
    for(let y=zy0;y<=zy1;y++) for(let x=zx0;x<=zx1;x++) if(inZone(x,y)) ctx.fillRect(sX(x),sY(y),scale,scale);
-   data.owned.forEach(([x,y])=>{ if(inView(x,y)) box(x,y,"#199e70"); });
+   // "Bao chứa lãnh địa": the CONNECTED component of our owned cells that contains
+   // the main city (4-connectivity). Cells reachable only through allied/other land
+   // aren't our cells, so they naturally fall outside this component. Core cells are
+   // solid green; owned-but-disconnected cells are drawn hollow/brown so they stand
+   // out, and the component's bounding box is outlined.
+   const core=(()=>{
+    const own=new Set(data.owned.map(([x,y])=>x+","+y));
+    const seeds=[[mx,my],[mx+1,my],[mx,my+1],[mx+1,my+1]];
+    const s=new Set(); const q=[];
+    for(const [x,y] of seeds){ const k=x+","+y; if(!s.has(k)){ s.add(k); q.push([x,y]); } }
+    while(q.length){ const [x,y]=q.pop();
+     for(const [dx,dy] of [[1,0],[-1,0],[0,1],[0,-1]]){ const nx=x+dx,ny=y+dy,k=nx+","+ny;
+      if(own.has(k)&&!s.has(k)){ s.add(k); q.push([nx,ny]); } } }
+    return { set:s };
+   })();
+   data.owned.forEach(([x,y])=>{ if(!inView(x,y)) return;
+    if(core.set.has(x+","+y)){ box(x,y,"#199e70"); }          // core (contiguous) territory
+    else { box(x,y,"#5a4a2a");                                  // owned but disconnected
+     ctx.strokeStyle="#e3b341"; ctx.lineWidth=1.5; ctx.strokeRect(sX(x)+2,sY(y)+2,scale-4,scale-4); } });
    data.enemy.forEach(([x,y])=>{ if(inView(x,y)){ box(x,y,"#da3633");        // ô địch (đỏ)
     ctx.strokeStyle="#0b1320"; ctx.lineWidth=1; ctx.strokeRect(sX(x)+1.5,sY(y)+1.5,scale-3,scale-3); } });
    data.enemyCities.forEach(c=>{ if(inView(c.x,c.y)){ ctx.strokeStyle="#0b1320"; ctx.lineWidth=2;
     ctx.strokeRect(sX(c.x)+3,sY(c.y)+3,scale-6,scale-6); } });             // thành/fort địch
-   ctx.strokeStyle="#c3c2b7"; ctx.lineWidth=1.5;
-   data.garr.forEach(([x,y])=>{ if(inView(x,y)) ctx.strokeRect(sX(x)+2,sY(y)+2,scale-4,scale-4); });
+   // troop markers: ring coloured by activity + pawn-count badge (idle steel /
+   // hành quân xanh / đang đánh đỏ). Drawn as a ring+halo'd number so it reads on
+   // top of any cell fill (city, owned…), matching the in-game army overlay.
+   const troopColor=(s)=> s===2?"#da3633" : s===1?"#58a6ff" : "#c3c2b7";
+   Object.keys(data.armyCells).forEach(k=>{ const c=data.armyCells[k]; if(!inView(c.x,c.y)) return;
+    const col=troopColor(c.maxState);
+    ctx.strokeStyle=col; ctx.lineWidth=2; ctx.strokeRect(sX(c.x)+2,sY(c.y)+2,scale-4,scale-4);
+    if(scale>=14){ const cx=sX(c.x)+scale/2, cy=sY(c.y)+scale/2;
+     ctx.font="bold "+Math.min(13,scale-4)+"px system-ui"; ctx.textAlign="center"; ctx.textBaseline="middle";
+     ctx.lineWidth=3; ctx.strokeStyle="#0b1320"; ctx.strokeText(String(c.pawns), cx, cy);
+     ctx.fillStyle=col; ctx.fillText(String(c.pawns), cx, cy); } });
    data.forts.forEach(([x,y])=>{ if(inView(x,y)) box(x,y,"#d95926"); });
    data.accepted.forEach(([x,y])=>{ if(inView(x,y)){ box(x,y,"#d95926");
     ctx.fillStyle="#0b1320"; ctx.beginPath(); ctx.arc(sX(x)+scale/2,sY(y)+scale/2,Math.max(1.5,scale/6),0,7); ctx.fill(); } });
    ctx.strokeStyle="#8b949e"; ctx.lineWidth=1; ctx.setLineDash([2,2]);   // biên giới trống
    data.frontier.forEach(([x,y])=>{ if(inView(x,y)) ctx.strokeRect(sX(x)+2,sY(y)+2,scale-4,scale-4); });
    ctx.setLineDash([]);
-   data.recs.forEach(r=>{ if(inView(r.x,r.y)){ ctx.strokeStyle="#e66767"; ctx.lineWidth=2; ctx.beginPath();
-    ctx.arc(sX(r.x)+scale/2,sY(r.y)+scale/2,Math.max(3,scale/2-1),0,7); ctx.stroke(); } });
+   // Recommended fort ZONE: a translucent orange fill + dotted outline on the
+   // eligible owned cells; click one to build a Cứ Điểm there.
+   ctx.fillStyle="rgba(217,89,38,0.22)";
+   data.zone.forEach(([x,y])=>{ if(inView(x,y)) ctx.fillRect(sX(x)+1,sY(y)+1,scale-2,scale-2); });
+   ctx.strokeStyle="#d95926"; ctx.lineWidth=1.5; ctx.setLineDash([3,2]);
+   data.zone.forEach(([x,y])=>{ if(inView(x,y)) ctx.strokeRect(sX(x)+2,sY(y)+2,scale-4,scale-4); });
+   ctx.setLineDash([]);
    [[mx,my],[mx+1,my],[mx,my+1],[mx+1,my+1]].forEach(([x,y])=>{ if(inView(x,y)) box(x,y,"#3987e5"); });
+   // Boundary of the contiguous territory: convex hull connecting the outer
+   // boundary points (the 4 corners of every core cell), not an axis-aligned box.
+   if(core.set.size){
+    const pts=[];
+    data.owned.forEach(([x,y])=>{ if(core.set.has(x+","+y)){
+     pts.push([sX(x),sY(y)],[sX(x+1),sY(y)],[sX(x),sY(y)+scale],[sX(x+1),sY(y)+scale]); } });
+    const h=convexHull(pts);
+    if(h.length>=3){
+     ctx.strokeStyle="#39d0d8"; ctx.lineWidth=2; ctx.setLineDash([6,4]);
+     ctx.beginPath(); ctx.moveTo(h[0][0],h[0][1]);
+     for(let i=1;i<h.length;i++) ctx.lineTo(h[i][0],h[i][1]);
+     ctx.closePath(); ctx.stroke(); ctx.setLineDash([]); }
+   }
    // zone outline along CELL EDGES (staircase): draw each in-zone cell's edges that
    // border an out-of-zone cell — matches the grid, no diagonal cut.
    ctx.strokeStyle="#F5E900"; ctx.lineWidth=1.5; ctx.setLineDash([4,3]); ctx.beginPath();
@@ -120,11 +174,22 @@ export default {
    const t=await getJSON("/api/territory"), f=await getJSON("/api/forts");
    if(!t||!f) return;
    const mw=t.map_width||MAPW;
+   // per-cell troop view from /api/armies (has index/name/state/pawns) — like the
+   // in-game map's army markers. Grouped by cell index: count of armies + pawns +
+   // the most-active state (idle < march < fight) for the cell's colour.
+   const arms=(await getJSON("/api/armies"))||[];
+   const armyCells={};
+   arms.forEach(a=>{ const i=(a&&a.index)|0; if(!i) return;
+    const c=armyCells[i]||(armyCells[i]={x:i%mw, y:Math.floor(i/mw), armies:[], pawns:0, maxState:0});
+    const n=((a.pawns)||[]).length;
+    c.armies.push({name:a.name||"?", state:(a.state)|0, label:a.state_label||"", pawns:n});
+    c.pawns+=n; c.maxState=Math.max(c.maxState,(a.state)|0); });
    data={ main:t.main_city||0, mw, owned:f.owned_cells||[], accepted:f.accepted||[],
     forts:(t.forts||[]).map(x=>[x.x,x.y]),
     garr:(t.garrisons||[]).map(i=>[i%mw, Math.floor(i/mw)]),
     enemy:f.enemy_cells||[], enemyCities:f.enemy_cities||[], frontier:f.frontier||[],
-    recs:f.recommendations||[] };
+    zone:f.fort_zone||[], fortCount:f.fort_count||0, fortCap:f.fort_cap||0, armyCells };
+   zoneSet=new Set(data.zone.map(([x,y])=>x+","+y));
    buildStateMap();
    const cv=canvas.value;
    if(cv && data.main && !fitted){ fitView(cv); fitted=true; }
@@ -144,28 +209,37 @@ export default {
    if(px<ML||py<MT){ if(hover){hover=null;render();} tip.value=null; return; }
    const c=cellAt(px,py); hover=c;
    const st=stateMap.get(idx(c.x,c.y));
-   tip.value={ left:(ev.clientX-r.left)+12, top:(ev.clientY-r.top)+12,
-     text:`(${c.x}, ${c.y})`+(st?` · ${st.label}`:" · trống") };
+   const ac=data.armyCells[idx(c.x,c.y)];
+   let txt=`(${c.x}, ${c.y})`+(st?` · ${st.label}`:" · trống");
+   if(ac) txt+=` · ${ac.armies.length} đội / ${ac.pawns} lính`;
+   tip.value={ left:(ev.clientX-r.left)+12, top:(ev.clientY-r.top)+12, text:txt };
    render();
   }
   function onUp(ev){ dragging=false;
    if(moved<4){ const [px,py]=toCanvas(ev);
     if(px>=ML&&py>=MT){ const c=cellAt(px,py), st=stateMap.get(idx(c.x,c.y));
      const r=canvas.value.getBoundingClientRect();
+     const ac=data.armyCells[idx(c.x,c.y)];
+     const inZone=zoneSet.has(c.x+","+c.y);
      sel.value={ x:c.x, y:c.y, index: st?st.index:idx(c.x,c.y), state: st?st.label:"trống",
+       armies: ac?ac.armies:null, inZone,
+       capReached: data.fortCap>0 && data.fortCount>=data.fortCap,
        left:Math.min(ev.clientX-r.left, r.width-170), top:(ev.clientY-r.top) }; } } }
   function onLeave(){ hover=null; tip.value=null; render(); }
   function onWheel(ev){ ev.preventDefault(); const [px,py]=toCanvas(ev); zoomAt(px,py, ev.deltaY<0?1.15:1/1.15); }
   function zoomBtn(f){ const cv=canvas.value; zoomAt(cv.width/2, cv.height/2, f); }
   function recenterBtn(){ recenter(canvas.value); render(); }
   function fitBtn(){ fitView(canvas.value); render(); }
-  async function decide(decision){ if(!sel.value) return;
-   await postJSON("/api/forts/decide",{index:sel.value.index,decision}); sel.value=null; load(); }
+  const built=ref("");
+  async function buildFort(){ if(!sel.value) return;
+   const r=await postJSON("/api/forts/build",{index:sel.value.index});
+   built.value=(r&&r.ok)?`Đã gửi lệnh xây Cứ Điểm @(${sel.value.x},${sel.value.y})`:((r&&r.error)||"Lỗi");
+   sel.value=null; setTimeout(()=>{built.value="";}, 4000); load(); }
 
   onMounted(()=>{ const cv=canvas.value; if(cv) cv.addEventListener("wheel", onWheel, {passive:false}); });
   onUnmounted(()=>{ const cv=canvas.value; if(cv) cv.removeEventListener("wheel", onWheel); });
 
-  return { canvas, tip, sel, onDown, onMove, onUp, onLeave, zoomBtn, recenterBtn, fitBtn, decide };
+  return { canvas, tip, sel, built, onDown, onMove, onUp, onLeave, zoomBtn, recenterBtn, fitBtn, buildFort };
  },
  template:`<div class="card full"><h2>Lãnh thổ</h2>
   <div style="display:flex;gap:6px;align-items:center;margin-bottom:6px;flex-wrap:wrap">
@@ -182,17 +256,24 @@ export default {
    <div v-if="sel" style="position:absolute;background:#0d1117;border:1px solid var(--border-hi);
      border-radius:6px;padding:6px 8px;z-index:7" :style="{left:sel.left+'px',top:(sel.top+16)+'px'}">
     <div class="muted" style="font-size:12px">Ô ({{ sel.x }}, {{ sel.y }}) · {{ sel.state }}</div>
-    <template v-if="sel.state==='gợi ý'">
-     <button @click="decide('accept')">✓ Chấp thuận</button>
-     <button @click="decide('reject')">✕ Từ chối</button></template>
+    <div v-if="sel.armies" style="font-size:12px;margin:2px 0">
+     <div v-for="(a,i) in sel.armies" :key="i">🛡️ {{ a.name }} · <b>{{ a.pawns }}</b> lính
+      <span class="muted">({{ a.label }})</span></div></div>
+    <template v-if="sel.inZone">
+     <div v-if="sel.capReached" class="muted" style="font-size:12px;color:#e3b341">Đã đủ số Cứ Điểm</div>
+     <button v-else @click="buildFort">🏯 Xây Cứ Điểm ở đây</button></template>
     <button @click="sel=null">Đóng</button></div>
+   <div v-if="built" class="muted" style="position:absolute;left:8px;bottom:8px;background:#0d1117;
+     border:1px solid var(--border-hi);border-radius:4px;padding:2px 8px;font-size:12px;color:#199e70;z-index:8">{{ built }}</div>
   </div>
   <div class="muted" style="margin-top:6px;font-size:12px;display:flex;gap:12px;flex-wrap:wrap">
    <span><b style="color:#3987e5">■</b> thành chính</span>
-   <span><b style="color:#199e70">■</b> ô đã chiếm</span>
-   <span><b style="color:#d95926">■</b> Cứ Điểm / dự kiến</span>
-   <span><b style="color:#e66767">◯</b> gợi ý</span>
-   <span><b style="color:#c3c2b7">▢</b> quân trú</span>
+   <span><b style="color:#199e70">■</b> ô đã chiếm (liền lãnh địa)</span>
+   <span><b style="color:#e3b341">▢</b> ô đã chiếm nhưng RỜI (không nối với thành)</span>
+   <span><b style="color:#39d0d8">⬡</b> bao lãnh địa (hull nối biên vùng liền chứa thành)</span>
+   <span><b style="color:#d95926">■</b> Cứ Điểm (đã có)</span>
+   <span><b style="color:#d95926">▨</b> vùng gợi ý xây Cứ Điểm — bấm 1 ô để agent xây</span>
+   <span>quân (số=lính): <b style="color:#c3c2b7">▢</b>rảnh <b style="color:#58a6ff">▢</b>hành quân <b style="color:#da3633">▢</b>đang đánh</span>
    <span><b style="color:#da3633">■</b> ô địch</span>
    <span><b class="muted">▢</b> biên giới trống (xấp xỉ)</span>
    <span><b style="color:#F5E900">◇</b> vùng bảo vệ/tăng tốc = bán kính 6 ô (Manhattan) quanh thành 2×2 — không cần xây Cứ Điểm bên trong</span>

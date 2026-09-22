@@ -18,6 +18,27 @@ def test_clamps_occupy_and_drops_unknown():
     assert "bogus" not in out["occupy"] and "junk" not in out
 
 
+def test_army_strike_target_validated_and_kept():
+    # the brain may set army.strike_target (composition goal); shape is validated.
+    e = {"army": {"strike_target": [
+        {"pawn_id": 3206, "armies": 1, "size": 9},
+        {"pawn_id": 3305, "armies": 4, "size": 12},   # size clamped to <=9
+        {"armies": 2}]}}                               # no pawn_id -> dropped
+    out = sanitize_edits(e, _prof(), set())
+    st = out["army"]["strike_target"]
+    assert {"pawn_id": 3206, "armies": 1, "size": 9} in st
+    assert {"pawn_id": 3305, "armies": 4, "size": 9} in st   # size clamped
+    assert len(st) == 2                                       # entry w/o pawn_id dropped
+
+
+def test_occupy_policy_order_accepted_and_validated():
+    # A valid order policy passes through; an invalid one is dropped.
+    out = sanitize_edits({"occupy": {"policy": {"order": "tank_first"}}}, _prof(), set())
+    assert out["occupy"]["policy"] == {"order": "tank_first"}
+    out2 = sanitize_edits({"occupy": {"policy": {"order": "bogus"}}}, _prof(), set())
+    assert "policy" not in out2.get("occupy", {})
+
+
 def test_army_only_real_uids_and_nonneg_counts():
     e = {"army": {"group": ["A", "X"], "roles": {"A": "tank", "X": "archer", "A2": "bad"},
                   "onetile": 0, "composition": {"A": {"3101": -2, "3305": 3}, "X": {"3101": 1}}}}

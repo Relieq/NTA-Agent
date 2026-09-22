@@ -73,7 +73,17 @@ function forecastReinforce(input, req) {
 
 function forecast(input) {
   const req = bootstrap(input.playerUid);
-  if ((input.armies || []).length > 1) {
+  const armies = input.armies || [];
+  // ALWAYS use the reinforcement path for a multi-army attack — the engine's own
+  // forecast (ArtofwarForecastObj.startForecast) fights ONLY the first-selected
+  // army at frame 0 and injects every other army as a reinforcement wave at frame
+  // max(1, floor((marchTime_i - marchTime_0)/frameMs)) — which is >= 1 EVEN when
+  // all marchTimes are equal (co-located). So the lead army always eats the
+  // opening exchange alone; the others join a frame+ later. Modelling co-located
+  // armies as one simultaneous force (the old `staggered`-gated single battle)
+  // spread the damage and predicted 0 deaths while the real battle lost the lead
+  // army's front pawns. buildFrames replicates that arrival schedule exactly.
+  if (armies.length > 1) {
     return forecastReinforce(input, req);
   }
   const { area, fighters, seed } = buildArea(input, req);

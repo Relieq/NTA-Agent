@@ -1,3 +1,4 @@
+import json
 from types import SimpleNamespace
 
 from nta_agent.brain.policies import BrainPolicy
@@ -21,13 +22,14 @@ def test_applies_sanitized_edits_in_place_and_emits(tmp_path):
     prof = load_profile("none")
     events = []
     actions = SimpleNamespace(get_player_armys=lambda: [{"uid": "A", "name": "D1", "pawns": []}])
+    before_group = list(prof.army.get("group") or [])
     svc = BrainService(prof, _cfg(tmp_path), on_event=lambda k, d: events.append((k, d)),
                        actions=actions, policy=BrainPolicy(every_ticks=1, max_calls=5),
-                       llm_propose=lambda dg, p: {"occupy": {"max_loss": 12},
+                       llm_propose=lambda dg, p: {"occupy": {"expansion": "octopus"},
                                                   "army": {"group": ["A"]}, "rationale": "tune"})
     svc.tick(_state())
-    assert prof.occupy["max_loss"] == 12       # mutated in place
-    assert prof.army["group"] == ["A"]
+    assert prof.occupy["expansion"] == "octopus"   # mutated in place
+    assert prof.army.get("group") == before_group  # army is human-owned; brain ignores it
     assert any(k == "brain_plan" for k, d in events)
     assert (tmp_path / "profile.json").exists()  # persisted
 
@@ -88,6 +90,23 @@ def test_writes_brain_advice(tmp_path):
     assert adv == [{"text": "Nâng kho", "why": "sắp tràn"}]
 
 
+def test_blocked_composition_surfaced_as_advice(tmp_path):
+    import json
+    cfg = _cfg2(tmp_path)
+    cfg.composition_status_path = tmp_path / "composition_status.json"
+    cfg.composition_status_path.write_text(
+        json.dumps({"active": True, "blocked": True,
+                    "issues": ["pawn 3305 chưa unlock — không chiêu mộ được 35 lính còn thiếu"]}),
+        encoding="utf-8")
+    actions = SimpleNamespace(get_player_armys=list)
+    svc = BrainService(load_profile("none"), cfg, actions=actions,
+                       policy=BrainPolicy(every_ticks=1, max_calls=5),
+                       llm_propose=lambda dg, p: {"advice": []})
+    svc.tick(_state())
+    adv = json.loads((tmp_path / "brain_advice.json").read_text(encoding="utf-8"))
+    assert adv and "3305" in adv[0]["text"]      # the block was relayed to the user
+
+
 def test_event_trigger_fires_on_threat_off_cadence(tmp_path):
     import json
     cfg = _cfg2(tmp_path)
@@ -109,3 +128,93 @@ def test_no_fire_when_quiet_off_cadence(tmp_path):
                        llm_propose=lambda dg, p: (calls.append(1) or {}))
     svc.tick(_state())  # no threat / no decisions -> not urgent -> no call
     assert calls == []
+
+
+def test_brain_never_edits_build_order(tmp_path):
+    """The LLM echoes build from the digest; the brain must strip it so the human's
+    build.order/skip (set via dashboard) is never clobbered."""
+    from pathlib import Path
+
+    from nta_agent.execution.profile import load_profile as _load
+    from nta_agent.execution.profile import save_profile as _save
+    cfg = _cfg(tmp_path)
+    Path(cfg.profile_path).parent.mkdir(parents=True, exist_ok=True)
+    disk = _load(str(cfg.profile_path))               # the human's build, on disk
+    disk.build = {"order": [2001, 2008], "skip": [2000]}
+    _save(disk, str(cfg.profile_path))
+    prof = _load(str(cfg.profile_path))
+    actions = SimpleNamespace(get_player_armys=lambda: [{"uid": "A", "name": "D1", "pawns": []}])
+    svc = BrainService(prof, cfg,
+                       actions=actions, policy=BrainPolicy(every_ticks=1, max_calls=5),
+                       llm_propose=lambda dg, p: {"build": {"order": [], "skip": []},
+                                                  "occupy": {"expansion": "octopus"}})
+    svc.tick(_state())
+    saved = json.loads(Path(cfg.profile_path).read_text(encoding="utf-8"))
+    assert saved["build"] == {"order": [2001, 2008], "skip": [2000]}  # untouched
+    assert prof.occupy["expansion"] == "octopus"                     # other edits still apply
+
+
+def test_brain_save_does_not_clobber_dashboard_build_edit(tmp_path):
+    """Race: the dashboard writes a new build to disk after the tick started; the
+    brain's save must not overwrite it with its stale in-memory build."""
+    import json as _json
+    from pathlib import Path
+    prof = load_profile("none")
+    prof.build = {"order": [1], "skip": []}          # brain's stale copy
+    cfg = _cfg(tmp_path)
+    Path(cfg.profile_path).parent.mkdir(parents=True, exist_ok=True)
+    # "dashboard" wrote a newer build to disk mid-tick
+    from nta_agent.execution.profile import load_profile as _load
+    from nta_agent.execution.profile import save_profile as _save
+    disk = _load(str(cfg.profile_path)); disk.build = {"order": [2001, 2004], "skip": [2000]}
+    _save(disk, str(cfg.profile_path))
+    actions = SimpleNamespace(get_player_armys=lambda: [{"uid": "A", "name": "D1", "pawns": []}])
+    svc = BrainService(prof, cfg, actions=actions,
+                       policy=BrainPolicy(every_ticks=1, max_calls=5),
+                       llm_propose=lambda dg, p: {"occupy": {"expansion": "octopus"}})  # brain edit -> save
+    svc.tick(_state())
+    saved = _json.loads(Path(cfg.profile_path).read_text(encoding="utf-8"))
+    assert saved["build"] == {"order": [2001, 2004], "skip": [2000]}  # dashboard's, not [1]
+    assert saved["occupy"]["expansion"] == "octopus"                   # brain edit persisted
+
+
+def test_brain_save_does_not_clobber_dashboard_farm_group(tmp_path):
+    """The user sets the farm group (army.group) via the dashboard mid-tick; the
+    brain's save must re-read it from disk, not overwrite it with its stale copy.
+    Without this, leveling/occupy never see the group and never run."""
+    import json as _json
+    from pathlib import Path
+
+    from nta_agent.execution.profile import load_profile as _load
+    from nta_agent.execution.profile import save_profile as _save
+    prof = load_profile("none")
+    prof.army = {**prof.army, "group": []}            # brain's stale/empty copy
+    cfg = _cfg(tmp_path)
+    Path(cfg.profile_path).parent.mkdir(parents=True, exist_ok=True)
+    # "dashboard" wrote the user's farm group to disk mid-tick
+    disk = _load(str(cfg.profile_path))
+    disk.army = {**disk.army, "group": ["1789811706664002", "1789755140946001"]}
+    _save(disk, str(cfg.profile_path))
+    actions = SimpleNamespace(get_player_armys=lambda: [{"uid": "A", "name": "D1", "pawns": []}])
+    svc = BrainService(prof, cfg, actions=actions,
+                       policy=BrainPolicy(every_ticks=1, max_calls=5),
+                       llm_propose=lambda dg, p: {"occupy": {"expansion": "octopus"}})  # brain edit -> save
+    svc.tick(_state())
+    saved = _json.loads(Path(cfg.profile_path).read_text(encoding="utf-8"))
+    assert saved["army"]["group"] == ["1789811706664002", "1789755140946001"]  # user's, not []
+    assert saved["occupy"]["expansion"] == "octopus"                              # brain edit persisted
+
+
+def test_brain_cannot_raise_max_loss_but_can_set_expansion(tmp_path):
+    """max_loss is the user's hard risk cap; the brain must not raise it (would
+    undo the no-loss policy). It may still pick the expansion pattern."""
+    prof = load_profile("none")
+    prof.occupy["max_loss"] = 0.0
+    actions = SimpleNamespace(get_player_armys=lambda: [{"uid": "A", "name": "D1", "pawns": []}])
+    svc = BrainService(prof, _cfg(tmp_path), actions=actions,
+                       policy=BrainPolicy(every_ticks=1, max_calls=5),
+                       llm_propose=lambda dg, p: {"occupy": {"max_loss": 7.4,
+                                                             "expansion": "octopus"}})
+    svc.tick(_state())
+    assert prof.occupy["max_loss"] == 0.0        # user's cap kept
+    assert prof.occupy["expansion"] == "octopus"  # pattern still brain-editable

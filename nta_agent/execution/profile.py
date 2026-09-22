@@ -11,15 +11,32 @@ from dataclasses import dataclass, field
 from pathlib import Path
 
 DEFAULT_PROFILE = {
+    # army.strike_target = the BRAIN's army-composition goal: a list of
+    #   {pawn_id, armies, size} (N armies of one pawn type). The ArmyComposer rule
+    #   reconciles current armies toward it (rally/pull/recruit); [] = no goal.
+    #   Distinct from army.composition (per-army recruit-fill map used by Recruit).
     "army": {"group": [], "roles": {}, "onetile": True, "composition": {},
-             "active": "", "presets": {}},
+             "strike_target": [], "active": "", "presets": {}},
+    # occupy.policy is the BRAIN's tactical channel (hands execute it token-free).
+    #   order = "auto" | "tank_first" | "dps_first": which army leads the attack
+    #   (frame-0 front line). auto lets the planner pick the lowest-loss ordering;
+    #   tank_first/dps_first force melee-first / archers-first. max_loss + army.group
+    #   stay HUMAN-owned (hard risk cap + army pool); the brain shapes tactics within.
     "occupy": {"max_loss": 0.0, "max_march_ms": 0, "expansion": "none",
-               "loot": {"enabled": True, "min_reward_per_chest": 0.0}},
+               "loot": {"enabled": True, "min_reward_per_chest": 0.0},
+               "policy": {"order": "auto"}},
     "revive": {"enabled": True},
     # leveling: exp-book cycle over the FARM GROUP (army.group) + an agent-created
     # leveling army. max_leveling = how many pawns to buffer at once. Disabled
     # until configured. See memory nta-agent-forge-leveling.
     "leveling": {"enabled": False, "target_lv": 0, "max_leveling": 1},
+    # logistics: consolidate under-strength field armies + bring them home to recruit.
+    # redeploy = {armyUid: targetIndex} the brain fills to send topped-up armies out.
+    # See docs/superpowers/specs/2026-09-19-army-logistics-design.md.
+    "logistics": {"enabled": False, "target": 9, "heal_skip_frac": 0.2,
+                  "exclude": [], "min_shortfall": 1, "redeploy": {}},
+    # forge: auto-craft unlocked COMMON equipment when affordable (user: "agent làm").
+    "forge": {"enabled": True},
     "notes": [],
     "build": {"order": [], "skip": []},
 }
@@ -46,6 +63,9 @@ class Profile:
     revive: dict = field(default_factory=lambda: {"enabled": True})
     leveling: dict = field(default_factory=lambda: {"enabled": False, "target_lv": 0,
                                                     "max_leveling": 1})
+    logistics: dict = field(default_factory=lambda: copy.deepcopy(
+        DEFAULT_PROFILE["logistics"]))
+    forge: dict = field(default_factory=lambda: {"enabled": True})
 
 
 def load_profile(path) -> Profile:
@@ -56,7 +76,21 @@ def load_profile(path) -> Profile:
         data = {}
     merged = _merge(DEFAULT_PROFILE, data if isinstance(data, dict) else {})
     return Profile(army=merged["army"], occupy=merged["occupy"], notes=merged["notes"],
-                   build=merged["build"], revive=merged["revive"], leveling=merged["leveling"])
+                   build=merged["build"], revive=merged["revive"], leveling=merged["leveling"],
+                   logistics=merged["logistics"], forge=merged["forge"])
+
+
+def reload_into(profile: Profile, path) -> Profile:
+    """Refresh a live Profile's fields IN PLACE from disk. The agent loads the
+    profile once at startup, but the dashboard edits profile.json in a separate
+    process; without this the agent's stale copy would ignore those edits AND the
+    brain's save would clobber them (e.g. build.skip getting reset). Rules share
+    this object by reference, so we reassign its attributes rather than the object."""
+    fresh = load_profile(path)
+    for f in ("army", "occupy", "notes", "build", "revive", "leveling",
+              "logistics", "forge"):
+        setattr(profile, f, getattr(fresh, f))
+    return profile
 
 
 def save_profile(profile: Profile, path) -> None:
@@ -65,7 +99,9 @@ def save_profile(profile: Profile, path) -> None:
     p.write_text(json.dumps({"army": profile.army, "occupy": profile.occupy,
                              "notes": profile.notes, "build": profile.build,
                              "revive": getattr(profile, "revive", {"enabled": True}),
-                             "leveling": getattr(profile, "leveling", {})},
+                             "leveling": getattr(profile, "leveling", {}),
+                             "logistics": getattr(profile, "logistics", {}),
+                             "forge": getattr(profile, "forge", {"enabled": True})},
                             ensure_ascii=False, indent=1), encoding="utf-8")
 
 
@@ -122,8 +158,28 @@ def apply_edits(profile: Profile, clean: dict) -> bool:
             if lv.get(k) != v:
                 lv[k] = v
                 changed = True
+    if isinstance(clean.get("logistics"), dict):
+        lg = getattr(profile, "logistics", None)
+        if lg is None:
+            profile.logistics = lg = {}
+        for k, v in clean["logistics"].items():
+            if lg.get(k) != v:
+                lg[k] = v
+                changed = True
+    # A preset being active makes THAT preset the source of truth (active_formation
+    # reads it). A direct formation edit — e.g. the farm-group picker posting
+    # army.group — must therefore land in the active preset, or the preset->flat
+    # sync below reverts it to the preset's (empty) group. Mirror edited formation
+    # fields into the active preset first, then sync preset -> flat.
     active = profile.army.get("active") or ""
-    preset = (profile.army.get("presets") or {}).get(active)
+    presets = profile.army.get("presets") or {}
+    edited_army = clean.get("army") if isinstance(clean.get("army"), dict) else {}
+    if active in presets and isinstance(presets[active], dict):
+        for k in ("group", "roles", "onetile", "composition"):
+            if k in edited_army and presets[active].get(k) != edited_army[k]:
+                presets[active][k] = edited_army[k]
+                changed = True
+    preset = presets.get(active)
     if preset:
         for k in ("group", "roles", "onetile", "composition"):
             if k in preset and profile.army.get(k) != preset[k]:

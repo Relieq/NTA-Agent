@@ -3,7 +3,7 @@
 from dataclasses import dataclass, field
 
 from nta_agent.execution.heuristics import OccupyCell
-from nta_agent.execution.occupy_planner import discover_targets
+from nta_agent.execution.occupy_planner import discover_around, discover_targets
 from nta_agent.execution.predictors.battle import BattlePrediction, BattlePredictor
 from nta_agent.execution.predictors.sim_bridge import SimUnavailable
 from nta_agent.state.schema import GameState
@@ -48,6 +48,24 @@ def test_discover_skips_cells_whose_probe_errors():
 
     cands = discover_targets(probe, center, 1, my_uid="me")
     assert {c.index for c in cands} == {center - 1}
+
+
+def test_discover_around_covers_army_frontier():
+    # City far from a frontier army; a defended cell sits next to the ARMY, not the
+    # city. discover_around (centers = city + army) must find it; probing only the
+    # city (radius 1) would miss it.
+    city = 100 * W + 100
+    army = 100 * W + 110          # 10 cells east of the city (owned frontier)
+    world = {
+        city: _cell(owner="me"),
+        army: _cell(owner="me"),               # army stands on an owned cell
+        army + 1: _cell(owner="", pawns=[100]),  # defended cell next to the army
+    }
+    # city-only discovery (radius 1) misses it
+    assert discover_targets(lambda i: world.get(i, {}), city, 1, "me") == []
+    # multi-center discovery finds the army-adjacent target
+    cands = discover_around(lambda i: world.get(i, {}), {city, army}, 1, "me")
+    assert {c.index for c in cands} == {army + 1}
 
 
 @dataclass
@@ -373,3 +391,119 @@ def test_occupy_skips_busy_army():
     act = FakeActions(areas=areas, armies=busy)
     rule = OccupyCell(radius=1, predictor=BattlePredictor())
     assert rule.applies(st, act) is False
+
+
+def test_discover_frontier_keeps_defended_unowned_cells():
+    from nta_agent.execution.occupy_planner import discover_frontier
+    world = {
+        10: _cell(owner="", pawns=[100, 100]),   # defended wild -> candidate
+        11: _cell(owner="", pawns=[]),            # empty frontier -> skip
+        12: _cell(owner="me", pawns=[100]),       # mine -> skip
+        13: _cell(owner="enemy", city=2001),      # enemy city -> skip
+        14: _cell(owner="", pawns=[50]),          # defended wild -> candidate
+    }
+    cands = discover_frontier(lambda i: world.get(i, {}), {10, 11, 12, 13, 14}, my_uid="me")
+    assert {c.index for c in cands} == {10, 14}
+    assert all(c.owned_neighbors == 1 for c in cands)
+
+
+def test_occupy_quiets_benign_500080():
+    """A 500080 (duplicate/race: army already at/marching to target) is benign —
+    expansion still happens. It must NOT raise or log an occupy_error."""
+    center = 182 * W + 526
+    st = GameState(source="api")
+    st.user.uid = "me"
+    st.main_city_index = center
+    st.resources.stamina = 10
+    areas = {
+        center: _cell(owner="me", city=1001),
+        center - 1: _cell(owner="", pawns=[50]),
+    }
+    my_army = [{"index": center, "uid": "A", "pawns": [{"hp": 500}, {"hp": 500}], "state": None}]
+
+    class Acts(FakeActions):
+        def occupy_cell(self, target, armies, **kw):
+            raise RuntimeError("game/HD_OccupyCell: ecode.500080")
+
+    act = Acts(areas=areas, armies=my_army)
+    events = []
+    rule = OccupyCell(radius=1, predictor=BattlePredictor(), on_event=lambda k, d: events.append(k))
+    assert rule.applies(st, act) is True
+    rule.act(act)   # must NOT raise
+    assert "occupy_error" not in events   # benign -> quiet
+
+
+def test_occupy_bridges_to_forward_cell_for_far_target():
+    """For a FAR target, act() stages the army at the in-zone owned cell nearest
+    the target (MoveCellArmy) instead of attacking directly this tick."""
+    from types import SimpleNamespace
+    city = 100 * W + 100
+    target = 100 * W + 112          # 12 east — outside the radius-6 zone
+    fwd = 100 * W + 106             # owned, in-zone, near target
+    rule = OccupyCell(radius=1)
+    rule._pending = ([{"uid": "A", "index": city}], target)
+    rule._state_ref = SimpleNamespace(main_city_index=city)
+    rule.territory_source = lambda: ({city + 1, city + 600, fwd, 100 * W + 103}, [city])
+    calls = []
+
+    class Acts:
+        def get_player_armys(self):
+            return [{"uid": "A", "index": city, "state": 0, "pawns": [{"id": 3101}]}]
+        def move_cell_army(self, armies, tgt):
+            calls.append(("move", tgt, [a["uid"] for a in armies]))
+        def occupy_cell(self, tgt, armies):
+            calls.append(("occupy", tgt))
+
+    rule.act(Acts())
+    assert calls == [("move", fwd, ["A"])]   # bridged (staged), did not attack yet
+
+
+def test_occupy_no_bridge_for_near_target():
+    from types import SimpleNamespace
+    city = 100 * W + 100
+    target = 100 * W + 103          # within the zone -> attack directly
+    rule = OccupyCell(radius=1)
+    rule._pending = ([{"uid": "A", "index": city}], target)
+    rule._state_ref = SimpleNamespace(main_city_index=city)
+    rule.territory_source = lambda: ({city + 1, 100 * W + 102}, [city])
+    calls = []
+
+    class Acts:
+        def get_player_armys(self):
+            return [{"uid": "A", "index": city, "state": 0, "pawns": [{"id": 3101}]}]
+        def move_cell_army(self, armies, tgt):
+            calls.append(("move", tgt))
+        def occupy_cell(self, tgt, armies):
+            calls.append(("occupy", tgt))
+
+    rule.act(Acts())
+    assert calls == [("occupy", target)]     # near -> direct attack, no bridge
+
+
+def test_occupy_bridge_failure_falls_back_to_direct_attack():
+    """If the relay cell can't take the armies (ecode.500037 — staging area full),
+    bridging must NOT get stuck: fall through to a direct occupy so expansion still
+    advances (bridging is only a speed optimization)."""
+    from types import SimpleNamespace
+    city = 100 * W + 100
+    target = 100 * W + 112          # far -> would bridge
+    fwd = 100 * W + 106             # owned, in-zone relay (but full)
+    rule = OccupyCell(radius=1)
+    rule._pending = ([{"uid": "A", "index": city}], target)
+    rule._state_ref = SimpleNamespace(main_city_index=city)
+    rule.territory_source = lambda: ({city + 1, city + 600, fwd, 100 * W + 103}, [city])
+    events = []
+    rule.on_event = lambda k, d: events.append((k, d))
+    calls = []
+
+    class Acts:
+        def get_player_armys(self):
+            return [{"uid": "A", "index": city, "state": 0, "pawns": [{"id": 3101}]}]
+        def move_cell_army(self, armies, tgt):
+            raise RuntimeError("game/HD_MoveCellArmy: ecode.500037")  # area full
+        def occupy_cell(self, tgt, armies):
+            calls.append(("occupy", tgt))
+
+    rule.act(Acts())
+    assert calls == [("occupy", target)]                 # fell back to a direct attack
+    assert any(k == "bridge_skip" for k, _ in events)     # surfaced the skipped relay

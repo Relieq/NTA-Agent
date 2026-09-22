@@ -43,6 +43,8 @@ def test_collect_rule_skips_when_at_cap():
 
 
 def test_collect_rule_skips_when_caps_unknown():
+    # Caps unknown -> skip claiming; local production accrual (store.accrue_output)
+    # keeps the stock fresh, so no claim is needed (matches normal play).
     st = GameState(source="api")  # no player caps
     assert CollectCityOutput().applies(st, None) is False
 

@@ -60,6 +60,31 @@ def test_apply_edits_merges_and_activates():
     assert apply_edits(p, {}) is False        # no-op
 
 
+def test_group_edit_lands_in_active_preset(tmp_path):
+    """The farm-group picker posts army.group while a preset is active. The edit
+    must stick (and reach active_formation), not be reverted by the preset->flat
+    sync to the preset's empty group. Regression: leveling never ran because the
+    group vanished on save."""
+    from nta_agent.execution.profile import (
+        active_formation,
+        apply_edits,
+        load_profile,
+        save_profile,
+    )
+    p = load_profile("none")
+    p.army["presets"]["Default Formation"] = {"group": [], "roles": {}}
+    p.army["active"] = "Default Formation"
+    changed = apply_edits(p, {"army": {"group": ["u1", "u2"]}})
+    assert changed is True
+    assert p.army["group"] == ["u1", "u2"]                       # flat kept
+    assert p.army["presets"]["Default Formation"]["group"] == ["u1", "u2"]  # preset too
+    assert active_formation(p)["group"] == ["u1", "u2"]          # what leveling reads
+    # survives a save/load round-trip
+    save_profile(p, tmp_path / "profile.json")
+    q = load_profile(tmp_path / "profile.json")
+    assert active_formation(q)["group"] == ["u1", "u2"]
+
+
 def test_notes_edit_replaces_list():
     p = load_profile("none")
     apply_edits(p, {"notes": ["a"]})
@@ -93,3 +118,21 @@ def test_apply_edits_expansion_and_revive(tmp_path):
     p2 = load_profile(path)
     assert p2.occupy["expansion"] == "octopus"
     assert p2.revive["enabled"] is False
+
+
+def test_reload_into_picks_up_disk_edits_in_place(tmp_path):
+    """The dashboard edits profile.json in another process; reload_into must refresh
+    the agent's shared Profile object in place so the brain's save won't clobber it."""
+    from nta_agent.execution.profile import load_profile, reload_into, save_profile
+    p = tmp_path / "profile.json"
+    prof = load_profile(str(p))           # defaults
+    prof.build = {"order": [1], "skip": [2005]}
+    save_profile(prof, str(p))
+    agent_copy = load_profile(str(p))     # agent's in-memory copy
+    # dashboard edits the file (load->edit->save) in "another process"
+    dash = load_profile(str(p)); dash.build["skip"] = [2005, 2003]; save_profile(dash, str(p))
+    # agent_copy is stale until reload_into refreshes it IN PLACE
+    ref = agent_copy
+    reload_into(agent_copy, str(p))
+    assert agent_copy is ref              # same object (rules hold this reference)
+    assert agent_copy.build["skip"] == [2005, 2003]

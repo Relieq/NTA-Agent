@@ -31,6 +31,14 @@ function runWithReinforce(frames, req) {
   const selfTotal = frames.selfTotal;
   const enemyTotal = frames.enemyTotal;
 
+  // Reinforcement waves keyed by their arrival frame; entries are removed as they
+  // are injected, so whatever remains at battle end never arrived (counts alive).
+  const byFrame = {};
+  for (const w of (frames.waves || [])) {
+    (byFrame[w.currentFrameIndex] = byFrame[w.currentFrameIndex] || []).push(w);
+  }
+  const notArrivedWaves = () => Object.keys(byFrame).reduce((a, k) => a.concat(byFrame[k]), []);
+
   let result = null;
   const origEnd = area.battleEndByLocal.bind(area);
   area.battleEndByLocal = function () {
@@ -56,7 +64,7 @@ function runWithReinforce(frames, req) {
                  alive: !!(lf && lf.isDie && !lf.isDie()),
                  curHp: lf && lf.getCurHp ? lf.getCurHp() : 0 };
       });
-      for (const w of pending)
+      for (const w of notArrivedWaves())
         for (const wf of w.fighters)
           pawns.push({ uid: wf.uid, camp: wf.camp, alive: true, curHp: null });
       result = {
@@ -70,31 +78,37 @@ function runWithReinforce(frames, req) {
   };
 
   let allFighters = frames.fighters.slice();
-  const maxAi = () => allFighters.reduce((m, f) => Math.max(m, f.attackIndex || 0), 0);
 
-  let fsp = area.battleLocalBegin({
+  // Start the battle ONCE (lead army + enemy at frame 0), then inject each
+  // reinforcement wave into the LIVE battle exactly as the engine does — via the
+  // fspModel's per-frame onCheckHasFrameData hook calling checkHasFrameDataItem
+  // (area.addArmy + battleController.addFighters), continuing attackIndex from
+  // getCurAccAttackIndex(). This keeps the running battle's HP, turn order, buffs
+  // and RNG stream — matching ArtofwarForecastObj.startForecast. (The old code
+  // re-called battleLocalBegin per wave, which spun up a FRESH controller each
+  // time and drifted ~1 pawn from the real battle.)
+  const fsp = area.battleLocalBegin({
     camp: 1, randSeed: frames.randSeed, accAttackIndex: 0, fps: frames.fps || FPS,
     fighters: allFighters, mul: FPS_MUL, forecast: true,
   });
+  const bc = fsp.getBattleController();
 
-  const pending = (frames.waves || []).slice()
-    .sort((a, b) => a.currentFrameIndex - b.currentFrameIndex);
+  fsp.setCheckHasFrameData(function (frameIndex) {
+    const ws = byFrame[frameIndex];
+    if (!ws) return;
+    delete byFrame[frameIndex];               // arrived -> no longer pending
+    for (const w of ws) {
+      const acc = bc.getCurAccAttackIndex();   // continue the turn sequence
+      w.fighters.forEach((f, i) => { f.attackIndex = acc + i + 1; f.enterIndex = acc + i + 1; });
+      fsp.checkHasFrameDataItem({ type: 1, army: w.army, fighters: w.fighters });
+      allFighters = allFighters.concat(w.fighters);
+    }
+  });
+
   const dt = 1 / (frames.fps || FPS);
-  let frame = 0;
   let n = 0;
   while (fsp.isRunning && n < MAX_UPDATES && !result) {
-    while (pending.length && pending[0].currentFrameIndex <= frame && !result) {
-      const w = pending.shift();
-      area.addArmy(w.army);
-      allFighters = allFighters.concat(w.fighters);
-      fsp = area.battleLocalBegin({
-        camp: 1, randSeed: frames.randSeed, accAttackIndex: maxAi(),
-        fps: frames.fps || FPS, fighters: allFighters, mul: FPS_MUL,
-        forecast: true, currentFrameIndex: w.currentFrameIndex,
-      });
-    }
     fsp.update(dt);
-    frame += 1;
     n += 1;
   }
   if (!result) {

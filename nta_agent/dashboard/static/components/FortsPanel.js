@@ -1,32 +1,21 @@
-import { getJSON, postJSON, usePolling } from "../api.js";
+import { getJSON, usePolling } from "../api.js";
 const { ref } = window.Vue;
 export default {
  setup(){
-  const f=ref({owned_count:0,recommendations:[],accepted:[],rejected:[]});
+  const f=ref({owned_count:0,fort_zone:[],fort_count:0,fort_cap:0});
   async function load(){ const v=await getJSON("/api/forts");
-   if(v) f.value={owned_count:v.owned_count||0,recommendations:v.recommendations||[],
-                  accepted:v.accepted||[],rejected:v.rejected||[]}; }
+   if(v) f.value={owned_count:v.owned_count||0, fort_zone:v.fort_zone||[],
+                  fort_count:v.fort_count||0, fort_cap:v.fort_cap||0}; }
   usePolling(load, 4000);
-  async function decide(index, decision){ await postJSON("/api/forts/decide",{index,decision}); load(); }
-  const toIdx=([x,y])=> y*600 + x;  // map_width 600 (matches server)
-  return { f, decide, toIdx };
+  return { f };
  },
- template:`<div class="card full"><h2>Cứ Điểm — gợi ý</h2>
-  <div>Ô đã chiếm: <b>{{ f.owned_count||0 }}</b></div>
-  <div style="margin-top:6px">
-   <div v-for="(r,i) in f.recommendations" :key="'r'+i" style="display:flex;align-items:center;gap:8px;padding:2px 0">
-    <span style="flex:1">{{ i+1 }}. Cứ Điểm @{{ r.index }} ({{ r.x }},{{ r.y }}) — {{ r.reason||"" }}</span>
-    <button @click="decide(r.index,'accept')">✓ Chấp thuận</button>
-    <button @click="decide(r.index,'reject')">✕ Từ chối</button></div>
-   <div v-if="!f.recommendations.length" class="muted">Chưa có gợi ý</div>
-  </div>
-  <div v-if="f.accepted.length" style="margin-top:8px">
-   <div class="muted" style="font-size:12px">Đã chấp thuận (dự kiến xây):</div>
-   <div v-for="(a,i) in f.accepted" :key="'a'+i">🟧 ({{ a[0] }},{{ a[1] }})
-    <button @click="decide(toIdx(a),'clear')">×</button></div></div>
-  <div v-if="f.rejected.length" style="margin-top:8px">
-   <div class="muted" style="font-size:12px">Đã từ chối:</div>
-   <div v-for="(a,i) in f.rejected" :key="'j'+i" class="muted">✕ ({{ a[0] }},{{ a[1] }})
-    <button @click="decide(toIdx(a),'clear')">×</button></div></div>
+ template:`<div class="card full"><h2>Cứ Điểm</h2>
+  <div>Ô đã chiếm: <b>{{ f.owned_count||0 }}</b> · Cứ Điểm: <b>{{ f.fort_count }}</b><span v-if="f.fort_cap">/{{ f.fort_cap }}</span></div>
+  <div v-if="f.fort_cap && f.fort_count>=f.fort_cap" class="muted" style="margin-top:6px;color:#e3b341">
+   Đã đủ số Cứ Điểm — không cần xây thêm.</div>
+  <div v-else class="muted" style="margin-top:6px;font-size:13px">
+   Có <b style="color:#d95926">{{ f.fort_zone.length }}</b> ô nằm trong <b>vùng gợi ý xây Cứ Điểm</b>
+   (đất mình, ngoài bán kính 6 ô quanh thành). Mở tab <b>Lãnh thổ</b> → bấm 1 ô trong vùng cam
+   để agent gửi lệnh xây. Không còn danh sách chấp thuận/từ chối — cứ chọn ô bạn muốn.</div>
  </div>`
 };

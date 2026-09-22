@@ -74,9 +74,30 @@ class DecisionService:
                 apply_edits(self.profile, cmd.get("edits") or {})
             return
         if action == "equip":
-            self.actions.change_pawn_equip(
-                int(cmd["pawn_id"]), cmd["equip_uid"],
-                int(cmd.get("skin_id", 0) or 0), int(cmd.get("attack_speed", 0) or 0))
+            pawn_id = int(cmd["pawn_id"])
+            equip_uid = cmd["equip_uid"]
+            skin_id = int(cmd.get("skin_id", 0) or 0)
+            atk = int(cmd.get("attack_speed", 0) or 0)
+            # 1) config = default for pawns drilled later
+            self.actions.change_pawn_equip(pawn_id, equip_uid, skin_id, atk)
+            # 2) also equip pawns already on the field — the config alone doesn't
+            # touch them. sync_equip=1 applies to EVERY pawn of this type across
+            # non-marching armies, so one call on any such pawn suffices.
+            for a in self.actions.get_player_armys():
+                if int(a.get("state", 0) or 0) == 1:  # marching: can't change attr
+                    continue
+                p = next((q for q in (a.get("pawns") or [])
+                          if int(q.get("id", 0) or 0) == pawn_id), None)
+                if p:
+                    self.actions.change_pawn_attr(
+                        int(a.get("index", 0) or 0), str(a.get("uid")), str(p.get("uid")),
+                        equip_uid, sync_equip=1, skin_id=skin_id, attack_speed=atk)
+                    break
+            return
+        if action == "build_fort":
+            # User picked an owned cell in the fort zone -> build a Cứ Điểm there.
+            from nta_agent.runtime.fort_service import FORT_BUILD_ID
+            self.actions.add_build(int(cmd["index"]), FORT_BUILD_ID)
             return
         track = cmd.get("track")
         tp = _TRACK_TP.get(track)

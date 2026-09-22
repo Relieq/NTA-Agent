@@ -93,3 +93,19 @@ def test_caps_per_tick():
     rule.applies(st, acts)
     rule.act(acts)
     assert len(acts.cured) == 1 and acts.cured[0][3] == "d1"  # highest lv first
+
+
+def test_500054_army_cap_backs_off_quietly():
+    """When all city armies are full and the army cap is reached, revive can't
+    create a new army (500054) — back off quietly (longer), don't re-raise/spam."""
+    st = _state([{"uid": "d1", "id": 3101, "lv": 1}])
+
+    class CapActions(FakeActions):
+        def cure_injury_pawn(self, index, army_uid, army_name, pawn_uid):
+            raise RuntimeError("game/HD_CureInjuryPawn: ecode.500054")
+
+    acts = CapActions([{"uid": "A", "name": "D1", "index": MAIN, "pawns": [{}] * 9}])
+    rule = ReviveInjured()
+    assert rule.applies(st, acts) is True
+    rule.act(acts)                       # must NOT raise
+    assert rule._cooldown == rule.full_cooldown

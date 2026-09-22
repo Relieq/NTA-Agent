@@ -208,9 +208,25 @@ class Actions:
     # ---- equipment (gear assignment) ------------------------------------ #
     def change_pawn_equip(self, pawn_id: int, equip_uid: str,
                           skin_id: int = 0, attack_speed: int = 0) -> dict:
-        """Assign an owned equip to a pawn config (GAME_HD_ChangeConfigPawnEquip)."""
+        """Set the equip CONFIG for a pawn type (GAME_HD_ChangeConfigPawnEquip).
+
+        This is the default applied to pawns drilled AFTER it — existing pawns keep
+        their gear. Use ``change_pawn_attr(..., sync_equip=1)`` to also equip the
+        pawns already on the field."""
         return self.session.request("game/HD_ChangeConfigPawnEquip", {
             "id": int(pawn_id), "equipUid": str(equip_uid),
+            "skinId": int(skin_id), "attackSpeed": int(attack_speed),
+        })
+
+    def change_pawn_attr(self, index: int, army_uid: str, pawn_uid: str,
+                         equip_uid: str, *, sync_equip: int = 1,
+                         skin_id: int = 0, attack_speed: int = 0) -> dict:
+        """Equip an EXISTING pawn (GAME_HD_ChangePawnAttr). ``sync_equip=1`` applies
+        the equip to every pawn of the same type across all non-marching armies (the
+        engine's changePawnEquip mode 1), =2 to the pawn's army, =0 to just it."""
+        return self.session.request("game/HD_ChangePawnAttr", {
+            "index": int(index), "armyUid": str(army_uid), "uid": str(pawn_uid),
+            "equipUid": str(equip_uid), "syncEquip": int(sync_equip),
             "skinId": int(skin_id), "attackSpeed": int(attack_speed),
         })
 
@@ -337,15 +353,20 @@ class Actions:
         """Move a pawn to another army (GAME_HD_ChangePawnArmy).
 
         ``is_new_create`` creates a brand-new army for the pawn (agent's leveling
-        army); otherwise it moves into ``new_army_uid``. (Create params RE'd; to
-        re-confirm live once a multi-army state exists.)"""
-        params = {"index": int(index), "armyUid": str(army_uid), "uid": str(pawn_uid),
-                  "newArmyUid": str(new_army_uid)}
+        army); otherwise it moves into ``new_army_uid``.
+
+        Create path mirrors the verified sibling APIs (``DrillPawn``,
+        ``CureInjuryPawn``) which create with an EMPTY target + ``armyName``: we
+        omit ``newArmyUid`` entirely when creating, because sending
+        ``newArmyUid=""`` made the server validate a non-existent army first and
+        reject with ecode.500011 ("Đội quân không tồn tại")."""
+        params = {"index": int(index), "armyUid": str(army_uid), "uid": str(pawn_uid)}
         if is_new_create:
             params["isNewCreate"] = True
             if army_name:
                 params["armyName"] = str(army_name)
         else:
+            params["newArmyUid"] = str(new_army_uid)
             params["onlyChangeArmy"] = bool(only_change)
         reply = self.session.request("game/HD_ChangePawnArmy", params)
         self._apply_result(reply)
@@ -355,6 +376,13 @@ class Actions:
         """Dismiss an army (GAME_HD_DismissArmy). ``pawn_id`` 0 = whole army."""
         return self.session.request("game/HD_DismissArmy",
                                     {"index": int(index), "armyUid": str(army_uid), "id": int(pawn_id)})
+
+    def dismiss_pawn(self, index: int, army_uid: str, pawn_uid: str) -> dict:
+        """Dismiss a SINGLE pawn by uid (GAME_HD_DismissPawn) — the normal way to drop
+        individual soldiers (returns a small resource refund). An army that reaches 0
+        pawns is auto-removed by the server."""
+        return self.session.request("game/HD_DismissPawn",
+                                    {"index": int(index), "armyUid": str(army_uid), "uid": str(pawn_uid)})
 
     def pawn_lving(self, index: int, army_uid: str, pawn_uid: str) -> dict:
         """Normal (exp-book) pawn level-up (GAME_HD_PawnLving). Queued/timed; locks

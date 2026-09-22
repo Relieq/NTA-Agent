@@ -35,9 +35,20 @@ def test_respects_bt_count_then_upgrades():
     assert act.kind == "upgrade" and act.build_id == 2001 and act.up.level == 6
 
 
-def test_multi_instance_granary_constructs_until_max():
+def test_multi_instance_granary_upgrades_before_duplicating():
+    # Granary (2002) is bt_count -3 (multi), but the engine forbids a 2nd copy
+    # until the first is maxed (ecode.500034). A lv1 granary is not maxed, so the
+    # planner must UPGRADE it, not construct a duplicate.
     c = GameConfig.load()
     st = _state([_b(2001, 10), _b(2002, 1)])
+    act = next_build_action(st, c, sequence=[2002])
+    assert act.kind == "upgrade" and act.build_id == 2002
+
+
+def test_multi_instance_granary_constructs_once_maxed():
+    # With the first granary at max level (20), a 2nd copy is now allowed.
+    c = GameConfig.load()
+    st = _state([_b(2001, 10), _b(2002, 20)])
     act = next_build_action(st, c, sequence=[2002])
     assert act.kind == "construct" and act.build_id == 2002
 

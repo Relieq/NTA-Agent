@@ -34,25 +34,71 @@ Because reverse-engineering the API is incremental and risky, the system is **AP
 fallback**: crack a domain → use API for it; everything else keeps running on vision. Never let an
 API-migration break the vision path for a feature.
 
-## Environment (verified 2026-09-01 — re-verify before relying on)
+## Environment (LDPlayer since 2026-09-10 — re-verify before relying on)
 
-- Game `twgame.global.acers` **v4.4.0**; engine is **Cocos2d-x JavaScript**
-  (`org.cocos2dx.javascript.AppActivity`) — game logic/protocol live in a JS bundle inside
-  `base.apk/assets` (typically jsc-compiled or XXTEA-encrypted).
-- Emulator: BlueStacks_nxt, Android 9, x86_64, screen **1600x900**, density 240. Combat/coordinate
-  math in the old bot assumes 1600x900 — keep that assumption or make it explicit.
-- ADB binary: `C:\Program Files\BlueStacks_nxt\HD-Adb.exe` (not on PATH). Device `emulator-5554`,
-  adb port **5555** (read from `C:\ProgramData\BlueStacks_nxt\bluestacks.conf`).
-- The game speaks **HTTPS (443)**, so intercepting the protocol requires installing the mitmproxy
-  CA in the emulator **and** bypassing certificate pinning with Frida.
+- **Emulator: LDPlayer 9** (v9.5.31.0, Android 9, x86_64), NOT BlueStacks. Switched from
+  BlueStacks because LDPlayer's 1-click root is far easier (root confirmed: `su -c id` → uid=0).
+  BlueStacks is kept only as a cold fallback. See memory `nta-agent-lab-setup`.
+- **ADB binary: `D:\LDPlayer\LDPlayer9\adb.exe`** (device `emulator-5554`, also `127.0.0.1:5555`).
+  Do NOT use `C:\Program Files\BlueStacks_nxt\HD-Adb.exe` — its adb client (v36) mismatches
+  LDPlayer's adb server (v41) and spams "server version mismatch" + restarts the daemon every call.
+  LDPlayer CLI: `D:\LDPlayer\LDPlayer9\ldconsole.exe` (`modify --resolution/--root/...`).
+- Game `twgame.global.acers` **v4.4.4** on LDPlayer (newer than the old v4.4.0 BlueStacks build),
+  defaults to **English** (`__slg_lang__=en`); engine is **Cocos2d-x JavaScript**
+  (`org.cocos2dx.javascript.AppActivity`) — logic/protocol in a JS bundle inside `base.apk/assets`
+  (jsc-compiled + XXTEA-encrypted; decrypt with `tools/re/decrypt_jsc.py`).
+- Screen: the game **hard-locks portrait 900x1600** on LDPlayer (ADB/autorotate can't force it).
+  The old bot's 1600x900 combat/coordinate math is therefore outdated — the project is API-first,
+  so pixel math is being retired; don't assume 1600x900.
+- Protocol is **MQTT over TLS 1.2** to `nine-hk.twomiles.cn:3653` (payload is app-layer protobuf,
+  XXTEA key `2d5e8a49-a7f8-43`), not plain HTTPS. Intercepting needs Frida (TLS + pin bypass);
+  the RE lab (frida-server, tcpdump) is already set up — see `nta-agent-lab-setup` / `nta-agent-re-findings`.
+- **The agent connects to the game API directly (MQTT), not through ADB** — so which emulator is up
+  doesn't affect the agent loop; ADB is only for the vision fallback + manual inspection (screenshots).
+  Single game session: when the agent logs in it KICKS the emulator client, so close the agent before
+  reading the game UI, and vice-versa.
 
-Common ADB probes (quote the path — it contains a space):
+Common ADB probes (quote the path — it contains a space; do NOT prefix `MSYS_NO_PATHCONV` unless a
+`/sdcard/...` arg gets mangled, in which case use a `//sdcard/...` double-slash for device paths):
 ```bash
-ADB="/c/Program Files/BlueStacks_nxt/HD-Adb.exe"
+ADB="/d/LDPlayer/LDPlayer9/adb.exe"
 "$ADB" devices
 "$ADB" shell wm size
-"$ADB" exec-out screencap -p > screen.png
+# exec-out screencap can corrupt the PNG on Windows; pull via an on-device file instead:
+"$ADB" shell screencap -p //sdcard/s.png && "$ADB" pull //sdcard/s.png ./screen.png && "$ADB" shell rm //sdcard/s.png
 ```
+
+## Chiến thuật 1-tile — ví dụ thứ tự lượt đánh (verified 2026-09-22)
+
+Nhóm chiến 5 đội: **1 đội rìu khiên (tank, pawn `3206`) + 4 đội IMP (DPS, pawn `3305`)**, mỗi
+đội 9 lính. `attack_speed`: rìu khiên 3206 = 7, IMP 3305 = 5.
+
+**Thứ tự điều đội tới 1 ô (1-tile):** chọn/tick **4 đội IMP trước, rồi đến đội tank (rìu khiên)
+sau cùng.** Trong `HD_OccupyCell` thứ tự mảng `uids` = thứ tự tay người chơi = thứ tự đội trong
+trận, nên tank ở cuối mảng. `isSameSpeed=true` → mọi đội tới cùng lúc (dùng march-time đội chậm nhất).
+
+**Thứ tự HÀNH ĐỘNG trong trận** chạy theo `attackIndex` tăng dần (đội tick trước có index nhỏ
+hơn → ra tay trước), và phe mình (camp 2, bên tấn công) đánh trước phe quái (camp 1) — lợi thế
+tấn công. Trên trận thật đã replay (record → `replay-log.js`), quan sát:
+
+```
+Lượt 1–9    [TA]   lính IMP  ai1–ai9     (4 đội IMP ra tay trước)
+Lượt 10–13  [QUÁI] ai10–ai13             (phe quái)
+Lượt 14+    [TA]   lính IMP  ai14–ai22, ai36–ai44, ai58–ai66, ...
+```
+
+165 lượt, KẾT QUẢ THẮNG, 0 tử trận phe mình, 4 quái chết. Đội tank (rìu khiên) hứng phần lớn
+sát thương đúng vai; nhưng trận này quái có **chiêu diện rộng tác động lên > 9 ĐỐI TƯỢNG** (tank
+chỉ 9 lính) nên phần dư tràn sang IMP — đây là **thuộc tính của quái, KHÔNG phải lỗi 1-tile**.
+Tương tự có quái **phản damage**: IMP level cao về sau có thể tự giết mình. Chọn tactic (đội nào
+dẫn, có dùng 1-tile không) là việc BRAIN; hands/sim chỉ soi gương engine.
+
+**Đọc lại diễn biến bất kỳ trận nào (agent phải TẮT — single session):**
+```bash
+.venv/Scripts/python.exe tools/re/fetch_battle_record.py --latest   # -> build/run/battle_record.json
+node tools/battlesim/replay-log.js build/run/battle_record.json <playerUid>
+```
+→ events `turn`/`hit`/`death` + summary win/tử trận.
 
 ## Reusing the old bot
 

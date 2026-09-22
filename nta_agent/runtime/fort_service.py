@@ -72,6 +72,13 @@ class FortService:
             enemy_cities = [{"x": i % mw, "y": i // mw, "type": t}
                             for i, t in (m.get("enemy_cities") or {}).items()]
             frontier = sorted([i % mw, i // mw] for i in m.get("frontier", ()))
+            # Recommended ZONE (user picks one owned cell in it to build a fort) —
+            # replaces per-cell rec spam + accept/reject.
+            from nta_agent.execution.fort_advisor import fort_zone
+            cap = self._max_forts()
+            zone = fort_zone(main, owned, fort_indices, map_width=mw,
+                             radius=self.radius, enemy=enemy)
+            zone_coords = sorted([c % mw, c // mw] for c in zone)
             # P3: detect enemy touching/penetrating our convex-hull territory.
             threat = detect_incursions(owned, m.get("enemy_cells", ()),
                                        m.get("enemy_cities") or {}, main, mw)
@@ -79,6 +86,8 @@ class FortService:
                        "accepted": accepted_coords, "rejected": rejected_coords,
                        "enemy_cells": enemy_cells, "enemy_cities": enemy_cities,
                        "frontier": frontier, "recommendations": recs,
+                       "fort_zone": zone_coords, "fort_count": len(fort_indices),
+                       "fort_cap": cap,
                        "threats": threat["threats"][:50],
                        "threat_summary": threat["summary"]}
             path = self.cfg.forts_path

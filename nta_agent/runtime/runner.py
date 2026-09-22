@@ -91,14 +91,47 @@ def run(cfg: RuntimeConfig, *, ticks: int = 0, session=None, engine=None) -> Non
             return set()
         return {int(y) * 600 + int(x) for x, y in (data.get("enemy_cells") or [])}
 
+    def _territory_from_forts():
+        # (owned cell indices, speed-zone centers = main-city block + forts) for
+        # bridging — from the throttled FortService output, no extra request.
+        try:
+            data = json.loads(cfg.forts_path.read_text(encoding="utf-8"))
+        except Exception:
+            return set(), []
+        owned = {int(y) * 600 + int(x) for x, y in (data.get("owned_cells") or [])}
+        forts = [int(y) * 600 + int(x) for x, y in (data.get("accepted") or [])]
+        main = int(getattr(session.state, "main_city_index", 0) or 0)
+        centers = ([main, main + 1, main + 600, main + 601] if main else []) + forts
+        return owned, centers
+
+    _rules = getattr(agent.engine, "rules", [])
+    _composer = next((r for r in _rules if getattr(r, "name", "") == "army_composer"), None)
     # Surface the occupy planner's reasoning (chosen army + predicted loss) to the log.
-    for rule in getattr(agent.engine, "rules", []):
+    for rule in _rules:
         if getattr(rule, "name", "") == "occupy_cell":
             rule.on_event = log.append
             rule.threats_source = _enemy_from_forts  # defend contested border cells (P2)
+            rule.territory_source = _territory_from_forts  # bridging (forward staging)
+            if _composer is not None:  # skip armies the composer is arranging (it locks them)
+                rule.locked_source = lambda: getattr(_composer, "locked_uids", set())
             if config is not None:  # pace discovery by the cheapest occupy cost
                 from nta_agent.execution.occupy_planner import min_occupy_stamina
                 rule.min_stamina = min_occupy_stamina(config)
+        elif getattr(rule, "name", "") in ("recruit", "logistics", "heal_routing"):
+            # every rule that moves/fills armies must skip the ones the composer owns
+            if _composer is not None:
+                rule.locked_source = lambda: getattr(_composer, "locked_uids", set())
+        elif getattr(rule, "name", "") == "army_composer":
+            rule.on_event = log.append
+
+            def _write_comp_status(s):  # persist for the brain advice loop / dashboard
+                try:
+                    p = cfg.composition_status_path
+                    p.parent.mkdir(parents=True, exist_ok=True)
+                    p.write_text(json.dumps(s, ensure_ascii=False), encoding="utf-8")
+                except Exception:
+                    pass
+            rule.status_sink = _write_comp_status
 
     def _safe(fn, *a):
         try:
@@ -107,9 +140,13 @@ def run(cfg: RuntimeConfig, *, ticks: int = 0, session=None, engine=None) -> Non
             sys.stderr.write(f"[spine] {fn.__name__} failed: {e}\n")
             errlog.log(getattr(fn, "__name__", "service"), "service_error", e)
 
+    from nta_agent.execution.profile import reload_into
+
     def on_tick(i, fired, state):
         _safe(write_snapshot, state, cfg.snapshot_path)
         _safe(log.tick, i, fired, state)
+        # pick up dashboard edits + stop the brain from clobbering them (shared obj)
+        _safe(reload_into, profile, cfg.profile_path)
         run_services(state, cfg, service, brain, forts, _safe)
 
     try:

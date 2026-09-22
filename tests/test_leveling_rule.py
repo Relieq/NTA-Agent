@@ -62,12 +62,22 @@ def test_inert_without_farm_group():
     assert Leveling(profile=_prof(group=())).applies(_state(), acts) is False
 
 
-def test_pull_creates_leveling_army():
+def test_inplace_levels_farm_pawn_when_no_buffer():
+    # No leveling army can be created (ChangePawnArmy -> ecode.500011), so the
+    # lowest under-target farm pawn is leveled IN PLACE in its own army.
     acts = FakeActions([_army("F1", [("a", 3), ("b", 12)])])
     rule = Leveling(profile=_prof())
     assert rule.applies(_state(), acts) is True
     rule.act(acts)
-    assert acts.calls == [("pull", "F1", "a", "", True)]  # isNewCreate
+    assert acts.calls == [("level", "F1", "a")]   # PawnLving on the farm army
+
+
+def test_inplace_skips_marching_farm_army():
+    # a farm army that is out (state=march) can't be leveled in place
+    farm = _army("F1", [("a", 3)]); farm["state"] = 1
+    acts = FakeActions([farm])
+    rule = Leveling(profile=_prof())
+    assert rule.applies(_state(), acts) is False
 
 
 def test_levels_then_swaps():
@@ -86,3 +96,47 @@ def test_no_op_when_farm_away():
     rule = Leveling(profile=_prof())
     # farm not home -> no pull/swap; no leveling army -> nothing
     assert rule.applies(_state(exp_book=0), acts) is False
+
+
+def test_quiet_backoff_on_already_queued():
+    """A 500079 (pawn already in the leveling queue — state-freshness retry) is a
+    benign transient: swallow it quietly and set a cooldown, don't raise/spam."""
+    class RaisingActions(FakeActions):
+        def pawn_lving(self, index, army_uid, pawn_uid):
+            raise RuntimeError("game/HD_PawnLving: ecode.500079")
+    acts = RaisingActions([_army("F1", [("a", 3)])])
+    rule = Leveling(profile=_prof())
+    assert rule.applies(_state(), acts) is True
+    rule.act(acts)                      # must NOT raise
+    assert rule._cooldown == rule.quiet_cooldown
+
+
+def test_raises_on_real_leveling_error():
+    class RaisingActions(FakeActions):
+        def pawn_lving(self, index, army_uid, pawn_uid):
+            raise RuntimeError("game/HD_PawnLving: ecode.500033")
+    acts = RaisingActions([_army("F1", [("a", 3)])])
+    rule = Leveling(profile=_prof())
+    assert rule.applies(_state(), acts) is True
+    errored = []
+    rule.on_event = lambda k, d: errored.append((k, d))
+    try:
+        rule.act(acts)
+    except RuntimeError:
+        pass
+    else:
+        raise AssertionError("should have raised on a real error")
+    assert any(k == "leveling_error" for k, _ in errored)
+
+
+def test_quiet_backoff_on_low_resources():
+    """500012 (out of exp-books; a stale estimate let it try) is a benign wait,
+    not an error — quiet, with the longer resource cooldown."""
+    class RaisingActions(FakeActions):
+        def pawn_lving(self, index, army_uid, pawn_uid):
+            raise RuntimeError("game/HD_PawnLving: ecode.500012")
+    acts = RaisingActions([_army("F1", [("a", 3)])])
+    rule = Leveling(profile=_prof())
+    assert rule.applies(_state(), acts) is True
+    rule.act(acts)                       # must NOT raise
+    assert rule._cooldown == rule.res_cooldown

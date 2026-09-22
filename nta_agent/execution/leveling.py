@@ -81,14 +81,29 @@ def next_level_action(farm_armies, level_army, target_lv, *, farm_home=False,
             return LevelAction(kind="level", index=lv_index, level_uid=lv_uid,
                                pawn_uid=str(p.get("uid")))
 
-    # 3) Pull an under-target farm pawn into the leveling army (create it if needed).
-    if farm_home and len(lv_pawns) < max_leveling:
+    # 2b) IN-PLACE leveling when there is no buffer army. ChangePawnArmy cannot
+    # create a buffer (the engine requires an existing destination army, else
+    # ecode.500011), so level the lowest under-target farm pawn directly in its
+    # own army (PawnLving locks that army ~240s/pawn — acceptable for weak armies
+    # that can't farm the frontier yet). "hiện thì cứ nâng đều đội farm".
+    if exp_book > 0 and not level_army and farm_home:
+        for fa in farm_armies:
+            low = [p for p in _under(fa, target_lv) if str(p.get("uid")) not in q]
+            if low:
+                return LevelAction(kind="level", index=int(fa.get("index", 0) or 0),
+                                   level_uid=str(fa.get("uid", "")),
+                                   pawn_uid=str(low[0].get("uid")))
+
+    # 3) Pull an under-target farm pawn into an EXISTING leveling army (a buffer
+    # can't be created — see 2b — so this only runs when one already exists, e.g.
+    # made manually). No create path.
+    if farm_home and level_army and len(lv_pawns) < max_leveling:
         for fa in farm_armies:
             low = _under(fa, target_lv)
             if low:
                 return LevelAction(kind="pull", index=int(fa.get("index", 0) or 0),
                                    src_uid=str(fa.get("uid", "")), pawn_uid=str(low[0].get("uid")),
-                                   create=(level_army is None), level_uid=lv_uid)
+                                   create=False, level_uid=lv_uid)
 
     # 4) Nothing left to level -> dismiss the empty leveling army.
     if level_army and not lv_pawns:

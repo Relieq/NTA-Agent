@@ -88,3 +88,22 @@ def test_build_order_prioritizes_profile_order():
     assert rule.applies(st, act) is True
     rule.act(act)
     assert act.calls == [("add", 109726, 2016)]
+
+
+def test_build_order_backs_off_on_queue_full_ecode():
+    """500014 (queue full) is global — the drill task holds the slot but wasn't in
+    our build_queue, so the pre-check passed. Back off quietly, don't spam."""
+    from nta_agent.io.api.client import ApiError
+
+    class QueueFullActs(Acts):
+        def add_build(self, index, build_id):
+            raise ApiError("game/HD_AddAreaBuild: ecode.500014")
+
+    st = _state([Building(id=2001, lv=10, uid="m", index=109726)])
+    act = QueueFullActs()
+    rule = BuildOrder(sequence=[2016], config=GameConfig.load())
+    assert rule.applies(st, act) is True
+    rule.act(act)                        # must NOT raise
+    assert rule._cooldown == rule.queue_cooldown
+    # and it skips next tick while cooling down
+    assert rule.applies(st, act) is False

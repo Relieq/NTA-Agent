@@ -75,6 +75,26 @@ class BrainService:
             return True  # heavy casualties
         return bool(self._decisions(state))  # a reserved decision awaits a recommendation
 
+    def _composition_advice(self) -> list:
+        """If the ArmyComposer flagged the strike-group goal infeasible, relay it to the
+        user as advice (deterministic — not LLM-dependent), so a request that can't be
+        met (e.g. a pawn type isn't unlocked, or it exceeds the army cap) is surfaced."""
+        path = getattr(self.cfg, "composition_status_path", None)
+        if path is None:
+            return []
+        try:
+            import json
+            data = json.loads(path.read_text(encoding="utf-8"))
+        except (OSError, ValueError):
+            return []
+        if not (isinstance(data, dict) and data.get("blocked")):
+            return []
+        issues = data.get("issues") or []
+        if not issues:
+            return []
+        return [{"text": "Không tạo được nhóm quân theo yêu cầu: " + "; ".join(issues),
+                 "why": "army composition blocked — cần bạn xử lý (mở binh chủng / tăng slot đội)"}]
+
     def _write_advice(self, advice) -> None:
         try:  # best-effort: never let advice I/O break the brain tick
             import json
@@ -86,6 +106,28 @@ class BrainService:
             os.replace(tmp, path)
         except Exception as e:
             sys.stderr.write(f"[brain] advice write failed: {e}\n")
+
+    def _refresh_human_fields(self) -> None:
+        """Re-read the dashboard-owned sections the brain never edits (build,
+        leveling, forge, army) from disk into the shared profile, right before
+        saving, so the brain's save can't clobber a dashboard edit made mid-tick.
+        army holds the user's farm group (FarmGroupPanel), which leveling/occupy
+        read but the brain must not overwrite."""
+        try:
+            from nta_agent.execution.profile import load_profile
+            disk = load_profile(self.cfg.profile_path)
+            for f in ("build", "leveling", "forge", "army"):
+                if f == "army":
+                    # army.strike_target is the brain's goal — keep the just-set value;
+                    # take the human-owned army fields (group/roles/...) from disk.
+                    brain_strike = (getattr(self.profile, "army", {}) or {}).get("strike_target")
+                    setattr(self.profile, f, getattr(disk, f))
+                    if brain_strike is not None:
+                        self.profile.army["strike_target"] = brain_strike
+                else:
+                    setattr(self.profile, f, getattr(disk, f))
+        except Exception:
+            pass
 
     def _valid_build_ids(self):
         if self._build_ids is None:
@@ -113,13 +155,37 @@ class BrainService:
             dg = digest(state, self.profile, armies, territory=self._territory(state),
                         decisions=self._decisions(state))
             edits = self._propose(dg, self.profile)
+            # build.order/skip and army.group are the human's plan (set via the
+            # dashboard). The LLM echoes them from the digest; the valid-id/uid
+            # filter then emptied them — wiping the user's build order and farm
+            # group every brain run. The brain never edits these; it advises via
+            # `advice` instead. occupy.max_loss is the user's hard risk cap ("0
+            # tổn thất"): the brain may pick the expansion PATTERN but must not
+            # raise the loss tolerance, so strip max_loss too (keep the rest of
+            # occupy brain-editable).
+            if isinstance(edits, dict):
+                edits.pop("build", None)
+                # army.* is human-owned EXCEPT strike_target (the brain's composition
+                # goal) — keep only that from the brain's army edits, drop the rest.
+                army_e = edits.pop("army", None)
+                if isinstance(army_e, dict) and isinstance(army_e.get("strike_target"), list):
+                    edits["army"] = {"strike_target": army_e["strike_target"]}
+                if isinstance(edits.get("occupy"), dict):
+                    edits["occupy"].pop("max_loss", None)
             valid = {str(a.get("uid")) for a in armies}
             clean = sanitize_edits(edits, self.profile, valid,
                                    valid_build_ids=self._valid_build_ids())
             changed = apply_edits(self.profile, clean)
             if changed:
+                # Human-owned config (build, leveling, forge, army) is edited by the
+                # dashboard in another process. Even though the brain never edits it,
+                # saving the whole profile would write our possibly-stale copy and
+                # clobber a dashboard edit made since this tick started. Re-read those
+                # sections from disk right before saving so the latest dashboard wins.
+                self._refresh_human_fields()
                 save_profile(self.profile, self.cfg.profile_path)
-            advice = clean.get("advice") or []
+            advice = list(clean.get("advice") or [])
+            advice = self._composition_advice() + advice  # relay an infeasible comp goal
             self._write_advice(advice)  # B2: human-facing recommendations
             self._calls += 1
             self._last_call = self._tick

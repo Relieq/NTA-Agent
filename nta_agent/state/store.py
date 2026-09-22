@@ -126,6 +126,11 @@ def from_entry_rst(rst: dict[str, Any], user: dict[str, Any] | None = None) -> G
         iron=_res_value(player.get("iron")),
         gold=_res_value(player.get("gold")),
         stamina=int(player.get("stamina", 0) or 0),
+        # entry carries these flat too; without them exp_book showed 0 despite the
+        # account holding books, blocking leveling. Field names verified live.
+        exp_book=_res_value(player.get("expBook")),
+        up_scroll=_res_value(player.get("upScroll")),
+        fixator=_res_value(player.get("fixator")),
     )
     heroes = [
         Hero(lv=int(h.get("lv", 0)), avatar_army_uid=str(h.get("avatarArmyUID", "")), raw=h)
@@ -157,7 +162,10 @@ def from_entry_rst(rst: dict[str, Any], user: dict[str, Any] | None = None) -> G
         land_score=int(player.get("landCount", 0) or 0),
         main_city_index=main_city_index,
         build_queue=list(player.get("btQueues") or []),
-        build_queue_slots=1 + int(player.get("extraBTQueueCount", 0) or 0),
+        # Engine: getBtQueueCount() = DEFAULT_BT_QUEUE_COUNT(2) + policy effect +
+        # extra (top-up). Base is 2, not 1; extraBTQueueCount adds paid slots. (A
+        # policy that grants a slot isn't in this field — rare; add it if surfaced.)
+        build_queue_slots=2 + int(player.get("extraBTQueueCount", 0) or 0),
         production=production,
         granary_cap=int(player.get("granaryCap", 0) or 0),
         warehouse_cap=int(player.get("warehouseCap", 0) or 0),
@@ -171,28 +179,129 @@ def from_entry_rst(rst: dict[str, Any], user: dict[str, Any] | None = None) -> G
     return state
 
 
+def expire_build_queue(build_queue: list[dict], deadlines: dict[str, float],
+                       now: float) -> tuple[list[dict], dict[str, float]]:
+    """Drop build-queue items whose time is up, so a missed build-complete push
+    never freezes construction. ``deadlines`` maps a queue item's uid to its
+    absolute completion time; a uid is stamped ``now + surplusTime`` the first
+    time it is seen (surplusTime is the ms remaining at that moment). Returns the
+    kept list and the pruned deadlines. Pure — the caller owns the deadline map.
+    """
+    kept, seen = [], set()
+    for item in build_queue or []:
+        uid = str(item.get("uid", ""))
+        if not uid:
+            kept.append(item)  # can't track it -> keep, let the server correct us
+            continue
+        seen.add(uid)
+        if uid not in deadlines:
+            deadlines[uid] = now + int(item.get("surplusTime", 0) or 0) / 1000.0
+        if now < deadlines[uid]:
+            kept.append(item)
+    deadlines = {u: d for u, d in deadlines.items() if u in seen}
+    return kept, deadlines
+
+
 def apply_update_output(state: GameState, out: dict[str, Any]) -> None:
     """Apply an UpdateOutPut block (from ClaimCityOutput or a resource notify)."""
+    import time as _time
     r = state.resources
     for name in ("cereal", "timber", "stone"):
         if name in out:  # OutPutInfo {value, opHour}
             setattr(r, name, _res_value(out[name]))
+            # keep the production rate current (opHour rises when a producer levels)
+            if isinstance(out[name], dict) and "opHour" in out[name]:
+                state.production[name] = int(out[name].get("opHour", 0) or 0)
     for name, attr in (("iron", "iron"), ("gold", "gold"), ("stamina", "stamina"),
                        ("expBook", "exp_book"), ("upScroll", "up_scroll"), ("fixator", "fixator")):
         if name in out and isinstance(out[name], (int, float)):
             setattr(r, attr, int(out[name]))
+    # A push carries the authoritative value; restart local accrual from it so we
+    # don't double-add the production it already includes (and drop any carried
+    # fractional remainder, which belonged to the pre-push base).
+    state._output_at = _time.time()
+    state._output_frac = {}
+
+
+def accrue_output(state: GameState, now: float | None = None) -> None:
+    """Grow resource stock by production elapsed since the last call.
+
+    The game client fills resources locally from ``opHour`` between server
+    pushes; the server only pushes on changes (spending/upgrades), so without
+    this the agent's stock freezes between pushes — after the agent spends
+    stone/cereal to 0 they stay 0 and every build/recruit stalls. Capped at
+    storage. No claiming needed (matches normal play).
+    """
+    import time as _time
+    now = _time.time() if now is None else now
+    last = getattr(state, "_output_at", None)
+    state._output_at = now
+    if last is None or now <= last:
+        return
+    dt_h = (now - last) / 3600.0
+    prod = state.production or {}
+    r = state.resources
+    caps = {"cereal": state.granary_cap, "timber": state.warehouse_cap,
+            "stone": state.warehouse_cap}
+    # Resources are ints; a single ~5s tick produces <1 unit, so truncating each
+    # tick would drop it all. Carry the fractional remainder between ticks.
+    frac = getattr(state, "_output_frac", None)
+    if not isinstance(frac, dict):
+        frac = state._output_frac = {}
+    for name in ("cereal", "timber", "stone"):
+        op = int(prod.get(name, 0) or 0)
+        if op <= 0:
+            continue
+        frac[name] = frac.get(name, 0.0) + op * dt_h
+        add = int(frac[name])
+        if add <= 0:
+            continue
+        frac[name] -= add
+        cap = int(caps.get(name) or 0)
+        newv = getattr(r, name, 0) + add
+        if cap and newv >= cap:
+            newv = cap
+            frac[name] = 0.0
+        setattr(r, name, newv)
 
 
 def apply_player_update(state: GameState, item: dict[str, Any]) -> None:
     """Apply one OnUpdatePlayerInfoNotify item (a tagged union keyed by ``type``).
 
-    Only resource updates (data_1/data_41 = UpdateOutPut) are promoted so far;
-    everything else is left for later handlers.
+    Fields are named ``data_<type>``; only the one matching ``type`` is set.
+    Handled: resources (data_1/data_41 = UpdateOutPut), the build queue
+    (data_6 = repeated BTInfo) and a completed/upgraded building (data_5 =
+    AreaBuildInfo). Without the build ones, a finished upgrade never clears
+    ``build_queue`` nor bumps the building level, so the state (and dashboard)
+    stayed frozen on "đang xây" and build_order saw the slot permanently full.
     """
     for key in ("data_1", "data_41"):
         block = item.get(key)
         if isinstance(block, dict):
             apply_update_output(state, block)
+    # UPDATE_BT_QUEUE: the authoritative build queue. A finished build sends the
+    # queue without it (often empty) — replace wholesale so it can clear.
+    if item.get("type") == 6:
+        q = item.get("data_6")
+        state.build_queue = list(q) if isinstance(q, list) else []
+    # A single building at its new level (build complete / upgraded).
+    bld = item.get("data_5")
+    if isinstance(bld, dict):
+        _apply_build_update(state, bld)
+
+
+def _apply_build_update(state: GameState, info: dict[str, Any]) -> None:
+    """Merge one AreaBuildInfo (index,uid,id,lv,point) into ``state.builds``."""
+    b = _building(info)
+    if not b.index:
+        b.index = state.main_city_index
+    for existing in state.builds:
+        if (b.uid and existing.uid == b.uid) or (existing.id == b.id and existing.index == b.index):
+            existing.lv = b.lv
+            if b.uid:
+                existing.uid = b.uid
+            return
+    state.builds.append(b)
 
 
 def apply_notify(state: GameState, notify: dict[str, Any]) -> GameState:

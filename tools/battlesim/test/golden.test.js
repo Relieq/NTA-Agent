@@ -114,7 +114,7 @@ test("oracle: real reinforcement record — un-arrived wave counts alive, not de
   assert.strictEqual(simDead, (fixture.summary.deadInfo || []).length);
 });
 
-test("multi-army forecast routes through reinforcement and is order-sensitive", (t) => {
+test("co-located multi-army forecast staggers armies (lead at frame 0) and is order-sensitive", (t) => {
   const enginePath = process.env.NTA_ENGINE_JS || "tools/re/decrypted/index.js";
   if (!fs.existsSync(enginePath)) {
     t.skip("engine bundle absent");
@@ -140,6 +140,12 @@ test("multi-army forecast routes through reinforcement and is order-sensitive", 
   assert.strictEqual(b.isWin, true, "tank-first should win");
   assert.ok(a.lossPercent <= b.lossPercent,
     `cung-first (${a.lossPercent}) should be <= tank-first (${b.lossPercent})`);
+  // A multi-army attack MUST go through the reinforcement path (lead army alone at
+  // frame 0, others as waves at frame >= 1) — matching the engine's startForecast.
+  // Only that path returns per-pawn survivors, so its presence proves we did not
+  // fall back to the old single combined battle (all armies at frame 0).
+  assert.ok(Array.isArray(a.survivors.pawns),
+    "co-located multi-army must use the reinforce path (per-pawn survivors present)");
 });
 
 test("formation: beefy-front survives more than squishy-front", (t) => {
@@ -174,4 +180,25 @@ test("formation: beefy-front survives more than squishy-front", (t) => {
     `big-front (${a.survivors.self.alive}) should outlast small-front (${b.survivors.self.alive})`);
   assert.ok(Array.isArray(a.survivors.pawns));
   assert.strictEqual(a.survivors.pawns.filter((p) => p.camp === 2).length, 3);
+});
+
+test("replay-log: turn-by-turn blow-by-blow from the real 1-tile record", (t) => {
+  const fs = require("fs");
+  const path = require("path");
+  const enginePath = process.env.NTA_ENGINE_JS || "tools/re/decrypted/index.js";
+  if (!fs.existsSync(enginePath)) { t.skip("engine absent"); return; }
+  const { loadEngine } = require("../bundle");
+  const { installAssets } = require("../assets");
+  const { replayLog } = require("../replay-log");
+  if (!globalThis.eventCenter) globalThis.eventCenter = { emit() {}, on() {}, off() {}, once() {} };
+  if (!globalThis.mc) globalThis.mc = { getModel: () => ({}) };
+  const req = loadEngine();
+  installAssets(undefined, req, { playerUid: "57696053" });
+  const fixture = JSON.parse(
+    fs.readFileSync(path.join(__dirname, "fixtures", "battle_1tile.json"), "utf8"));
+  const out = replayLog(fixture.record, req);
+  assert.ok(out.events.some((e) => e.type === "turn"), "has per-turn events");
+  assert.ok(out.events.some((e) => e.type === "hit" && e.dmg > 0), "has damage events");
+  assert.strictEqual(out.summary.isWin, true, "1-tile record is a win");
+  assert.strictEqual(out.summary.selfDead, 0, "1-tile record lost 0 pawns");
 });
