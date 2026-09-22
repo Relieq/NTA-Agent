@@ -257,7 +257,9 @@ def _ledger_cfg(tmp_path):
                            res_pressure_window_s=3600, ledger_cap=100, lessons_cap=50)
 
 
-def test_grounded_lesson_is_stored_and_its_lever_applied(tmp_path):
+def test_specific_lesson_is_stored_but_not_globally_applied(tmp_path):
+    # Inc 3: a lesson tied to a monster (trigger.match) is stored but NOT applied
+    # globally — the hands apply it contextually when that monster is faced.
     from nta_agent.brain.lessons import LessonStore
     from nta_agent.execution.ledger import FailureLedger
     led = FailureLedger(tmp_path / "failures.json")
@@ -272,9 +274,27 @@ def test_grounded_lesson_is_stored_and_its_lever_applied(tmp_path):
                            "resolution": {"lever_edits": {"occupy": {"policy": {"order": "tank_first"}}}},
                            "evidence": [eid]}], "rationale": "learn"})
     svc.tick(_state())
-    assert prof.occupy["policy"]["order"] == "tank_first"          # safe lever auto-applied
+    assert prof.occupy["policy"]["order"] == "auto"               # NOT applied globally
     stored = LessonStore(tmp_path / "lessons.json").active()
-    assert len(stored) == 1 and stored[0].evidence == [eid]
+    assert len(stored) == 1 and stored[0].evidence == [eid]       # but it IS stored
+
+
+def test_broad_lesson_is_applied_globally(tmp_path):
+    # A lesson with no match constraint is broad -> applied globally.
+    from nta_agent.execution.ledger import FailureLedger
+    led = FailureLedger(tmp_path / "failures.json")
+    eid = led.record("battle_loss", {"self_dead": 1})
+    prof = load_profile("none")
+    svc = BrainService(prof, _ledger_cfg(tmp_path),
+                       actions=SimpleNamespace(get_player_armys=list),
+                       policy=BrainPolicy(every_ticks=1, max_calls=5),
+                       llm_propose=lambda dg, p: {"lessons": [{
+                           "trigger": {"kind": "battle_loss"},   # no match -> broad
+                           "diagnosis": "we out-level rarely; lead tanks",
+                           "resolution": {"lever_edits": {"occupy": {"policy": {"order": "tank_first"}}}},
+                           "evidence": [eid]}], "rationale": "learn"})
+    svc.tick(_state())
+    assert prof.occupy["policy"]["order"] == "tank_first"         # broad -> global
 
 
 def test_hallucinated_lesson_without_evidence_is_dropped(tmp_path):

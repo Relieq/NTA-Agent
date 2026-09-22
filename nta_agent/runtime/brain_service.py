@@ -219,8 +219,12 @@ class BrainService:
                                            valid_build_ids=self._valid_build_ids()):
                     store.upsert(lz)
                     res = lz.get("resolution") or {}
+                    # A lesson tied to a specific situation (trigger.match) is applied
+                    # CONTEXTUALLY by the hands when that situation recurs (Inc 3), not
+                    # globally. Only broad lessons (no match) change the profile globally.
+                    has_match = bool((lz.get("trigger") or {}).get("match"))
                     if isinstance(res.get("lever_edits"), dict):
-                        if apply_edits(self.profile, res["lever_edits"]):
+                        if not has_match and apply_edits(self.profile, res["lever_edits"]):
                             changed = True
                     elif res.get("advice"):
                         lesson_advice.append({"text": res["advice"],
