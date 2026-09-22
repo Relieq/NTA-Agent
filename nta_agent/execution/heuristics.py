@@ -1526,7 +1526,20 @@ class ArmyComposer:
         self._plan = plan
         self._city = city
         self._strike_uids = [a["uid"] for a in plan["assign"]]
-        self.locked_uids = set(self._strike_uids)  # protect the group from occupy/logistics
+        # Lock only the strike armies still being ASSEMBLED (short of target). A
+        # completed one is released so occupy can send it farming — it earns loot
+        # (funding the remaining recruits) and stays intact at max_loss=0; the group
+        # regroups later. (User: "đội mộ xong đi farm, đội còn lại mộ tiếp rồi hội quân".)
+        by_uid = {str(a.get("uid")): a for a in armies}
+        incomplete = set()
+        for a in plan["assign"]:
+            u = a["uid"]
+            army = by_uid.get(u) if u else None
+            have = sum(1 for p in (army.get("pawns") or [])
+                       if int(p.get("id", 0) or 0) == a["pawn_id"]) if army else 0
+            if u and have < a["size"]:
+                incomplete.add(u)
+        self.locked_uids = incomplete
         issues = list(plan["report"].issues)
         if plan["blocked"]:
             self._status({"active": True, "blocked": True, "done": False,

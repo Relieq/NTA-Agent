@@ -57,8 +57,10 @@ def test_no_target_stands_down_and_unlocks():
     assert r.locked_uids == set()
 
 
-def test_rallies_scattered_then_locks_strike():
-    armies = [_army("tank", [3206, 3206, 3206]), _army("imp1", [3305, 3305, 3305]),
+def test_rallies_scattered_and_locks_only_incomplete():
+    # imp1 is short (incomplete) -> locked; tank & imp2 are complete -> RELEASED so
+    # occupy can farm them. A scattered donor holding 3305 is rallied to the city.
+    armies = [_army("tank", [3206, 3206, 3206]), _army("imp1", [3305]),
               _army("imp2", [3305, 3305, 3305]), _army("donor", [3305, 3305, 3305], index=250)]
     r = ArmyComposer(profile=_profile(TARGET))
     r._strike_uids = ["tank", "imp1", "imp2"]
@@ -66,7 +68,18 @@ def test_rallies_scattered_then_locks_strike():
     assert r.applies(_state(), acts) is True
     r.act(acts)
     assert any(c[0] == "rally" and "donor" in c[1] for c in acts.calls)
-    assert r.locked_uids == {"tank", "imp1", "imp2"}   # strike armies protected
+    assert r.locked_uids == {"imp1"}                   # only the incomplete army is locked
+    assert "tank" not in r.locked_uids and "imp2" not in r.locked_uids   # completed -> released
+
+
+def test_completed_armies_all_released():
+    # every strike army complete -> none locked (all free to farm; group regroups later).
+    armies = [_army("tank", [3206, 3206, 3206]), _army("imp1", [3305, 3305, 3305]),
+              _army("imp2", [3305, 3305, 3305])]
+    r = ArmyComposer(profile=_profile(TARGET))
+    r._strike_uids = ["tank", "imp1", "imp2"]
+    r.applies(_state(), FakeActions(armies))
+    assert r.locked_uids == set()
 
 
 def test_moves_pawns_from_donor_when_colocated():
