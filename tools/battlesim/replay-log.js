@@ -11,109 +11,22 @@
 
 const { loadEngine } = require("./bundle");
 const { installAssets } = require("./assets");
-const { recordToFrames } = require("./record-replay");
-
-const MAX_FRAMES = 20000;
+const { summarize } = require("./record-summary");
 
 
+// Thin wrapper over the shared summarize() core, kept for the CLI + its historical
+// output shape ({events, summary} with camelCase summary keys).
 function replayLog(record, req) {
-  const f = recordToFrames(record);
-  const AreaObj = req("AreaObj").default;
-  const area = new AreaObj().init({
-    index: f.target, owner: "", hp: f.hp || [0, 0], cityId: 0, armys: f.armys.slice(),
-  });
-  area.updatePawnAnimationFrame = () => {};
-  if (area.updateTreasureReddot) area.updateTreasureReddot = () => {};
-
-  // Capture the outcome at battle end, before the engine nulls the controller.
-  let result = null;
-  const origEnd = area.battleEndByLocal.bind(area);
-  area.battleEndByLocal = function () {
-    if (!result) {
-      const c = area.fspModel && area.fspModel.getBattleController();
-      const fs = (c && c.getFighters()) || [];
-      const alive = (camp) =>
-        fs.filter((x) => x.getCamp && x.getCamp() === camp && x.isDie && !x.isDie()).length;
-      result = { isWin: !!(c && c.isWin && c.isWin()), aliveSelf: alive(2), aliveEnemy: alive(1) };
-    }
-    return origEnd();
-  };
-
-  const fsp = area.battleLocalBegin({
-    camp: 1, randSeed: f.randSeed, accAttackIndex: 0, fps: f.fps || 20,
-    fighters: f.fighters.slice(), mul: 1, forecast: true,   // mul=1: inspect every frame
-  });
-  const bc = fsp.getBattleController();
-
-  const events = [];
-  const byFrame = {};
-  for (const w of (f.waves || [])) (byFrame[w.currentFrameIndex] = byFrame[w.currentFrameIndex] || []).push(w);
-  fsp.setCheckHasFrameData(function (frameIndex) {
-    const ws = byFrame[frameIndex];
-    if (!ws) return;
-    delete byFrame[frameIndex];
-    for (const w of ws) {
-      const acc = bc.getCurAccAttackIndex();
-      w.fighters.forEach((x, i) => { x.attackIndex = acc + i + 1; x.enterIndex = acc + i + 1; });
-      fsp.checkHasFrameDataItem({ type: 1, army: w.army, fighters: w.fighters });
-      events.push({ frame: frameIndex, type: "reinforce", army: w.army.name });
-    }
-  });
-
-  const snap = () => {
-    const m = {};
-    for (const fi of (bc.getFighters() || [])) {
-      if (!fi.getUid) continue;
-      m[fi.getUid()] = {
-        hp: fi.getCurHp ? fi.getCurHp() : 0,
-        die: fi.isDie ? fi.isDie() : false,
-        id: fi.getId ? fi.getId() : 0,
-        camp: fi.getCamp ? fi.getCamp() : 0,
-      };
-    }
-    return m;
-  };
-
-  let prev = snap();
-  let prevActor = null;
-  const dt = 1 / (f.fps || 20);
-  let n = 0;
-  while (fsp.isRunning && n < MAX_FRAMES) {
-    const cf = bc.currentFighter;
-    const actor = cf && cf.getUid ? cf.getUid() : null;
-    if (actor && actor !== prevActor) {   // a new fighter's turn begins
-      events.push({ frame: n, type: "turn", actor,
-                    actorId: cf.getId ? cf.getId() : 0,
-                    camp: cf.getCamp ? cf.getCamp() : 0 });
-      prevActor = actor;
-    }
-    fsp.update(dt);
-    const cur = snap();
-    for (const uid in cur) {
-      const b = prev[uid];
-      if (!b) continue;
-      if (cur[uid].hp < b.hp) {
-        events.push({ frame: n, type: "hit", by: actor, target: uid,
-                      targetId: cur[uid].id, targetCamp: cur[uid].camp,
-                      dmg: b.hp - cur[uid].hp, hp: cur[uid].hp });
-      }
-      if (!b.die && cur[uid].die) {
-        events.push({ frame: n, type: "death", uid, id: cur[uid].id, camp: cur[uid].camp });
-      }
-    }
-    prev = cur;
-    n += 1;
-  }
-
-  const r = result || { isWin: false, aliveSelf: f.selfTotal, aliveEnemy: f.enemyTotal };
+  const out = summarize(record, req);
   return {
-    events,
+    events: out.events,
     summary: {
-      frames: n,
-      isWin: r.isWin,
-      selfDead: f.selfTotal - r.aliveSelf,
-      enemyDead: f.enemyTotal - r.aliveEnemy,
-      selfTotal: f.selfTotal, enemyTotal: f.enemyTotal,
+      frames: out.summary.frames,
+      isWin: out.summary.is_win,
+      selfDead: out.summary.self_dead,
+      enemyDead: out.summary.enemy_dead,
+      selfTotal: out.summary.self_total,
+      enemyTotal: out.summary.enemy_total,
     },
   };
 }

@@ -23,6 +23,21 @@ class Rule(Protocol):
     def act(self, actions: Actions) -> None: ...
 
 
+def _record_res_block(rule, resource: str | None) -> None:
+    """Report a resource-shortage back-off to the failure ledger (F2/brain).
+
+    Best-effort: the runner may set ``rule.ledger``; absent it, this is a no-op.
+    ``resource`` is the resource the rule characteristically needs, so the brain's
+    digest can aggregate pressure by resource."""
+    led = getattr(rule, "ledger", None)
+    if led is None:
+        return
+    try:
+        led.record("res_depletion", {"rule": getattr(rule, "name", "?"), "resource": resource})
+    except Exception:
+        pass  # ledger I/O must never break a rule
+
+
 def _caps(state: GameState) -> tuple[int, int]:
     """(granaryCap, warehouseCap) from the live player block; 0 if unknown."""
     player = (state.raw or {}).get("player") or {}
@@ -1254,6 +1269,8 @@ class Leveling:
                 # expected transient — already leveling / marching / out of books.
                 # Out-of-resources waits longer (books are slow to arrive).
                 self._cooldown = self.res_cooldown if ecode == "500012" else self.quiet_cooldown
+                if ecode == "500012":
+                    _record_res_block(self, "exp_book")
                 return
             # a real rejection — back off and surface it instead of spamming.
             self._cooldown = self.fail_cooldown
@@ -1453,6 +1470,7 @@ class Forge:
             if self.LOW_RES_ECODE in str(e):
                 # not enough iron (a stale estimate let it try) — wait quietly.
                 self._cooldown = self.res_cooldown
+                _record_res_block(self, "iron")
                 return
             self._cooldown = self.fail_cooldown
             raise
@@ -1602,6 +1620,8 @@ class ArmyComposer:
                 # is resource-paced) instead of hammering the API every tick.
                 if ecode in ("500012", "500018"):
                     self._cooldown = self.res_cooldown
+                    if ecode == "500012":
+                        _record_res_block(self, "cereal")  # recruit is cereal-paced
                     return
                 # Other expected mid-reorg conditions — skip THIS action, continue the
                 # batch (a benign failure must not abort the tick / block the recruit):

@@ -19,12 +19,14 @@ from nta_agent.runtime.eventlog import EventLog
 from nta_agent.runtime.snapshot import write_snapshot
 
 
-def run_services(state, cfg, service, brain, forts, safe) -> bool:
+def run_services(state, cfg, service, brain, forts, safe, observer=None) -> bool:
     """Run the acting services unless paused. Returns True if it acted."""
     if read_mode(cfg.control_path) == "pause":
         return False  # observe only while paused
     if service is not None:
         safe(service.tick, state)
+    if observer is not None:
+        safe(observer.tick, state)  # record real losses BEFORE the brain reads them
     safe(brain.tick, state)
     safe(forts.tick, state)
     return True
@@ -83,6 +85,14 @@ def run(cfg: RuntimeConfig, *, ticks: int = 0, session=None, engine=None) -> Non
     brain = BrainService(profile, cfg, on_event=on_event, actions=agent.actions)
     from nta_agent.runtime.fort_service import FortService
     forts = FortService(cfg, agent.actions, on_event=on_event)
+    # F2/brain: hands-side failure ledger + loss observer (Cách A — brain only reads).
+    from nta_agent.execution.ledger import FailureLedger
+    from nta_agent.execution.loss_observer import LossObserver
+    from nta_agent.execution.predictors.sim_bridge import get_bridge
+    ledger = FailureLedger(cfg.failures_path, cap=cfg.ledger_cap)
+    observer = LossObserver(agent.actions, ledger, get_bridge(),
+                            player_uid=getattr(session.state.user, "uid", ""),
+                            on_event=on_event)
     def _enemy_from_forts():
         # P2: enemy cell indices from the (throttled) FortService output — no request.
         try:
@@ -106,8 +116,32 @@ def run(cfg: RuntimeConfig, *, ticks: int = 0, session=None, engine=None) -> Non
 
     _rules = getattr(agent.engine, "rules", [])
     _composer = next((r for r in _rules if getattr(r, "name", "") == "army_composer"), None)
+
+    def _make_comp_status_sink():  # defined out of the loop (no loop-var capture)
+        state = {"was": False}
+
+        def sink(s):  # persist for the brain advice loop / dashboard + stuck_goal ledger
+            try:
+                p = cfg.composition_status_path
+                p.parent.mkdir(parents=True, exist_ok=True)
+                p.write_text(json.dumps(s, ensure_ascii=False), encoding="utf-8")
+            except Exception:
+                pass
+            blocked = bool(isinstance(s, dict) and s.get("blocked"))
+            if blocked and not state["was"]:  # record once, on transition into blocked
+                try:
+                    ledger.record("stuck_goal", {"goal": "composition",
+                                                 "detail": (s or {}).get("issues") or []})
+                except Exception:
+                    pass
+            state["was"] = blocked
+        return sink
+
     # Surface the occupy planner's reasoning (chosen army + predicted loss) to the log.
     for rule in _rules:
+        # F2/brain: rules that back off on insufficient resources report it (res_depletion).
+        if getattr(rule, "name", "") in ("leveling", "forge", "army_composer"):
+            rule.ledger = ledger
         if getattr(rule, "name", "") == "occupy_cell":
             rule.on_event = log.append
             rule.threats_source = _enemy_from_forts  # defend contested border cells (P2)
@@ -123,15 +157,7 @@ def run(cfg: RuntimeConfig, *, ticks: int = 0, session=None, engine=None) -> Non
                 rule.locked_source = lambda: getattr(_composer, "locked_uids", set())
         elif getattr(rule, "name", "") == "army_composer":
             rule.on_event = log.append
-
-            def _write_comp_status(s):  # persist for the brain advice loop / dashboard
-                try:
-                    p = cfg.composition_status_path
-                    p.parent.mkdir(parents=True, exist_ok=True)
-                    p.write_text(json.dumps(s, ensure_ascii=False), encoding="utf-8")
-                except Exception:
-                    pass
-            rule.status_sink = _write_comp_status
+            rule.status_sink = _make_comp_status_sink()
 
     def _safe(fn, *a):
         try:
@@ -147,7 +173,7 @@ def run(cfg: RuntimeConfig, *, ticks: int = 0, session=None, engine=None) -> Non
         _safe(log.tick, i, fired, state)
         # pick up dashboard edits + stop the brain from clobbering them (shared obj)
         _safe(reload_into, profile, cfg.profile_path)
-        run_services(state, cfg, service, brain, forts, _safe)
+        run_services(state, cfg, service, brain, forts, _safe, observer=observer)
 
     try:
         agent.run(ticks=ticks, interval=cfg.interval, on_tick=on_tick,

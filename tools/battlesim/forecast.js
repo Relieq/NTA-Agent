@@ -143,4 +143,4 @@ function forecast(input) {
   return result;
 }
 
-module.exports = { forecast, FPS, FPS_MUL };
+module.exports = { forecast, bootstrap, FPS, FPS_MUL };

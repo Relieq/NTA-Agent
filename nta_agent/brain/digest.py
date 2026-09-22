@@ -13,7 +13,31 @@ def _decisions_digest(decisions) -> list:
     return out
 
 
-def digest(state, profile, armies=None, territory=None, decisions=None) -> dict:
+def _failure_digest(e) -> dict:
+    """Compact one FailureEvent (or dict) for the brain prompt."""
+    eid = getattr(e, "id", None) or (e.get("id") if isinstance(e, dict) else None)
+    kind = getattr(e, "kind", None) or (e.get("kind") if isinstance(e, dict) else None)
+    ctx = getattr(e, "context", None)
+    if ctx is None and isinstance(e, dict):
+        ctx = e.get("context") or {}
+    ctx = ctx or {}
+    out = {"id": eid, "kind": kind}
+    for k in ("cell", "rule", "resource", "self_dead", "aoe", "enemy_ids",
+              "counterfactual", "goal", "detail"):
+        if k in ctx:
+            out[k] = ctx[k]
+    return out
+
+
+def _lesson_digest(lesson) -> dict:
+    """Compact one active lesson (Lesson object or dict) for the brain prompt."""
+    g = (lambda k: getattr(lesson, k, None)) if not isinstance(lesson, dict) else lesson.get
+    return {"id": g("id"), "trigger": g("trigger"), "diagnosis": g("diagnosis"),
+            "resolution": g("resolution")}
+
+
+def digest(state, profile, armies=None, territory=None, decisions=None,
+           failures=None, res_pressure=None, lessons=None) -> dict:
     r = state.resources
     res = {k: getattr(r, k, 0) for k in
            ("cereal", "timber", "stone", "iron", "gold", "stamina",
@@ -65,4 +89,10 @@ def digest(state, profile, armies=None, territory=None, decisions=None) -> dict:
     dec = _decisions_digest(decisions)
     if dec:  # pending unlock/policy picks reserved for the human -> brain advises (E3)
         out["decisions"] = dec
+    if failures:  # real losses/blocks recorded by hands -> brain learns from them
+        out["failures"] = [_failure_digest(e) for e in failures]
+    if res_pressure:  # {resource: count} of recent insufficient-resource back-offs
+        out["res_pressure"] = dict(res_pressure)
+    if lessons:  # grounded lessons distilled from past failures (Inc 2)
+        out["lessons"] = [_lesson_digest(le) for le in lessons]
     return out

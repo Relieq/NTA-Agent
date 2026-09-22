@@ -32,6 +32,17 @@ class BrainService:
         self._build_ids = None  # lazily-loaded valid build ids
         # B1: minimum ticks between event-triggered (urgent) calls, to bound tokens.
         self.min_gap = int(getattr(cfg, "brain_min_gap", 15))
+        self._last_loss_id = None  # most recent battle_loss the brain has reacted to
+
+    def _ledger(self):
+        """Fresh read of the hands-written failure ledger (small file; reload each use).
+
+        Returns None when no failures_path is configured (e.g. minimal test cfg)."""
+        path = getattr(self.cfg, "failures_path", None)
+        if path is None:
+            return None
+        from nta_agent.execution.ledger import FailureLedger
+        return FailureLedger(path, cap=getattr(self.cfg, "ledger_cap", 100))
 
     def _territory(self, state):
         """Compact owned/enemy/frontier summary from forts.json for the brain."""
@@ -73,6 +84,15 @@ class BrainService:
         player = (getattr(state, "raw", None) or {}).get("player") or {}
         if len(player.get("injuryPawns") or []) >= 5:
             return True  # heavy casualties
+        led = self._ledger()
+        if led is not None:
+            recent_loss = led.recent(1, kind="battle_loss")
+            if recent_loss and recent_loss[0].id != self._last_loss_id:
+                self._last_loss_id = recent_loss[0].id
+                return True  # a new grounded battle loss to learn from
+            if sum(led.aggregate_res(
+                    getattr(self.cfg, "res_pressure_window_s", 3600)).values()) >= 5:
+                return True  # sustained resource pressure
         return bool(self._decisions(state))  # a reserved decision awaits a recommendation
 
     def _composition_advice(self) -> list:
@@ -152,8 +172,12 @@ class BrainService:
             return
         try:
             armies = self.actions.get_player_armys() if self.actions else []
+            led = self._ledger()
             dg = digest(state, self.profile, armies, territory=self._territory(state),
-                        decisions=self._decisions(state))
+                        decisions=self._decisions(state),
+                        failures=led.recent(8) if led else None,
+                        res_pressure=(led.aggregate_res(
+                            getattr(self.cfg, "res_pressure_window_s", 3600)) if led else None))
             edits = self._propose(dg, self.profile)
             # build.order/skip and army.group are the human's plan (set via the
             # dashboard). The LLM echoes them from the digest; the valid-id/uid

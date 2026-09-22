@@ -7,7 +7,9 @@
 // Response: {"id":<n>,"result":<obj>}  or  {"id":<n>,"error":{"message":<str>}}
 
 const readline = require("readline");
-const { forecast } = require("./forecast");
+const { forecast, bootstrap } = require("./forecast");
+const { summarize } = require("./record-summary");
+const { counterfactual } = require("./counterfactual-core");
 
 function send(obj) {
   process.stdout.write(JSON.stringify(obj) + "\n");
@@ -17,6 +19,15 @@ function handle(msg) {
   const { id, method, params } = msg;
   if (method === "ping") return { id, result: "pong" };
   if (method === "forecast") return { id, result: forecast(params || {}) };
+  if (method === "replay") {
+    const p = params || {};
+    const req = bootstrap(p.playerUid || "1000000000");
+    return { id, result: summarize(p.record, req, { playerUid: p.playerUid }) };
+  }
+  if (method === "counterfactual") {
+    bootstrap((params || {}).playerUid || "1000000000");   // ensure engine + assets loaded
+    return { id, result: counterfactual(params || {}) };
+  }
   return { id, error: { message: "unknown method: " + method } };
 }
 
