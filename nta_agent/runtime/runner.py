@@ -93,6 +93,13 @@ def run(cfg: RuntimeConfig, *, ticks: int = 0, session=None, engine=None) -> Non
     observer = LossObserver(agent.actions, ledger, get_bridge(),
                             player_uid=getattr(session.state.user, "uid", ""),
                             on_event=on_event)
+
+    def _active_lessons():  # Inc 3: occupy reads active lessons for contextual recall
+        try:
+            from nta_agent.brain.lessons import LessonStore
+            return LessonStore(cfg.lessons_path).active()
+        except Exception:
+            return []
     def _enemy_from_forts():
         # P2: enemy cell indices from the (throttled) FortService output — no request.
         try:
@@ -146,6 +153,7 @@ def run(cfg: RuntimeConfig, *, ticks: int = 0, session=None, engine=None) -> Non
             rule.on_event = log.append
             rule.threats_source = _enemy_from_forts  # defend contested border cells (P2)
             rule.territory_source = _territory_from_forts  # bridging (forward staging)
+            rule.lessons_source = _active_lessons  # Inc 3: contextual lesson recall
             if _composer is not None:  # skip armies the composer is arranging (it locks them)
                 rule.locked_source = lambda: getattr(_composer, "locked_uids", set())
             if config is not None:  # pace discovery by the cheapest occupy cost
