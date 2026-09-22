@@ -1,9 +1,12 @@
 """Validate + clamp LLM-proposed profile edits before applying."""
 from __future__ import annotations
 
+import types
+
 _ROLES = {"archer", "tank"}
 _EXPANSION = {"none", "spiral", "octopus", "hybrid"}
 _OCCUPY_ORDER = {"auto", "tank_first", "dps_first"}
+_LESSON_TRIGGER_KEYS = {"monster_id", "resource", "goal"}
 
 
 def _num(v, lo, hi, default):
@@ -165,3 +168,67 @@ def sanitize_edits(edits: dict, profile, valid_army_uids, valid_build_ids=None) 
         if b:
             out["build"] = b
     return out
+
+
+def _safe_lever_edits(lever, valid_army_uids, valid_build_ids) -> dict:
+    """Run a lesson's proposed lever edits through the normal edit guard, then drop
+    the human-owned parts (build, max_loss, army.group/roles/...) so a lesson can
+    only auto-apply the SAME safe levers the brain may edit. army.strike_target is
+    kept (the one army field the brain owns)."""
+    dummy = types.SimpleNamespace(occupy={"max_loss": 0}, army={})
+    clean = sanitize_edits(lever, dummy, valid_army_uids, valid_build_ids=valid_build_ids)
+    clean.pop("build", None)
+    clean.pop("advice", None)
+    clean.pop("notes", None)
+    army_e = clean.pop("army", None)
+    if isinstance(army_e, dict) and isinstance(army_e.get("strike_target"), list):
+        clean["army"] = {"strike_target": army_e["strike_target"]}
+    if isinstance(clean.get("occupy"), dict):
+        clean["occupy"].pop("max_loss", None)   # the user's hard risk cap — never a lesson
+        if not clean["occupy"]:
+            clean.pop("occupy")
+    return clean
+
+
+def sanitize_lessons(edits, ledger, valid_army_uids, valid_build_ids=None) -> list:
+    """Validate LLM-proposed lessons into dicts ready for LessonStore.upsert.
+
+    Anti-hallucination: a lesson is DROPPED unless its evidence cites at least one
+    event that ``ledger.has(...)`` confirms is real. A resolution that only touches
+    human-owned levers (or nothing) is downgraded to advice for the human."""
+    raw = edits.get("lessons") if isinstance(edits, dict) else None
+    if not isinstance(raw, list):
+        return []
+    out: list = []
+    for le in raw:
+        if not isinstance(le, dict):
+            continue
+        evidence = [str(e) for e in (le.get("evidence") or []) if ledger.has(str(e))]
+        if not evidence:
+            continue  # grounded-only: no real evidence -> not a lesson
+        trig = le.get("trigger") or {}
+        match = {k: v for k, v in (trig.get("match") or {}).items()
+                 if k in _LESSON_TRIGGER_KEYS}
+        trigger = {"kind": str(trig.get("kind", ""))}
+        if match:
+            trigger["match"] = match
+        diagnosis = str(le.get("diagnosis", "")).strip()[:200]
+        res_in = le.get("resolution") if isinstance(le.get("resolution"), dict) else {}
+        resolution = None
+        adv = res_in.get("advice")
+        if isinstance(adv, str) and adv.strip():
+            resolution = {"advice": adv.strip()[:200]}
+        elif isinstance(res_in.get("lever_edits"), dict):
+            lever = _safe_lever_edits(res_in["lever_edits"], valid_army_uids, valid_build_ids)
+            if lever:
+                resolution = {"lever_edits": lever}
+        if resolution is None:            # human-owned-only or empty -> advise instead
+            if not diagnosis:
+                continue
+            resolution = {"advice": diagnosis}
+        item = {"trigger": trigger, "diagnosis": diagnosis, "resolution": resolution,
+                "evidence": evidence}
+        if le.get("validated_by"):
+            item["validated_by"] = str(le["validated_by"])[:120]
+        out.append(item)
+    return out[:10]
