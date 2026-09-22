@@ -49,6 +49,8 @@ def main() -> int:
     ap.add_argument("--out", default="build/run/battle_record.json", help="output json path")
     a = ap.parse_args()
 
+    from nta_agent.env import load_dotenv
+    load_dotenv()   # NTA_DISTINCT_ID etc. live in the gitignored .env (as the agent does)
     cfg = RuntimeConfig.from_env()
     session = build_session(cfg)
     actions = Actions(session)

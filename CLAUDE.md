@@ -68,6 +68,38 @@ ADB="/d/LDPlayer/LDPlayer9/adb.exe"
 "$ADB" shell screencap -p //sdcard/s.png && "$ADB" pull //sdcard/s.png ./screen.png && "$ADB" shell rm //sdcard/s.png
 ```
 
+## Chiến thuật 1-tile — ví dụ thứ tự lượt đánh (verified 2026-09-22)
+
+Nhóm chiến 5 đội: **1 đội rìu khiên (tank, pawn `3206`) + 4 đội IMP (DPS, pawn `3305`)**, mỗi
+đội 9 lính. `attack_speed`: rìu khiên 3206 = 7, IMP 3305 = 5.
+
+**Thứ tự điều đội tới 1 ô (1-tile):** chọn/tick **4 đội IMP trước, rồi đến đội tank (rìu khiên)
+sau cùng.** Trong `HD_OccupyCell` thứ tự mảng `uids` = thứ tự tay người chơi = thứ tự đội trong
+trận, nên tank ở cuối mảng. `isSameSpeed=true` → mọi đội tới cùng lúc (dùng march-time đội chậm nhất).
+
+**Thứ tự HÀNH ĐỘNG trong trận** chạy theo `attackIndex` tăng dần (đội tick trước có index nhỏ
+hơn → ra tay trước), và phe mình (camp 2, bên tấn công) đánh trước phe quái (camp 1) — lợi thế
+tấn công. Trên trận thật đã replay (record → `replay-log.js`), quan sát:
+
+```
+Lượt 1–9    [TA]   lính IMP  ai1–ai9     (4 đội IMP ra tay trước)
+Lượt 10–13  [QUÁI] ai10–ai13             (phe quái)
+Lượt 14+    [TA]   lính IMP  ai14–ai22, ai36–ai44, ai58–ai66, ...
+```
+
+165 lượt, KẾT QUẢ THẮNG, 0 tử trận phe mình, 4 quái chết. Đội tank (rìu khiên) hứng phần lớn
+sát thương đúng vai; nhưng trận này quái có **chiêu diện rộng tác động lên > 9 ĐỐI TƯỢNG** (tank
+chỉ 9 lính) nên phần dư tràn sang IMP — đây là **thuộc tính của quái, KHÔNG phải lỗi 1-tile**.
+Tương tự có quái **phản damage**: IMP level cao về sau có thể tự giết mình. Chọn tactic (đội nào
+dẫn, có dùng 1-tile không) là việc BRAIN; hands/sim chỉ soi gương engine.
+
+**Đọc lại diễn biến bất kỳ trận nào (agent phải TẮT — single session):**
+```bash
+.venv/Scripts/python.exe tools/re/fetch_battle_record.py --latest   # -> build/run/battle_record.json
+node tools/battlesim/replay-log.js build/run/battle_record.json <playerUid>
+```
+→ events `turn`/`hit`/`death` + summary win/tử trận.
+
 ## Reusing the old bot
 
 The old repo's function set is the idea reference, not the code style. Reusable pieces:
