@@ -181,3 +181,24 @@ test("formation: beefy-front survives more than squishy-front", (t) => {
   assert.ok(Array.isArray(a.survivors.pawns));
   assert.strictEqual(a.survivors.pawns.filter((p) => p.camp === 2).length, 3);
 });
+
+test("replay-log: turn-by-turn blow-by-blow from the real 1-tile record", (t) => {
+  const fs = require("fs");
+  const path = require("path");
+  const enginePath = process.env.NTA_ENGINE_JS || "tools/re/decrypted/index.js";
+  if (!fs.existsSync(enginePath)) { t.skip("engine absent"); return; }
+  const { loadEngine } = require("../bundle");
+  const { installAssets } = require("../assets");
+  const { replayLog } = require("../replay-log");
+  if (!globalThis.eventCenter) globalThis.eventCenter = { emit() {}, on() {}, off() {}, once() {} };
+  if (!globalThis.mc) globalThis.mc = { getModel: () => ({}) };
+  const req = loadEngine();
+  installAssets(undefined, req, { playerUid: "57696053" });
+  const fixture = JSON.parse(
+    fs.readFileSync(path.join(__dirname, "fixtures", "battle_1tile.json"), "utf8"));
+  const out = replayLog(fixture.record, req);
+  assert.ok(out.events.some((e) => e.type === "turn"), "has per-turn events");
+  assert.ok(out.events.some((e) => e.type === "hit" && e.dmg > 0), "has damage events");
+  assert.strictEqual(out.summary.isWin, true, "1-tile record is a win");
+  assert.strictEqual(out.summary.selfDead, 0, "1-tile record lost 0 pawns");
+});
