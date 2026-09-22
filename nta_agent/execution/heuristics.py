@@ -213,6 +213,7 @@ class OccupyCell:
     threats_source: object = None  # callable -> enemy index set (P2 defense); wired in runner
     territory_source: object = None  # callable -> (owned_set, zone_centers) for bridging
     locked_source: object = None   # callable -> army-uid set the ArmyComposer is arranging
+    lessons_source: object = None  # callable -> active lessons (Inc 3 contextual recall)
     contest_range: int = 1     # a winnable candidate within this of an enemy is contested
     _pending: object = None    # (armies_list, target_index)
     _rally: object = None       # (armies_to_move, city, for_target) — consolidate then attack
@@ -310,6 +311,30 @@ class OccupyCell:
             return None
         scored.sort(key=lambda t: t[0])
         return scored[0][1]
+
+    def _recall_order(self, cand, default):
+        """Inc 3 contextual recall: if an active lesson's trigger matches this cell's
+        guardian monster ids and prescribes an attack order, use it here (overriding
+        the global occupy.policy.order). Falls back to ``default`` otherwise."""
+        if self.lessons_source is None or cand is None or not getattr(cand, "defenders", None):
+            return default
+        try:
+            lessons = self.lessons_source() or []
+        except Exception:
+            return default
+        if not lessons:
+            return default
+        from nta_agent.brain.lessons import match_lessons
+        ids = [int(p.get("id")) for p in cand.defenders if p.get("id")]
+        for lz in match_lessons(lessons, {"kind": "battle_loss", "monster_ids": ids}):
+            order = ((((lz.resolution or {}).get("lever_edits") or {}).get("occupy") or {})
+                     .get("policy") or {}).get("order")
+            if order in ("tank_first", "dps_first", "auto"):
+                if self.on_event:
+                    self.on_event("lesson_recall", {"cell": cand.index, "order": order,
+                                                    "lesson": lz.id, "monster_ids": ids})
+                return order
+        return default
 
     def _defensive_select(self, cands, plans_for, predict, enemy):
         """P2: when an enemy is contesting a border cell, claim the winnable cell
@@ -450,6 +475,9 @@ class OccupyCell:
             order_policy = "auto"
             if self.profile is not None:
                 order_policy = (self.profile.occupy.get("policy") or {}).get("order") or "auto"
+            # Inc 3: a lesson matching THIS cell's guardians overrides the order here
+            # (a monster-specific lesson applies only when facing that monster).
+            order_policy = self._recall_order(cand_by_index.get(i), order_policy)
             return [Plan(armies=order, target=i, label=label, prediction=None)
                     for label, order in colocated_orders(avail, order_policy)]
 
