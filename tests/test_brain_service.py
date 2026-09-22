@@ -218,3 +218,33 @@ def test_brain_cannot_raise_max_loss_but_can_set_expansion(tmp_path):
     svc.tick(_state())
     assert prof.occupy["max_loss"] == 0.0        # user's cap kept
     assert prof.occupy["expansion"] == "octopus"  # pattern still brain-editable
+
+def test_urgent_fires_on_new_battle_loss(tmp_path):
+    from nta_agent.execution.ledger import FailureLedger
+    led = FailureLedger(tmp_path / "failures.json")
+    led.record("battle_loss", {"self_dead": 2, "counterfactual": {"best_order": "tank_first"}})
+    cfg = SimpleNamespace(profile_path=tmp_path / "profile.json",
+                          failures_path=tmp_path / "failures.json",
+                          forts_path=tmp_path / "missing_forts.json",
+                          decisions_path=tmp_path / "missing_dec.json",
+                          res_pressure_window_s=3600, ledger_cap=100)
+    svc = BrainService(load_profile("none"), cfg)
+    assert svc._urgent(_state()) is True          # a new loss -> urgent
+    assert svc._urgent(_state()) is False         # same loss already reacted to
+
+
+def test_digest_carries_failures_to_the_llm(tmp_path):
+    from nta_agent.execution.ledger import FailureLedger
+    led = FailureLedger(tmp_path / "failures.json")
+    led.record("battle_loss", {"self_dead": 1, "counterfactual": {"best_order": "tank_first"}})
+    cfg = SimpleNamespace(profile_path=tmp_path / "profile.json",
+                          failures_path=tmp_path / "failures.json",
+                          forts_path=tmp_path / "nf.json", decisions_path=tmp_path / "nd.json",
+                          res_pressure_window_s=3600, ledger_cap=100)
+    seen = {}
+    svc = BrainService(load_profile("none"), cfg,
+                       actions=SimpleNamespace(get_player_armys=list),
+                       policy=BrainPolicy(every_ticks=1, max_calls=5),
+                       llm_propose=lambda dg, p: seen.update(dg) or {"rationale": "ok"})
+    svc.tick(_state())
+    assert seen["failures"][0]["counterfactual"]["best_order"] == "tank_first"
