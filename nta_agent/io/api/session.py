@@ -60,8 +60,18 @@ class GameSession:
     _sid: int | None = None
     _in_game: bool = False
     _bt_deadlines: dict = field(default_factory=dict)  # build uid -> completion time
+    _last_activity: float = field(default_factory=time.time)  # F1: last server contact
     _login_opts: dict = field(default_factory=lambda: {
         "lang": "vi", "os": "Android 9", "platform": "google", "version": GAME_VERSION})
+
+    def touch(self) -> None:
+        """Mark that we just heard from the server (a push or a successful request).
+        The health monitor uses this to detect a silent half-open connection."""
+        self._last_activity = time.time()
+
+    @property
+    def last_activity(self) -> float:
+        return self._last_activity
 
     def __post_init__(self):
         self.client = GameClient(server=self.server)
@@ -192,7 +202,9 @@ class GameSession:
 
     # ---- convenience passthrough ---------------------------------------- #
     def request(self, route: str, params: dict | None = None, timeout: float = 15) -> dict:
-        return self.client.request(route, params, timeout=timeout)
+        reply = self.client.request(route, params, timeout=timeout)
+        self.touch()  # a successful round-trip proves the connection is live
+        return reply
 
     # ---- push capture ---------------------------------------------------- #
     def _push_type(self, route: str) -> str:
@@ -218,6 +230,7 @@ class GameSession:
         rec = PushRecord(ts=time.time(), route=route, msg_type=msg_type, data=data)
         with self._lock:
             self.pushes.append(rec)
+        self.touch()  # a server push proves the connection is live
 
     def drain_pushes(self) -> list[PushRecord]:
         with self._lock:

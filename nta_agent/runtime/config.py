@@ -24,6 +24,7 @@ class RuntimeConfig:
     res_pressure_window_s: float = 3600.0
     ledger_cap: int = 100
     lessons_cap: int = 50
+    stale_after: float = 90.0   # F1: seconds of silence before a health probe
 
     @property
     def snapshot_path(self) -> Path:
@@ -56,6 +57,10 @@ class RuntimeConfig:
     @property
     def lessons_path(self) -> Path:
         return self.log_dir / "lessons.json"
+
+    @property
+    def health_path(self) -> Path:
+        return self.log_dir / "health.json"
 
     @property
     def errors_path(self) -> Path:

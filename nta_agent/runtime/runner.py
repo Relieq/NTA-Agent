@@ -52,7 +52,10 @@ def run(cfg: RuntimeConfig, *, ticks: int = 0, session=None, engine=None) -> Non
     profile = load_profile(cfg.profile_path)  # shared by the rules and the brain
     if engine is None:
         engine = RuleEngine.default(profile=profile)
-    agent = Agent(session, engine, max_backoff=cfg.max_backoff, on_event=log.append)
+    from nta_agent.execution.health import HealthMonitor
+    health = HealthMonitor(stale_after=getattr(cfg, "stale_after", 90.0))
+    agent = Agent(session, engine, max_backoff=cfg.max_backoff, on_event=log.append,
+                  health=health)
 
     try:
         config = GameConfig.load()
@@ -176,9 +179,16 @@ def run(cfg: RuntimeConfig, *, ticks: int = 0, session=None, engine=None) -> Non
 
     from nta_agent.execution.profile import reload_into
 
+    def _write_health():  # F1: connection-health telemetry for the dashboard
+        p = cfg.health_path
+        p.parent.mkdir(parents=True, exist_ok=True)
+        p.write_text(json.dumps(health.status(session.last_activity), ensure_ascii=False),
+                     encoding="utf-8")
+
     def on_tick(i, fired, state):
         _safe(write_snapshot, state, cfg.snapshot_path)
         _safe(log.tick, i, fired, state)
+        _safe(_write_health)
         # pick up dashboard edits + stop the brain from clobbering them (shared obj)
         _safe(reload_into, profile, cfg.profile_path)
         run_services(state, cfg, service, brain, forts, _safe, observer=observer)
