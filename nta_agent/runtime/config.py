@@ -21,6 +21,9 @@ class RuntimeConfig:
     log_dir: Path = Path("build/run")
     brain_every_ticks: int = 60
     brain_max_calls: int = 50
+    res_pressure_window_s: float = 3600.0
+    ledger_cap: int = 100
+    lessons_cap: int = 50
 
     @property
     def snapshot_path(self) -> Path:
@@ -45,6 +48,14 @@ class RuntimeConfig:
     @property
     def composition_status_path(self) -> Path:
         return self.log_dir / "composition_status.json"
+
+    @property
+    def failures_path(self) -> Path:
+        return self.log_dir / "failures.json"
+
+    @property
+    def lessons_path(self) -> Path:
+        return self.log_dir / "lessons.json"
 
     @property
     def errors_path(self) -> Path:
