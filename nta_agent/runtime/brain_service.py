@@ -4,7 +4,7 @@ from __future__ import annotations
 import sys
 
 from nta_agent.brain.digest import digest
-from nta_agent.brain.guard import sanitize_edits
+from nta_agent.brain.guard import sanitize_edits, sanitize_lessons
 from nta_agent.brain.llm import BrainUnavailable
 from nta_agent.brain.policies import BrainPolicy
 from nta_agent.execution.profile import apply_edits, save_profile
@@ -43,6 +43,14 @@ class BrainService:
             return None
         from nta_agent.execution.ledger import FailureLedger
         return FailureLedger(path, cap=getattr(self.cfg, "ledger_cap", 100))
+
+    def _lessons_store(self):
+        """The distilled-lessons store, or None when no lessons_path is configured."""
+        path = getattr(self.cfg, "lessons_path", None)
+        if path is None:
+            return None
+        from nta_agent.brain.lessons import LessonStore
+        return LessonStore(path, cap=getattr(self.cfg, "lessons_cap", 50))
 
     def _territory(self, state):
         """Compact owned/enemy/frontier summary from forts.json for the brain."""
@@ -173,11 +181,13 @@ class BrainService:
         try:
             armies = self.actions.get_player_armys() if self.actions else []
             led = self._ledger()
+            store = self._lessons_store()
             dg = digest(state, self.profile, armies, territory=self._territory(state),
                         decisions=self._decisions(state),
                         failures=led.recent(8) if led else None,
                         res_pressure=(led.aggregate_res(
-                            getattr(self.cfg, "res_pressure_window_s", 3600)) if led else None))
+                            getattr(self.cfg, "res_pressure_window_s", 3600)) if led else None),
+                        lessons=store.active() if store else None)
             edits = self._propose(dg, self.profile)
             # build.order/skip and army.group are the human's plan (set via the
             # dashboard). The LLM echoes them from the digest; the valid-id/uid
@@ -200,6 +210,21 @@ class BrainService:
             clean = sanitize_edits(edits, self.profile, valid,
                                    valid_build_ids=self._valid_build_ids())
             changed = apply_edits(self.profile, clean)
+            # Lessons: distill grounded lessons, auto-apply their SAFE lever fixes
+            # (hỗn hợp autonomy — guard already downgraded human-owned fixes to advice),
+            # and relay any advice. sanitize_lessons drops lessons without real evidence.
+            lesson_advice: list = []
+            if store is not None and led is not None:
+                for lz in sanitize_lessons(edits, led, valid,
+                                           valid_build_ids=self._valid_build_ids()):
+                    store.upsert(lz)
+                    res = lz.get("resolution") or {}
+                    if isinstance(res.get("lever_edits"), dict):
+                        if apply_edits(self.profile, res["lever_edits"]):
+                            changed = True
+                    elif res.get("advice"):
+                        lesson_advice.append({"text": res["advice"],
+                                              "why": "lesson: " + (lz.get("diagnosis") or "")})
             if changed:
                 # Human-owned config (build, leveling, forge, army) is edited by the
                 # dashboard in another process. Even though the brain never edits it,
@@ -208,7 +233,7 @@ class BrainService:
                 # sections from disk right before saving so the latest dashboard wins.
                 self._refresh_human_fields()
                 save_profile(self.profile, self.cfg.profile_path)
-            advice = list(clean.get("advice") or [])
+            advice = list(clean.get("advice") or []) + lesson_advice
             advice = self._composition_advice() + advice  # relay an infeasible comp goal
             self._write_advice(advice)  # B2: human-facing recommendations
             self._calls += 1

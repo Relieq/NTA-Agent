@@ -248,3 +248,45 @@ def test_digest_carries_failures_to_the_llm(tmp_path):
                        llm_propose=lambda dg, p: seen.update(dg) or {"rationale": "ok"})
     svc.tick(_state())
     assert seen["failures"][0]["counterfactual"]["best_order"] == "tank_first"
+
+def _ledger_cfg(tmp_path):
+    return SimpleNamespace(profile_path=tmp_path / "profile.json",
+                           failures_path=tmp_path / "failures.json",
+                           lessons_path=tmp_path / "lessons.json",
+                           forts_path=tmp_path / "nf.json", decisions_path=tmp_path / "nd.json",
+                           res_pressure_window_s=3600, ledger_cap=100, lessons_cap=50)
+
+
+def test_grounded_lesson_is_stored_and_its_lever_applied(tmp_path):
+    from nta_agent.brain.lessons import LessonStore
+    from nta_agent.execution.ledger import FailureLedger
+    led = FailureLedger(tmp_path / "failures.json")
+    eid = led.record("battle_loss", {"self_dead": 1})
+    prof = load_profile("none")
+    svc = BrainService(prof, _ledger_cfg(tmp_path),
+                       actions=SimpleNamespace(get_player_armys=list),
+                       policy=BrainPolicy(every_ticks=1, max_calls=5),
+                       llm_propose=lambda dg, p: {"lessons": [{
+                           "trigger": {"kind": "battle_loss", "match": {"monster_id": 4116}},
+                           "diagnosis": "AoE spills to archers",
+                           "resolution": {"lever_edits": {"occupy": {"policy": {"order": "tank_first"}}}},
+                           "evidence": [eid]}], "rationale": "learn"})
+    svc.tick(_state())
+    assert prof.occupy["policy"]["order"] == "tank_first"          # safe lever auto-applied
+    stored = LessonStore(tmp_path / "lessons.json").active()
+    assert len(stored) == 1 and stored[0].evidence == [eid]
+
+
+def test_hallucinated_lesson_without_evidence_is_dropped(tmp_path):
+    from nta_agent.brain.lessons import LessonStore
+    from nta_agent.execution.ledger import FailureLedger
+    FailureLedger(tmp_path / "failures.json")  # empty ledger
+    svc = BrainService(load_profile("none"), _ledger_cfg(tmp_path),
+                       actions=SimpleNamespace(get_player_armys=list),
+                       policy=BrainPolicy(every_ticks=1, max_calls=5),
+                       llm_propose=lambda dg, p: {"lessons": [{
+                           "trigger": {"kind": "battle_loss"}, "diagnosis": "made up",
+                           "resolution": {"lever_edits": {"revive": {"enabled": False}}},
+                           "evidence": ["ghost"]}], "rationale": "x"})
+    svc.tick(_state())
+    assert LessonStore(tmp_path / "lessons.json").all() == []      # no evidence -> not stored
