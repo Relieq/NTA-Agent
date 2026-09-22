@@ -8,6 +8,7 @@ not wired here yet; it will sit between observe and the rules.
 """
 from __future__ import annotations
 
+import random
 import time
 from dataclasses import dataclass, field
 
@@ -29,6 +30,7 @@ class Agent:
     max_backoff: float = 60.0
     on_event: callable | None = None  # on_event(kind, detail) for logging
     captcha: object = None  # a CaptchaSolver (or None): solves ANTI_CHEAT challenges
+    health: object = None   # a HealthMonitor (or None): F1 proactive staleness recovery
 
     def __post_init__(self):
         self.actions = Actions(self.session)
@@ -51,19 +53,44 @@ class Agent:
             return ["captcha_detected"]
 
     def _recover(self) -> None:
-        """Reconnect with exponential backoff until the session is live again."""
+        """Reconnect with exponential backoff (+jitter) until the session is live."""
         delay = 2.0
         while True:
             try:
                 self.session.recover()
+                if self.health is not None:
+                    self.health.note_recover_ok()
                 self._emit("recovered")
                 return
             except TokenChainBroken:
                 raise  # unrecoverable without a fresh token — let run() surface it
             except _TRANSIENT + (ApiError,) as e:
+                if self.health is not None:
+                    self.health.note_recover_fail()
                 self._emit("recover_retry", e)
-                time.sleep(delay)
+                time.sleep(delay + random.uniform(0, delay * 0.1))  # jitter
                 delay = min(delay * 2, self.max_backoff)
+
+    def _probe(self) -> bool:
+        """Actively test the connection with a cheap read. True if it answered."""
+        try:
+            self.actions.get_marches()  # a successful request touches last_activity
+            return True
+        except Exception:
+            return False
+
+    def _health_check(self) -> bool:
+        """F1: catch a silent half-open connection. If the session looks stale, probe
+        it; on a failed probe, recover. Returns True if a recovery ran (re-loop)."""
+        last = getattr(self.session, "last_activity", None)
+        if self.health is None or last is None or not self.health.is_stale(last):
+            return False
+        if self._probe():
+            return False  # probe answered -> connection is alive, activity refreshed
+        self._emit("stale_recover",
+                   round(self.health.status(last).get("last_activity_age", 0), 1))
+        self._recover()
+        return True
 
     def run(self, ticks: int = 0, interval: float = 5.0, on_tick=None, control=None) -> None:
         """Run the loop. ``ticks=0`` means forever; ``interval`` seconds between ticks.
@@ -79,6 +106,8 @@ class Agent:
             mode = control() if control else "run"
             if mode == "stop":
                 break
+            if self._health_check():
+                continue  # a silent half-open connection was detected + recovered
             try:
                 if mode == "pause":
                     self.session.sync()  # keep state fresh + session alive; do not act
