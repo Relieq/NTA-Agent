@@ -304,6 +304,12 @@ class Handler(BaseHTTPRequestHandler):
         parsed = urlparse(self.path)
         cfg = self.server.cfg
         if parsed.path.startswith("/api/agent/"):
+            try:  # drain any request body FIRST — replying before reading it lets the
+                length = int(self.headers.get("Content-Length", "0"))  # client socket
+                if length:                                             # reset (Windows
+                    self.rfile.read(length)                           # ConnectionAborted)
+            except (ValueError, TypeError):
+                pass
             action = parsed.path[len("/api/agent/"):]
             sup = self.server.supervisor
             fn = {"start": sup.start, "stop": sup.stop,
@@ -311,12 +317,6 @@ class Handler(BaseHTTPRequestHandler):
             if fn is None:
                 self._json(404, {"ok": False, "error": "unknown agent action"})
                 return
-            try:  # drain and ignore any request body
-                length = int(self.headers.get("Content-Length", "0"))
-                if length:
-                    self.rfile.read(length)
-            except (ValueError, TypeError):
-                pass
             self._json(200, fn())
             return
         if parsed.path == "/api/forts/decide":
