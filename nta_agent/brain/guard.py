@@ -170,22 +170,32 @@ def sanitize_edits(edits: dict, profile, valid_army_uids, valid_build_ids=None) 
     return out
 
 
-def sanitize_renames(edits, valid_army_uids) -> list:
+def sanitize_renames(edits, valid_army_uids, dominant_by_uid=None) -> list:
     """Validate chat-proposed army renames into [{uid, name}] ready for the command
     queue. Drops unknown uids and names that break the client rule (empty / >12 /
-    newline). On a duplicate uid the LAST rename wins."""
+    newline). On a duplicate uid the LAST rename wins.
+
+    Anti-mis-map: when a rename carries ``pawn`` (the pawn type the model claims the
+    army is — e.g. 3206 rìu khiên, 3305 IMP) and ``dominant_by_uid`` is supplied, the
+    army's actual dominant pawn MUST equal it, else the rename is DROPPED. This stops
+    a weak model from renaming the wrong army (the reported bug)."""
     raw = edits.get("army_renames") if isinstance(edits, dict) else None
     if not isinstance(raw, list):
         return []
     valid = {str(u) for u in (valid_army_uids or ())}
+    dom = {str(k): str(v) for k, v in (dominant_by_uid or {}).items()}
     by_uid: dict = {}
     for r in raw:
         if not isinstance(r, dict):
             continue
         uid = str(r.get("uid", ""))
         name = str(r.get("name", "")).strip()
-        if uid in valid and name and len(name) <= 12 and "\n" not in name:
-            by_uid[uid] = name        # last write wins
+        if uid not in valid or not name or len(name) > 12 or "\n" in name:
+            continue
+        pawn = r.get("pawn")
+        if pawn not in (None, "") and dom and dom.get(uid) != str(pawn):
+            continue  # claimed type doesn't match the army's composition -> drop
+        by_uid[uid] = name        # last write wins
     return [{"uid": u, "name": n} for u, n in by_uid.items()]
 
 

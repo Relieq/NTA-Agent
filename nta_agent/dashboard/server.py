@@ -81,14 +81,30 @@ def handle_chat(cfg, message, *, history=None, propose=None):
     # Chat action tools (human-initiated) — executed by the hands via the command
     # queue (the dashboard has no game session; the agent does). Rename armies now;
     # more tools plug in the same way.
+    from collections import Counter
+
     from nta_agent.brain.guard import sanitize_renames
-    renames = sanitize_renames(edits, valid)
+    from nta_agent.execution.rename_resolver import resolve_rename_plan
+    resolver_q = ""
+    plan = edits.get("rename_plan") if isinstance(edits, dict) else None
+    if isinstance(plan, list) and plan:
+        # Primary path: the hands resolve which army each name goes to, by PURE
+        # composition, and ask back on ambiguity (reliable regardless of the model).
+        renames, resolver_q = resolve_rename_plan(plan, armies)
+    else:
+        # Fallback: explicit uid renames (guard-verified against composition).
+        dominant_by_uid = {}
+        for a in armies:
+            comp = Counter(str(p.get("id")) for p in (a.get("pawns") or []))
+            if comp:
+                dominant_by_uid[str(a.get("uid"))] = max(comp, key=comp.get)
+        renames = sanitize_renames(edits, valid, dominant_by_uid)
     idx_by_uid = {str(a.get("uid")): int(a.get("index", 0) or 0) for a in armies}
     for r in renames:
         append_command(cfg.commands_path, {"action": "rename_army",
                                            "index": idx_by_uid.get(r["uid"], 0),
                                            "uid": r["uid"], "name": r["name"]})
-    question = str((edits or {}).get("question", "")).strip()
+    question = resolver_q or str((edits or {}).get("question", "")).strip()
     return {"ok": True, "applied": clean, "rationale": (edits or {}).get("rationale", ""),
             "renames": renames, "question": question,
             "active": profile.army.get("active", ""),

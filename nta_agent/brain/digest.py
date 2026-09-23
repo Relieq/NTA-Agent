@@ -46,10 +46,15 @@ def digest(state, profile, armies=None, territory=None, decisions=None,
     army_rows = []
     for a in (armies or []):
         comp = Counter(str(p.get("id")) for p in (a.get("pawns") or []))
+        # Deterministic type signal so the brain/chat identifies an army by its
+        # composition instead of guessing: dominant = most common pawn id,
+        # pure = made of a single pawn type.
+        dominant = max(comp, key=comp.get) if comp else None
         army_rows.append({"uid": str(a.get("uid")), "name": a.get("name"),
                           "index": int(a.get("index", 0) or 0),
                           "state": int(a.get("state", 0) or 0),
-                          "pawns": len(a.get("pawns") or []), "composition": dict(comp)})
+                          "pawns": len(a.get("pawns") or []), "composition": dict(comp),
+                          "dominant": dominant, "pure": len(comp) == 1})
     logistics = getattr(profile, "logistics", {}) or {}
     # ready = topped-up, idle, at the city -> brain fills logistics.redeploy[uid]=index.
     from nta_agent.execution.logistics import ready_armies
