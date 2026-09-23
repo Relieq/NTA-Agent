@@ -334,6 +334,29 @@ def apply_notify(state: GameState, notify: dict[str, Any]) -> GameState:
     return state
 
 
+_AREA_BUILD_UP, _AREA_ADD_BUILD, _AREA_REMOVE_BUILD = 5, 8, 9  # engine NotifyType
+
+
+def apply_area_notify(state: GameState, notify: dict[str, Any]) -> GameState:
+    """Apply a GAME_ONUPDATEAREAINFO_NOTIFY ({type, index, data_<type>} — NOT list-
+    wrapped) for OUR main city: BUILD_UP (a building's new level), ADD_BUILD (a new
+    building) and REMOVE_BUILD (uid). Mirrors the engine's area.buildUp/addBuild/
+    removeBuild. Without it building levels froze in the agent's state."""
+    t = notify.get("type")
+    if int(notify.get("index", 0) or 0) != int(state.main_city_index or 0):
+        return state
+    if t in (_AREA_BUILD_UP, _AREA_ADD_BUILD):
+        info = notify.get(f"data_{t}")
+        if isinstance(info, dict):
+            _apply_build_update(state, info)
+    elif t == _AREA_REMOVE_BUILD:
+        uid = str(notify.get("data_9") or "")
+        if uid:
+            state.builds = [b for b in state.builds if b.uid != uid]
+    state.updated_at = time.time()
+    return state
+
+
 _WORLD_ADD_MARCH, _WORLD_REMOVE_MARCH, _WORLD_CAPTURE = 13, 14, 29  # engine NotifyType
 
 
