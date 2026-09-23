@@ -188,6 +188,7 @@ def expire_build_queue(build_queue: list[dict], deadlines: dict[str, float],
     kept list and the pruned deadlines. Pure — the caller owns the deadline map.
     """
     kept, seen = [], set()
+    prev = now  # completion time of the item ahead (the queue builds one at a time)
     for item in build_queue or []:
         uid = str(item.get("uid", ""))
         if not uid:
@@ -195,7 +196,14 @@ def expire_build_queue(build_queue: list[dict], deadlines: dict[str, float],
             continue
         seen.add(uid)
         if uid not in deadlines:
-            deadlines[uid] = now + int(item.get("surplusTime", 0) or 0) / 1000.0
+            surplus = int(item.get("surplusTime", 0) or 0) / 1000.0
+            if surplus > 0:          # the running item
+                deadlines[uid] = now + surplus
+            elif prev > now:         # WAITING behind an unfinished item: no surplusTime
+                deadlines[uid] = prev + int(item.get("needTime", 0) or 0) / 1000.0
+            else:                    # nothing ahead and no time left -> done
+                deadlines[uid] = now
+        prev = max(prev, deadlines[uid])
         if now < deadlines[uid]:
             kept.append(item)
     deadlines = {u: d for u, d in deadlines.items() if u in seen}

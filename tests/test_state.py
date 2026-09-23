@@ -220,3 +220,24 @@ def test_update_output_honors_flags():
     # no flags at all -> full update (ENTRY-style / legacy replies)
     apply_update_output(st, {"cereal": {"value": 7}, "stone": {"value": 8}, "iron": 3})
     assert (st.resources.cereal, st.resources.stone, st.resources.iron) == (7, 8, 3)
+
+
+def test_expire_build_queue_is_sequential():
+    """The server builds queue items ONE AT A TIME: only the running item has a
+    surplusTime; a waiting item has none (proto3 omits 0) but a needTime. It must
+    NOT be treated as finished (that freed a phantom slot -> quiet 500014 spam, and
+    would mark the waiting building as upgraded). Its completion = previous
+    item's completion + needTime."""
+    from nta_agent.state.store import expire_build_queue
+    q = [{"uid": "a", "id": 2001, "lv": 8, "surplusTime": 675000, "needTime": 1370000},
+         {"uid": "b", "id": 2002, "lv": 2, "needTime": 80000}]
+    kept, dl = expire_build_queue(q, {}, now=1000.0)
+    assert [i["uid"] for i in kept] == ["a", "b"]
+    assert dl["a"] == 1675.0 and dl["b"] == 1755.0
+    kept, dl = expire_build_queue(q, dl, now=1700.0)      # a done, b running
+    assert [i["uid"] for i in kept] == ["b"]
+    kept, dl = expire_build_queue(kept, dl, now=1760.0)   # b done too
+    assert kept == []
+    # a lone item with no time left is done immediately
+    kept, _ = expire_build_queue([{"uid": "c", "id": 2003, "lv": 2}], {}, now=5.0)
+    assert kept == []
