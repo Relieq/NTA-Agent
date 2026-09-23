@@ -202,20 +202,41 @@ def expire_build_queue(build_queue: list[dict], deadlines: dict[str, float],
     return kept, deadlines
 
 
+# proto.OutPutFlagEnum (engine msg.js) for the fields apply_update_output handles.
+_OUTPUT_FLAG = {"granaryCap": 1, "warehouseCap": 2, "cereal": 3, "timber": 4, "stone": 5,
+                "expBook": 7, "iron": 8, "gold": 9, "upScroll": 10, "fixator": 11,
+                "stamina": 16}
+
+
 def apply_update_output(state: GameState, out: dict[str, Any]) -> None:
-    """Apply an UpdateOutPut block (from ClaimCityOutput or a resource notify)."""
+    """Apply an UpdateOutPut block (from ClaimCityOutput or a resource notify).
+
+    Mirrors the engine's ``updateOutputByFlags``: when the block carries ``flags``
+    (OutPutFlagEnum) ONLY the flagged entries are authoritative — other fields may be
+    present but empty/stale (e.g. ``stone: {}`` on a cereal-only update) and must be
+    ignored, or they zero the stock. No ``flags`` = a full update.
+    """
     import time as _time
     r = state.resources
+    flags = out.get("flags")
+    allowed = set(flags) if isinstance(flags, list) and flags else None
+
+    def ok(name: str) -> bool:
+        return name in out and (allowed is None or _OUTPUT_FLAG[name] in allowed)
+
     for name in ("cereal", "timber", "stone"):
-        if name in out:  # OutPutInfo {value, opHour}
+        if ok(name):  # OutPutInfo {value, opHour}
             setattr(r, name, _res_value(out[name]))
             # keep the production rate current (opHour rises when a producer levels)
             if isinstance(out[name], dict) and "opHour" in out[name]:
                 state.production[name] = int(out[name].get("opHour", 0) or 0)
     for name, attr in (("iron", "iron"), ("gold", "gold"), ("stamina", "stamina"),
                        ("expBook", "exp_book"), ("upScroll", "up_scroll"), ("fixator", "fixator")):
-        if name in out and isinstance(out[name], (int, float)):
+        if ok(name) and isinstance(out[name], (int, float)):
             setattr(r, attr, int(out[name]))
+    for name, attr in (("granaryCap", "granary_cap"), ("warehouseCap", "warehouse_cap")):
+        if ok(name) and isinstance(out[name], (int, float)):
+            setattr(state, attr, int(out[name]))
     # A push carries the authoritative value; restart local accrual from it so we
     # don't double-add the production it already includes (and drop any carried
     # fractional remainder, which belonged to the pre-push base).
