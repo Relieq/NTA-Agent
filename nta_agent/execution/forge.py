@@ -138,6 +138,42 @@ def effect_quality(equip: dict, effect_row) -> float | None:
     return sum(fracs) / len(fracs) if fracs else None
 
 
+def effect_values(equip: dict) -> dict:
+    """``{effectType: {"value": v, "odds": o}}`` for the equip's current rolls."""
+    return {e["type"]: {"value": e["value"], "odds": e["odds"]}
+            for e in parse_attrs(equip)["effects"]}
+
+
+def unmet_stats(equip: dict, target: dict, effect_row) -> list[str]:
+    """Which of the target's criteria the current roll misses.
+
+    Per-stat minimums (``target["mins"] = {"<type>.value"|"<type>.odds": min}``,
+    user 2026-09-24): every set minimum must hold; a required effect that wasn't
+    rolled counts as missed. Without mins, the legacy composite ``threshold`` on
+    :func:`effect_quality` applies (reported as ``"quality"``)."""
+    mins = (target or {}).get("mins") or {}
+    if mins:
+        vals = effect_values(equip)
+        out = []
+        for key, lo in mins.items():
+            typ, _, stat = str(key).partition(".")
+            try:
+                cur = (vals.get(int(typ)) or {}).get(stat)
+            except ValueError:
+                cur = None
+            if cur is None or cur < float(lo):
+                out.append(str(key))
+        return out
+    q = effect_quality(equip, effect_row)
+    if q is None:
+        return []  # nothing rangeable to judge -> treat as done
+    return [] if q >= float((target or {}).get("threshold", 1.0)) else ["quality"]
+
+
+def target_met(equip: dict, target: dict, effect_row) -> bool:
+    return not unmet_stats(equip, target, effect_row)
+
+
 @dataclass
 class RecastDecision:
     uid: str
@@ -145,6 +181,7 @@ class RecastDecision:
     cost: dict         # full forge cost to pay ({} when this recast is free)
     iron: int          # iron charged to the item's budget (0 when free)
     free: bool
+    unmet: list = None  # which criteria the current roll misses ("3.odds", "quality")
 
 
 def next_recast(equips, base_of, effect_row, targets, resources, *, busy=False):
@@ -165,16 +202,18 @@ def next_recast(equips, base_of, effect_row, targets, resources, *, busy=False):
         base = base_of(equip_id(e)) or {}
         if not is_common(base):
             continue
-        q = effect_quality(e, effect_row)
-        if q is None or q >= float(cfg.get("threshold", 1.0)):
-            continue
+        unmet = unmet_stats(e, cfg, effect_row)
+        if not unmet:
+            continue  # target reached -> keep this roll
+        q = effect_quality(e, effect_row) or 0.0
         free = bool(e.get("nextForgeFree"))
         cost = {} if free else parse_cost(base.get("forge_cost"))
         iron = int(cost.get("iron", 0))
         if not free and (iron > int(cfg.get("budget", 0) or 0)
                          or not affordable(cost, resources)):
             continue
-        return RecastDecision(uid=str(uid), quality=q, cost=cost, iron=iron, free=free)
+        return RecastDecision(uid=str(uid), quality=q, cost=cost, iron=iron, free=free,
+                              unmet=unmet)
     return None
 
 
@@ -204,10 +243,30 @@ def forge_view(equips, base_of, effect_row, targets, *, name_of=None, effect_tex
                          "text": text})
         q = effect_quality(e, effect_row)
         uid = str(e.get("uid"))
+        # every effect this equip CAN roll (equipBase.effect "a|b|..."), so the user can
+        # set per-stat minimums even for one not rolled right now
+        cur = effect_values(e)
+        possible = []
+        for tok in str(base.get("effect", "") or "").split("|"):
+            tok = tok.strip()
+            if not tok.lstrip("-").isdigit() or not int(tok):
+                continue
+            t = int(tok)
+            row = effect_row(t) or {}
+            tmpl = _MARKUP.sub("", (effect_text(t) if effect_text else None) or "")
+            possible.append({"type": t, "current": cur.get(t),
+                             "label": tmpl.replace("{0}", "[giá trị]").replace("{1}", "[tỉ lệ]")
+                             or f"hiệu ứng #{t}",
+                             "suffix": str(row.get("suffix") or ""),
+                             "value_range": list(parse_range(row.get("value", "")) or []),
+                             "odds_range": list(parse_range(row.get("odds", "")) or [])})
+        target = targets.get(uid)
+        unmet = unmet_stats(e, target, effect_row) if target else []
         rows.append({"uid": uid, "id": eid, "name": (name_of(eid) if name_of else None) or f"#{eid}",
                      "quality": None if q is None else round(q, 3),
-                     "effects": effs, "recast_count": int(e.get("recastCount", 0) or 0),
+                     "effects": effs, "possible": possible,
+                     "recast_count": int(e.get("recastCount", 0) or 0),
                      "next_free": bool(e.get("nextForgeFree")),
                      "iron_cost": int(parse_cost(base.get("forge_cost")).get("iron", 0)),
-                     "target": targets.get(uid)})
+                     "target": target, "met": bool(target) and not unmet, "unmet": unmet})
     return rows

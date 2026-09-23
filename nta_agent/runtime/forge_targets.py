@@ -1,8 +1,10 @@
-"""Per-equip forge targets set by the user: {equip_uid: {threshold, budget}}.
+"""Per-equip recast targets set by the user: {equip_uid: {mins, threshold, budget}}.
 
-``threshold`` = target stat fraction (0..1) to stop recasting at; ``budget`` =
-remaining iron the agent may spend recasting THAT equip (user can top up or
-reduce). The agent decrements ``budget`` as it spends iron.
+``mins`` = per-stat minimums ``{"<effectType>.value"|"<effectType>.odds": min}``
+(user 2026-09-24: each equip gets its own criteria — an effect line can carry two
+numbers); every set minimum must hold to stop. ``threshold`` = legacy composite
+effect quality (0..1), used only when no mins. ``budget`` = remaining iron the
+agent may spend recasting THAT equip; decremented as it spends.
 """
 from __future__ import annotations
 
@@ -20,8 +22,13 @@ def load(path) -> dict:
     out = {}
     for uid, cfg in d.items():
         if isinstance(cfg, dict):
-            out[str(uid)] = {"threshold": float(cfg.get("threshold", 1.0) or 0.0),
-                             "budget": int(cfg.get("budget", 0) or 0)}
+            t = {"threshold": float(cfg.get("threshold", 1.0) or 0.0),
+                 "budget": int(cfg.get("budget", 0) or 0)}
+            mins = cfg.get("mins")
+            if isinstance(mins, dict):
+                t["mins"] = {str(k): float(v) for k, v in mins.items()
+                             if isinstance(v, (int, float))}
+            out[str(uid)] = t
     return out
 
 
@@ -30,10 +37,12 @@ def _save(path, d) -> None:
     Path(path).write_text(json.dumps(d, ensure_ascii=False), encoding="utf-8")
 
 
-def set_target(path, uid, threshold, budget) -> dict:
+def set_target(path, uid, threshold, budget, mins: dict | None = None) -> dict:
     """Add/replace a main equip's target (user action)."""
     d = load(path)
     d[str(uid)] = {"threshold": max(0.0, min(1.0, float(threshold))), "budget": int(budget)}
+    if mins:
+        d[str(uid)]["mins"] = {str(k): float(v) for k, v in mins.items()}
     _save(path, d)
     return d
 

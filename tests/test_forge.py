@@ -158,3 +158,43 @@ def test_equip_id_derived_from_uid_when_missing():
                       effect_text={3: "Có <color=#000001>{1}</c> gây <color=#000001>{0}</c> ST Bạo"}.get)
     assert rows[0]["id"] == 6001 and rows[0]["name"] == "Rìu" and rows[0]["iron_cost"] == 3
     assert rows[0]["effects"][0]["text"] == "Có 30% gây 165% ST Bạo"     # markup stripped
+
+
+# ---- per-equip, per-stat minimums (user 2026-09-24) ---------------------------
+def test_target_met_per_stat_minimums():
+    from nta_agent.execution.forge import target_met
+    e = _eq(effects=((3, 165, 30),))
+    assert target_met(e, {"mins": {"3.value": 160, "3.odds": 30}}, eff_row) is True
+    assert target_met(e, {"mins": {"3.value": 170}}, eff_row) is False     # value short
+    assert target_met(e, {"mins": {"3.odds": 35}}, eff_row) is False       # odds short
+    # a required effect that wasn't rolled -> not met
+    assert target_met(e, {"mins": {"7.value": 31}}, eff_row) is False
+    # legacy composite threshold still works when no mins
+    assert target_met(e, {"threshold": 0.5}, eff_row) is True
+    assert target_met(e, {"threshold": 0.6}, eff_row) is False
+
+
+def test_next_recast_uses_per_stat_minimums():
+    t = {"6001_1": {"budget": 10, "mins": {"3.odds": 35}}}
+    d = next_recast([_eq(effects=((3, 180, 30),))], base_of, eff_row, t, RICH)
+    assert d is not None and d.unmet == ["3.odds"]            # value maxed, odds short
+    t = {"6001_1": {"budget": 10, "mins": {"3.odds": 30}}}
+    assert next_recast([_eq(effects=((3, 150, 30),))], base_of, eff_row, t, RICH) is None
+
+
+def test_forge_view_lists_possible_effects_for_per_stat_ui():
+    from nta_agent.execution.forge import forge_view
+    base = {6101: {"id": 6101, "exclusive_pawn": "", "effect": "3|7",
+                   "forge_cost": "9,0,2"}}
+    eq = {"uid": "6101_1", "attrs": [{"attr": [2, 3, 170, 25]}]}
+    rows = forge_view([eq], base.get, eff_row, {"6101_1": {"budget": 5, "mins": {"3.odds": 35}}},
+                      effect_text={3: "Có {1} gây {0} ST Bạo", 7: "Hồi {0} máu"}.get)
+    r = rows[0]
+    pos = {p["type"]: p for p in r["possible"]}
+    assert set(pos) == {3, 7}
+    assert pos[3]["current"] == {"value": 170, "odds": 25}
+    assert pos[7]["current"] is None                          # not rolled now
+    assert pos[3]["label"] == "Có [tỉ lệ] gây [giá trị] ST Bạo"
+    assert pos[3]["value_range"] == [150, 180] and pos[3]["odds_range"] == [20, 40]
+    assert pos[7]["odds_range"] == []                         # no odds -> single number
+    assert r["met"] is False and r["unmet"] == ["3.odds"]

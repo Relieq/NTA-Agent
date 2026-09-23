@@ -278,8 +278,11 @@ def read_forge_view(cfg) -> dict:
 
 
 def set_forge_target(cfg, body: dict) -> dict:
-    """Set/remove one equip's recast target: {uid, threshold_pct 0..100, budget iron}
-    or {uid, remove: true}."""
+    """Set/remove one equip's recast target. Either per-stat minimums
+    ``{uid, budget, mins: {"<effectType>.value"|"<effectType>.odds": min}}`` (blank =
+    don't care), or the legacy ``{uid, budget, threshold_pct}``; ``{uid, remove}``."""
+    import re as _re
+
     from nta_agent.runtime import forge_targets
     uid = str((body or {}).get("uid") or "").strip()
     if not uid:
@@ -288,12 +291,35 @@ def set_forge_target(cfg, body: dict) -> dict:
         forge_targets.remove(cfg.forge_targets_path, uid)
         return {"ok": True}
     try:
-        pct = float(body.get("threshold_pct"))
         budget = int(body.get("budget"))
     except (TypeError, ValueError):
-        return {"ok": False, "error": "ngưỡng/ngân sách không hợp lệ"}
-    if not 0 <= pct <= 100 or budget < 0:
-        return {"ok": False, "error": "ngưỡng 0–100%, ngân sách ≥ 0"}
+        return {"ok": False, "error": "ngân sách không hợp lệ"}
+    if budget < 0:
+        return {"ok": False, "error": "ngân sách ≥ 0"}
+    if "mins" in body:
+        mins = {}
+        for k, v in (body.get("mins") or {}).items():
+            if v in ("", None):
+                continue  # blank = don't care about this stat
+            if not _re.fullmatch(r"\d+\.(value|odds)", str(k)):
+                return {"ok": False, "error": f"chỉ số không hợp lệ: {k}"}
+            try:
+                fv = float(v)
+            except (TypeError, ValueError):
+                return {"ok": False, "error": f"mức tối thiểu không hợp lệ: {k}"}
+            if fv < 0:
+                return {"ok": False, "error": "mức tối thiểu ≥ 0"}
+            mins[str(k)] = fv
+        if not mins:
+            return {"ok": False, "error": "đặt ít nhất một mức tối thiểu"}
+        forge_targets.set_target(cfg.forge_targets_path, uid, 1.0, budget, mins=mins)
+        return {"ok": True}
+    try:
+        pct = float(body.get("threshold_pct"))
+    except (TypeError, ValueError):
+        return {"ok": False, "error": "ngưỡng không hợp lệ"}
+    if not 0 <= pct <= 100:
+        return {"ok": False, "error": "ngưỡng 0–100%"}
     forge_targets.set_target(cfg.forge_targets_path, uid, pct / 100.0, budget)
     return {"ok": True}
 
