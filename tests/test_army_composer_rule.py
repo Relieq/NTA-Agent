@@ -209,3 +209,23 @@ def test_reserved_farm_group_not_pulled():
     r.applies(_state(), acts)
     r.act(acts)
     assert all(c[1] != "farm" for c in acts.calls if c[0] == "move")
+
+
+def test_done_clears_target_one_shot():
+    """strike_target is a ONE-SHOT goal: once the group is assembled the composer
+    clears it (in memory + via target_sink, which persists it to disk) and stands
+    down — it must not keep re-activating and fighting occupy for the armies."""
+    armies = [_army("tank", [3206, 3206, 3206]), _army("imp1", [3305, 3305, 3305]),
+              _army("imp2", [3305, 3305, 3305])]
+    prof = _profile(TARGET)
+    sunk, events = [], []
+    r = ArmyComposer(profile=prof, target_sink=lambda: sunk.append(1),
+                     on_event=lambda k, d: events.append(k))
+    r._strike_uids = ["tank", "imp1", "imp2"]
+    assert r.applies(_state(), FakeActions(armies)) is False
+    assert sunk == [1]
+    assert prof.army["strike_target"] == []
+    assert "composition_done" in events
+    # next tick: no goal -> stands down, releases every lock, sink not called again
+    assert r.applies(_state(), FakeActions(armies)) is False
+    assert sunk == [1] and r.locked_uids == set()

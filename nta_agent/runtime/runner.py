@@ -138,6 +138,11 @@ def run(cfg: RuntimeConfig, *, ticks: int = 0, session=None, engine=None) -> Non
         centers = ([main, main + 1, main + 600, main + 601] if main else []) + forts
         return owned, centers
 
+    def _clear_strike_target():
+        from nta_agent.execution.profile import clear_strike_target
+        clear_strike_target(cfg.profile_path)
+        log.append("composition_target_cleared", {})
+
     _rules = getattr(agent.engine, "rules", [])
     _composer = next((r for r in _rules if getattr(r, "name", "") == "army_composer"), None)
 
@@ -190,6 +195,7 @@ def run(cfg: RuntimeConfig, *, ticks: int = 0, session=None, engine=None) -> Non
         elif getattr(rule, "name", "") == "army_composer":
             rule.on_event = log.append
             rule.status_sink = _make_comp_status_sink()
+            rule.target_sink = _clear_strike_target  # one-shot goal: persist the clear
         elif getattr(rule, "name", "") == "fort_build":
             from nta_agent.runtime import fort_queue
             rule.pending_source = lambda: fort_queue.load(cfg.pending_forts_path)
@@ -207,6 +213,7 @@ def run(cfg: RuntimeConfig, *, ticks: int = 0, session=None, engine=None) -> Non
             errlog.log(getattr(fn, "__name__", "service"), "service_error", e)
 
     from nta_agent.execution.profile import reload_into
+    from nta_agent.runtime.new_game import check_new_game
 
     def _write_health():  # F1: connection-health telemetry for the dashboard
         p = cfg.health_path
@@ -221,6 +228,8 @@ def run(cfg: RuntimeConfig, *, ticks: int = 0, session=None, engine=None) -> Non
         _safe(alerts.tick, state)  # observe-only: runs even when paused/captured
         # pick up dashboard edits + stop the brain from clobbering them (shared obj)
         _safe(reload_into, profile, cfg.profile_path)
+        # a NEW main city (re-created after capture) = new game: drop stale uid/cell state
+        _safe(check_new_game, profile, cfg, state, on_event)
         run_services(state, cfg, service, brain, forts, _safe, observer=observer)
 
     try:

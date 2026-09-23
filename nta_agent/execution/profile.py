@@ -15,8 +15,12 @@ DEFAULT_PROFILE = {
     #   {pawn_id, armies, size} (N armies of one pawn type). The ArmyComposer rule
     #   reconciles current armies toward it (rally/pull/recruit); [] = no goal.
     #   Distinct from army.composition (per-army recruit-fill map used by Recruit).
+    #   ONE-SHOT: cleared once the group is assembled (composition_done); the brain or
+    #   user sets a new goal when needed. home_city = the main city this profile's
+    #   uid/cell-bound fields belong to — a new main city (re-created after capture)
+    #   resets them (reset_for_new_game).
     "army": {"group": [], "roles": {}, "onetile": True, "composition": {},
-             "strike_target": [], "active": "", "presets": {}},
+             "strike_target": [], "active": "", "presets": {}, "home_city": 0},
     # occupy.policy is the BRAIN's tactical channel (hands execute it token-free).
     #   order = "auto" | "tank_first" | "dps_first": which army leads the attack
     #   (frame-0 front line). auto lets the planner pick the lowest-loss ordering;
@@ -103,6 +107,36 @@ def save_profile(profile: Profile, path) -> None:
                              "logistics": getattr(profile, "logistics", {}),
                              "forge": getattr(profile, "forge", {"enabled": True})},
                             ensure_ascii=False, indent=1), encoding="utf-8")
+
+
+def clear_strike_target(path) -> None:
+    """One-shot strike goal: drop army.strike_target ON DISK (the runner reloads the
+    profile from disk every tick, so an in-memory clear alone would be undone)."""
+    prof = load_profile(path)
+    prof.army["strike_target"] = []
+    save_profile(prof, path)
+
+
+def reset_for_new_game(path, home_city: int) -> list[str]:
+    """A new main city (re-created after capture = a fresh game) invalidates every
+    field bound to the old armies/cells: army uids (group, roles, preset groups,
+    logistics redeploy/exclude) and the strike goal. Settings (occupy policy, build
+    order, leveling/forge toggles, preset NAMES) are kept. Returns cleared keys."""
+    prof = load_profile(path)
+    a, lg = prof.army, prof.logistics
+    cleared = [k for k in ("strike_target", "group", "roles") if a.get(k)]
+    a["strike_target"], a["group"], a["roles"] = [], [], {}
+    for name, pre in list((a.get("presets") or {}).items()):
+        if isinstance(pre, dict) and (pre.get("group") or pre.get("roles")):
+            cleared.append(f"presets.{name}")
+        a["presets"][name] = {**(pre if isinstance(pre, dict) else {}), "group": [], "roles": {}}
+    for k, empty in (("redeploy", {}), ("exclude", [])):
+        if lg.get(k):
+            cleared.append(f"logistics.{k}")
+        lg[k] = empty
+    a["home_city"] = int(home_city)
+    save_profile(prof, path)
+    return cleared
 
 
 def active_formation(profile: Profile) -> dict:
