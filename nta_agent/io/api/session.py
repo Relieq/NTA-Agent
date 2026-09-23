@@ -242,12 +242,20 @@ class GameSession:
         """Apply pending player/user update pushes into state, keeping it current."""
         from nta_agent.state.store import (
             accrue_output,
+            apply_area_notify,
             apply_notify,
             apply_world_notify,
             expire_build_queue,
         )
         for p in self.drain_pushes():
-            if not (isinstance(p.data, dict) and "list" in p.data):
+            if not isinstance(p.data, dict):
+                continue
+            # Area notifies are NOT list-wrapped ({type, index, data_<type>}): they
+            # carry building level-ups / new / removed buildings of our city.
+            if "AREAINFO" in (p.msg_type or "").upper():
+                apply_area_notify(self.state, p.data)
+                continue
+            if "list" not in p.data:
                 continue
             # World notifies share NotifyType numbering with player ones — route them
             # separately (marches / capture), never through the player updater.

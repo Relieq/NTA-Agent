@@ -36,3 +36,35 @@ def test_sync_still_applies_player_notify():
     fake = _fake([player])
     GameSession.sync(fake)
     assert fake.state.build_queue == []
+
+
+def test_sync_applies_area_build_notify():
+    """GAME_ONUPDATEAREAINFO_NOTIFY is NOT list-wrapped ({type, index, data_<type>}).
+    It carries building level-ups (BUILD_UP=5), new buildings (ADD_BUILD=8) and
+    removals (REMOVE_BUILD=9); ignoring it froze the agent's building levels (the
+    main hall reached lv7 on the server while the dashboard still showed lv1)."""
+    fake = _fake([])
+    st = fake.state
+    st.main_city_index = 5
+    st.builds = []
+    from nta_agent.state.store import _building
+    st.builds.append(_building({"index": 5, "uid": "h", "id": 2001, "lv": 1}))
+    pushes = [
+        PushRecord(ts=0, route="game/OnUpdateAreaInfo", msg_type="GAME_ONUPDATEAREAINFO_NOTIFY",
+                   data={"type": 5, "index": 5, "data_5": {"index": 5, "uid": "h", "id": 2001, "lv": 7}}),
+        PushRecord(ts=0, route="game/OnUpdateAreaInfo", msg_type="GAME_ONUPDATEAREAINFO_NOTIFY",
+                   data={"type": 8, "index": 5, "data_8": {"index": 5, "uid": "f", "id": 2008, "lv": 1}}),
+        PushRecord(ts=0, route="game/OnUpdateAreaInfo", msg_type="GAME_ONUPDATEAREAINFO_NOTIFY",
+                   data={"type": 5, "index": 999, "data_5": {"index": 999, "uid": "x", "id": 2001, "lv": 9}}),
+    ]
+    fake.drain_pushes = lambda: pushes
+    GameSession.sync(fake)
+    lv = {b.id: b.lv for b in st.builds}
+    assert lv[2001] == 7          # level-up applied
+    assert lv.get(2008) == 1      # new building added
+    assert len(st.builds) == 2    # another area's build ignored
+    fake.drain_pushes = lambda: [PushRecord(
+        ts=0, route="game/OnUpdateAreaInfo", msg_type="GAME_ONUPDATEAREAINFO_NOTIFY",
+        data={"type": 9, "index": 5, "data_9": "f"})]
+    GameSession.sync(fake)
+    assert {b.id for b in st.builds} == {2001}   # REMOVE_BUILD
