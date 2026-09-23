@@ -99,6 +99,67 @@ class CollectCityOutput:
 
 
 @dataclass
+class FortBuild:
+    """Build queued Cứ Điểm (forts) with priority over normal construction.
+
+    A user 'build fort' click enqueues a cell (fort_queue). Each tick this retries
+    ``create_city`` for the next queued cell; on insufficient resources (500012) it
+    keeps the cell queued and backs off (so it builds once resources allow), on
+    success it drops it, and on a permanent error it drops it so the queue never
+    jams. BuildOrder yields while the queue is non-empty, so resources go to the
+    fort first."""
+    name: str = "fort_build"
+    fail_cooldown: int = 8
+    res_cooldown: int = 24     # ~2min between retries when short on resources
+    pending_source: object = None   # callable -> list[int] of queued fort cells
+    remove_fn: object = None        # callable(index) to drop a cell from the queue
+    on_event: object = None
+    _cooldown: int = 0
+    _pending: object = None
+
+    def applies(self, state: GameState, actions: Actions) -> bool:
+        if self._cooldown > 0:
+            self._cooldown -= 1
+            return False
+        if self.pending_source is None:
+            return False
+        try:
+            q = list(self.pending_source() or [])
+        except Exception:
+            return False
+        if not q:
+            return False
+        self._pending = int(q[0])
+        return True
+
+    def act(self, actions: Actions) -> None:
+        idx, self._pending = self._pending, None
+        if idx is None:
+            return
+        from nta_agent.runtime.fort_service import FORT_BUILD_ID
+        try:
+            actions.create_city(idx, FORT_BUILD_ID)
+        except Exception as e:
+            ecode = str(e).split("ecode.")[-1][:6] if "ecode." in str(e) else ""
+            if ecode == "500012":   # not enough resources yet -> keep queued, retry
+                self._cooldown = self.res_cooldown
+                if self.on_event:
+                    self.on_event("fort_wait", {"index": idx, "reason": "resources"})
+                return
+            # permanent (bad cell / cap / already there) -> drop so it never jams
+            if self.remove_fn is not None:
+                self.remove_fn(idx)
+            self._cooldown = self.fail_cooldown
+            if self.on_event:
+                self.on_event("fort_build_error", {"index": idx, "ecode": ecode})
+            return
+        if self.remove_fn is not None:
+            self.remove_fn(idx)
+        if self.on_event:
+            self.on_event("fort_built", {"index": idx})
+
+
+@dataclass
 class BuildOrder:
     """Upgrade buildings along a priority order, respecting prereqs and cost.
 
@@ -110,6 +171,7 @@ class BuildOrder:
     sequence: list[int] | None = None
     config: object | None = None
     profile: object = None   # tactics profile: build.order / build.skip
+    pending_forts_source: object = None  # callable -> queued fort cells (yield to them)
     queue_cooldown: int = 24  # back off when the build queue is busy (~2min)
     _pending: object = None  # BuildAction chosen in applies()
     _city: int = 0           # main-city index for construction
@@ -136,6 +198,15 @@ class BuildOrder:
         if self._cooldown > 0:
             self._cooldown -= 1
             return False
+        # A queued Cứ Điểm has priority over normal construction: yield so its
+        # resources aren't spent on other buildings first. Resumes once the queue
+        # is empty (the fort was built or dropped).
+        if self.pending_forts_source is not None:
+            try:
+                if list(self.pending_forts_source() or []):
+                    return False
+            except Exception:
+                pass
         cfg = self._cfg()
         if not cfg:
             return False
@@ -1722,7 +1793,7 @@ class RuleEngine:
 
     @classmethod
     def default(cls, profile: object = None) -> RuleEngine:
-        return cls(rules=[CollectCityOutput(), BuildOrder(profile=profile),
+        return cls(rules=[CollectCityOutput(), FortBuild(), BuildOrder(profile=profile),
                           Recruit(profile=profile),
                           ArmyComposer(profile=profile),
                           HealRouting(),

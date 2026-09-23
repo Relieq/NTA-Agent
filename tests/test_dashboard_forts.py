@@ -33,4 +33,4 @@ def test_read_forts_view_missing_returns_empty(tmp_path):
     assert v == {"owned_count": 0, "owned_cells": [], "accepted": [], "rejected": [],
                  "enemy_cells": [], "enemy_cities": [], "frontier": [], "recommendations": [],
                  "fort_zone": [], "fort_count": 0, "fort_cap": 0,
-                 "threats": [], "threat_summary": {"count": 0}}
+                 "threats": [], "threat_summary": {"count": 0}, "pending": []}

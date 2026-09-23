@@ -209,7 +209,7 @@ def read_forts_view(cfg) -> dict:
         return {"owned_count": 0, "owned_cells": [], "accepted": [], "rejected": [],
                 "enemy_cells": [], "enemy_cities": [], "frontier": [], "recommendations": [],
                 "fort_zone": [], "fort_count": 0, "fort_cap": 0,
-                "threats": [], "threat_summary": {"count": 0}}
+                "threats": [], "threat_summary": {"count": 0}, "pending": []}
     return {"owned_count": data.get("owned_count", 0),
             "owned_cells": data.get("owned_cells") or [],
             "accepted": data.get("accepted") or [],
@@ -222,7 +222,17 @@ def read_forts_view(cfg) -> dict:
             "fort_count": data.get("fort_count", 0),
             "fort_cap": data.get("fort_cap", 0),
             "threats": data.get("threats") or [],
-            "threat_summary": data.get("threat_summary") or {"count": 0}}
+            "threat_summary": data.get("threat_summary") or {"count": 0},
+            "pending": _read_pending_forts(cfg)}
+
+
+def _read_pending_forts(cfg) -> list:
+    """Fort cells queued to build (waiting on resources), as [{index, x, y}]."""
+    from nta_agent.runtime import fort_queue
+    out = []
+    for idx in fort_queue.load(cfg.pending_forts_path):
+        out.append({"index": idx, "x": idx % 600, "y": idx // 600})
+    return out
 
 
 def read_failures(cfg) -> dict:
@@ -455,8 +465,9 @@ class Handler(BaseHTTPRequestHandler):
             self._json(200, recompute_forts(cfg))
             return
         if parsed.path == "/api/forts/build":
-            # User picked an owned cell in the recommended zone -> queue a build_fort
-            # command for the agent (validated against the precomputed zone + cap).
+            # User picked an owned cell in the recommended zone -> enqueue it (validated
+            # against the precomputed zone + cap). The FortBuild rule builds it when
+            # resources allow, holding normal construction until then.
             try:
                 length = int(self.headers.get("Content-Length", "0"))
                 body = json.loads(self.rfile.read(length) or b"{}")
@@ -475,8 +486,10 @@ class Handler(BaseHTTPRequestHandler):
                 self._json(400, {"ok": False,
                                  "error": "ô không nằm trong vùng gợi ý (đất mình, ngoài bán kính 6)"})
                 return
-            append_command(cfg.commands_path, {"action": "build_fort", "index": idx})
-            self._json(200, {"ok": True, "index": idx, "xy": [idx % mw, idx // mw]})
+            from nta_agent.runtime import fort_queue
+            fort_queue.add(cfg.pending_forts_path, idx)   # persistent queue, retried
+            self._json(200, {"ok": True, "index": idx, "xy": [idx % mw, idx // mw],
+                             "queued": True})
             return
         if parsed.path == "/api/chat":
             try:
