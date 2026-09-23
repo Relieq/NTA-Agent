@@ -172,6 +172,14 @@ def run(cfg: RuntimeConfig, *, ticks: int = 0, session=None, engine=None) -> Non
         elif getattr(rule, "name", "") == "army_composer":
             rule.on_event = log.append
             rule.status_sink = _make_comp_status_sink()
+        elif getattr(rule, "name", "") == "fort_build":
+            from nta_agent.runtime import fort_queue
+            rule.pending_source = lambda: fort_queue.load(cfg.pending_forts_path)
+            rule.remove_fn = lambda i: fort_queue.remove(cfg.pending_forts_path, i)
+            rule.on_event = log.append
+        elif getattr(rule, "name", "") == "build_order":
+            from nta_agent.runtime import fort_queue as _fq
+            rule.pending_forts_source = lambda: _fq.load(cfg.pending_forts_path)
 
     def _safe(fn, *a):
         try:

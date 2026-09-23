@@ -2,10 +2,10 @@ import { getJSON, usePolling } from "../api.js";
 const { ref } = window.Vue;
 export default {
  setup(){
-  const f=ref({owned_count:0,fort_zone:[],fort_count:0,fort_cap:0});
+  const f=ref({owned_count:0,fort_zone:[],fort_count:0,fort_cap:0,pending:[]});
   async function load(){ const v=await getJSON("/api/forts");
    if(v) f.value={owned_count:v.owned_count||0, fort_zone:v.fort_zone||[],
-                  fort_count:v.fort_count||0, fort_cap:v.fort_cap||0}; }
+                  fort_count:v.fort_count||0, fort_cap:v.fort_cap||0, pending:v.pending||[]}; }
   usePolling(load, 4000);
   return { f };
  },
@@ -17,5 +17,9 @@ export default {
    Có <b style="color:#d95926">{{ f.fort_zone.length }}</b> ô nằm trong <b>vùng gợi ý xây Cứ Điểm</b>
    (đất mình, ngoài bán kính 6 ô quanh thành). Mở tab <b>Lãnh thổ</b> → bấm 1 ô trong vùng cam
    để agent gửi lệnh xây. Không còn danh sách chấp thuận/từ chối — cứ chọn ô bạn muốn.</div>
+  <div v-if="(f.pending||[]).length" style="margin-top:8px;border-left:3px solid #d98a26;padding-left:8px">
+   <b>⏳ Đang chờ xây ({{ f.pending.length }})</b> — ưu tiên hơn công trình khác, xây khi đủ tài nguyên:
+   <ul style="margin:4px 0;padding-left:18px">
+    <li v-for="p in f.pending" :key="p.index">Ô ({{ p.x }},{{ p.y }})</li></ul></div>
  </div>`
 };

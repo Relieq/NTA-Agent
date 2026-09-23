@@ -107,3 +107,15 @@ def test_build_order_backs_off_on_queue_full_ecode():
     assert rule._cooldown == rule.queue_cooldown
     # and it skips next tick while cooling down
     assert rule.applies(st, act) is False
+
+
+def test_build_order_yields_to_pending_fort():
+    # A queued Cứ Điểm has priority: BuildOrder must yield while the queue is non-empty.
+    st = _state([Building(id=2001, lv=10, uid="m", index=109726)])
+    rule = BuildOrder(sequence=[2016], config=GameConfig.load(),
+                      pending_forts_source=lambda: [331273])
+    assert rule.applies(st, Acts()) is False
+    # queue empty -> resumes normally
+    rule2 = BuildOrder(sequence=[2016], config=GameConfig.load(),
+                       pending_forts_source=list)
+    assert rule2.applies(st, Acts()) is True

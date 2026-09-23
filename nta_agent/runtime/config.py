@@ -63,6 +63,10 @@ class RuntimeConfig:
         return self.log_dir / "health.json"
 
     @property
+    def pending_forts_path(self) -> Path:
+        return self.log_dir / "pending_forts.json"
+
+    @property
     def errors_path(self) -> Path:
         return self.log_dir / "errors.jsonl"
 
