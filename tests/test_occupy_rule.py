@@ -128,6 +128,40 @@ def test_occupy_rule_spiral_prefers_least_exposed():
     assert act.calls[0][1] == center - 1  # spiral chose the least-exposed (1-neighbour) cell
 
 
+def test_expansion_breaks_ties_toward_nearest_cell():
+    """Two winnable cells tie on the spiral key (owned_neighbors=1, loss=0). The
+    ranking MUST break the tie toward the NEAREST cell — otherwise it picks by
+    arbitrary discovery order and can chase a far cell (which then needs bridging
+    and loops), starving near 0-loss cells. Regression for the observed skip bug.
+    """
+    from types import SimpleNamespace
+
+    from nta_agent.execution.advisor import Plan
+    from nta_agent.execution.occupy_planner import Candidate
+
+    center = 182 * W + 526
+    near = center - 1          # dist 1 from the army at `center`
+    far = center + 15          # dist 15 from the army
+    cands = [
+        Candidate(index=far, defenders=[{"id": 1}], hp=(3, 3), land_id=0, owned_neighbors=1),
+        Candidate(index=near, defenders=[{"id": 1}], hp=(3, 3), land_id=0, owned_neighbors=1),
+    ]  # far listed FIRST -> arbitrary discovery order favours it without a distance tiebreak
+
+    def plans_for(i):
+        return [Plan(armies=[{"uid": "A", "index": center}], target=i, label="x", prediction=None)]
+
+    def predict(plan):
+        return BattlePrediction(win=True, my_power=10, enemy_power=1, ratio=10,
+                                loss_percent=0.0, loss_lv=1)
+
+    prof = SimpleNamespace(occupy={"expansion": "spiral", "max_loss": 100},
+                           army={"group": [], "presets": {}, "active": ""})
+    rule = OccupyCell(profile=prof)
+    plan = rule._expansion_select(cands, plans_for, predict, "spiral")
+    assert plan is not None
+    assert plan.target == near  # nearest of the tied winnable cells, not the far one
+
+
 def test_occupy_rule_defends_contested_border_first():
     # A weak far cell (high loot) vs a weak cell next to an enemy (contested).
     # With a threat present, defense wins: claim the cell adjacent to the enemy.

@@ -377,11 +377,17 @@ class OccupyCell:
             key = sort_key(mode, owned_neighbors=c.owned_neighbors,
                            land_value=land_value(cfg, c.land_id) if cfg else 0,
                            loss_percent=plan.prediction.loss_percent)
-            scored.append((key, plan))
+            # Final tiebreak: prefer the NEAREST cell. The preset key (spiral:
+            # exposure, octopus: land value) still dominates, but among cells that
+            # tie on it — very common when many 0-loss cells share owned_neighbors —
+            # the nearest is chosen. Without this the pick fell to arbitrary
+            # discovery order and could chase a far cell that then loops on bridging,
+            # starving near 0-loss cells (observed skip bug).
+            scored.append((key, self._plan_dist(plan), plan))
         if not scored:
             return None
-        scored.sort(key=lambda t: t[0])
-        return scored[0][1]
+        scored.sort(key=lambda t: (t[0], t[1]))
+        return scored[0][2]
 
     def _select_idle(self, actions, i, locked):
         """Idle, unlocked armies that can attack cell ``i``. Returns [] when the cell
