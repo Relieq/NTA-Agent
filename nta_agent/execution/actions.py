@@ -74,8 +74,16 @@ class Actions:
         return reply
 
     def add_build(self, index: int, build_id: int) -> dict:
-        """Construct a new building; the server auto-places it (GAME_HD_AddAreaBuild)."""
+        """Construct a new IN-CITY building (type 1); server auto-places it
+        (GAME_HD_AddAreaBuild). Fort/Cứ Điểm (ui=BuildCity) uses create_city instead."""
         return self.session.request("game/HD_AddAreaBuild",
+                                    {"index": int(index), "id": int(build_id)})
+
+    def create_city(self, index: int, build_id: int) -> dict:
+        """Create a city-type structure at an owned cell — used for a Cứ Điểm / fort
+        (build 2102, ui=BuildCity). AddAreaBuild rejects these with ecode.500009
+        ("Kiến trúc không tồn tại"); the game builds them via GAME_HD_CreateCity."""
+        return self.session.request("game/HD_CreateCity",
                                     {"index": int(index), "id": int(build_id)})
 
     # ---- reads ----------------------------------------------------------- #

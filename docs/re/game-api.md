@@ -106,7 +106,8 @@ Mô hình chi phí rương/loot: `execution/treasure_model.py`, cơ chế: [trea
 | Endpoint | Trạng thái | Request | Ghi chú |
 |---|---|---|---|
 | `HD_ClaimCityOutput` | ✅ | `{index}` | Thu sản lượng thành. `actions.collect_city_output`. |
-| `HD_AddAreaBuild` | ✅ | `{index, id}` | Xây công trình mới (server tự chọn vị trí). `actions.add_build`. |
+| `HD_AddAreaBuild` | ✅ | `{index, id}` | Xây công trình **trong thành** (type 1). `actions.add_build`. **Từ chối Cứ Điểm bằng ecode.500009** ("Kiến trúc không tồn tại"). |
+| `HD_CreateCity` | ✅ | `{index, id}` | Tạo **thành/Cứ Điểm** (fort, build 2102, `ui=BuildCity`, type 2) tại ô sở hữu. `actions.create_city`; lệnh `build_fort` dùng cái này (KHÔNG phải AddAreaBuild). |
 | `HD_UpAreaBuild` | ✅ | `{index, uid?}` | Nâng cấp công trình. `actions.upgrade_build`. |
 | `HD_MoveAreaBuild` | ❓ | — | Di dời công trình. |
 | `HD_CancelBT` / `HD_InDoneBt` / `HD_GetBTCityQueues` | ❓ | — | Huỷ / hoàn tất tức thì / đọc hàng đợi xây (BuildTask). |
