@@ -170,6 +170,25 @@ def sanitize_edits(edits: dict, profile, valid_army_uids, valid_build_ids=None) 
     return out
 
 
+def sanitize_renames(edits, valid_army_uids) -> list:
+    """Validate chat-proposed army renames into [{uid, name}] ready for the command
+    queue. Drops unknown uids and names that break the client rule (empty / >12 /
+    newline). On a duplicate uid the LAST rename wins."""
+    raw = edits.get("army_renames") if isinstance(edits, dict) else None
+    if not isinstance(raw, list):
+        return []
+    valid = {str(u) for u in (valid_army_uids or ())}
+    by_uid: dict = {}
+    for r in raw:
+        if not isinstance(r, dict):
+            continue
+        uid = str(r.get("uid", ""))
+        name = str(r.get("name", "")).strip()
+        if uid in valid and name and len(name) <= 12 and "\n" not in name:
+            by_uid[uid] = name        # last write wins
+    return [{"uid": u, "name": n} for u, n in by_uid.items()]
+
+
 def _safe_lever_edits(lever, valid_army_uids, valid_build_ids) -> dict:
     """Run a lesson's proposed lever edits through the normal edit guard, then drop
     the human-owned parts (build, max_loss, army.group/roles/...) so a lesson can

@@ -10,7 +10,13 @@ export default {
    const o=await postJSON("/api/chat",{message:msg});
    if(!o){ say("Brain","⚠️ lỗi mạng"); }
    else if(!o.ok){ say("Brain","⚠️ "+(o.error||"lỗi")); }
-   else{ say("Brain",(o.rationale||"đã cập nhật")+" — "+JSON.stringify(o.applied));
+   else if(o.question){ say("Brain","❓ "+o.question); }   // hỏi lại khi mơ hồ
+   else{
+    const parts=[];
+    if(o.rationale) parts.push(o.rationale);
+    if((o.renames||[]).length) parts.push("Đổi tên: "+o.renames.map(r=>r.uid+"→"+r.name).join(", ")+" (đội thực thi khi agent chạy)");
+    if(o.applied && Object.keys(o.applied).length) parts.push(JSON.stringify(o.applied));
+    say("Brain", parts.join(" — ")||"đã ghi nhận");
     tactics.value={active:o.active,presets:o.presets,notes:o.notes}; }
    busy.value=false;
   }

@@ -249,6 +249,20 @@ class Actions:
         reply = self.session.request("game/HD_GetPlayerArmys", {})
         return reply.get("list", []) or []
 
+    def rename_army(self, index: int, army_uid: str, name: str) -> dict:
+        """Rename an army (GAME_HD_ModifyAmryName — the game's own misspelling).
+
+        The client enforces name length <= 12 and no newline (toast.text_len_limit_name);
+        mirror that here so we never send a request the server will reject."""
+        name = str(name).strip()
+        if not name:
+            raise ValueError("army name is empty")
+        if len(name) > 12 or "\n" in name:
+            raise ValueError("army name too long (>12) or has a newline: %r" % name)
+        return self.session.request(
+            "game/HD_ModifyAmryName",
+            {"index": int(index), "armyUid": str(army_uid), "name": name})
+
     # ---- battle records (read-only ground truth) ------------------------ #
     def get_battle_records_list(self) -> list[dict]:
         """List the player's stored battles (GAME_HD_GetBattleRecordsList)."""

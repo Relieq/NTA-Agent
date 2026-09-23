@@ -120,7 +120,8 @@ Mô hình chi phí rương/loot: `execution/treasure_model.py`, cơ chế: [trea
 | `HD_DrillPawn` | ✅ | `{index, buildUid, id, armyUid, armyName}` | Tuyển lính. `armyUid` rỗng + `armyName` → tạo đội mới. `actions.drill_pawn`. |
 | `HD_ChangeConfigPawnEquip` | ✅ | `{id, equipUid, skinId, attackSpeed}` | Gắn trang bị cho pawn config. `actions.change_pawn_equip`. |
 | `HD_CancelDrillPawn` / `HD_DismissPawn` / `HD_DismissArmy` | ❓ | — | Huỷ tuyển / giải tán lính / giải tán đội. |
-| `HD_ChangePawnArmy` / `HD_CheckArmyName` / `HD_ModifyAmryName` | ❓ | — | Chuyển đội / kiểm tên / đổi tên. |
+| `HD_ChangePawnArmy` / `HD_CheckArmyName` | ❓ | — | Chuyển đội / kiểm tên (client validate). |
+| `HD_ModifyAmryName` | ✅ | `{index, armyUid, name}` | Đổi tên đội (tên ≤ 12 ký tự, không newline — client chặn). `actions.rename_army`; chat tool đổi tên qua hàng đợi lệnh. |
 | `HD_ChangePawnAttr` / `HD_ChangePawnPortrayal` / `HD_UsePawnSkin` | ❓ | — | Đổi thuộc tính / hoạ tượng / skin pawn. |
 | `HD_PawnLving` | 🔶 | `{index, auid, puid}` | **Nâng PHỔ THÔNG** = tốn **sách exp (exp_book)**, có **hàng đợi/thời gian** (`pawnLvingQueues`), **KHÓA đội** (state LVING, không điều động). Reply: `queues`+`army`. |
 | `HD_UseUpScrollUpPawnLv` | 🔶 | `{index, armyUid, uid}` | **Nâng TRỰC TIẾP** = tốn **quyển trục (up_scroll)**, **tức thì**, KHÔNG khóa đội / không chờ. |

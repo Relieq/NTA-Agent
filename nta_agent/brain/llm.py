@@ -88,6 +88,21 @@ _SYSTEM = (
 )
 
 
+_CHAT_TOOLS = (
+    "You are now answering the PLAYER's direct chat request (human-in-the-loop), so "
+    "besides profile edits you MAY perform actions on their behalf, in the SAME JSON:\n"
+    "- army_renames: [{\"uid\":\"<army uid>\",\"name\":\"<new name>\"}] to rename armies. "
+    "Name must be <= 12 characters and contain no newline. Identify each army from "
+    "GAME STATE armies (uid, name, composition) — pawn 3206 = rìu khiên (tank), pawn "
+    "3305 = IMP — and from army.strike_target (the 5-army strike group).\n"
+    "- question: a string to ASK the player back when you CANNOT confidently identify "
+    "which army/armies they mean, or which name maps to which team. When you set "
+    "question, do NOT guess renames — leave army_renames out.\n"
+    "Only touch the armies the request refers to; never rename others. Prefer asking "
+    "over guessing when the mapping is ambiguous."
+)
+
+
 def _parse_json(text: str) -> dict:
     t = (text or "").strip()
     if t.startswith("```"):
@@ -114,6 +129,10 @@ def propose(digest: dict, profile, chat=None, instruction=None, history=None) ->
         if isinstance(h, dict) and h.get("role") and h.get("content"):
             messages.append({"role": h["role"], "content": str(h["content"])})
     if instruction:
+        # Chat mode (human-in-the-loop): expose action tools the autonomous loop
+        # must NOT have. The brain loop calls propose() WITHOUT an instruction, so
+        # it never sees these — actions stay human-initiated.
+        messages.append({"role": "system", "content": _CHAT_TOOLS})
         messages.append({"role": "user", "content": "INSTRUCTION: " + str(instruction)})
     return _parse_json(chat(messages))
 
