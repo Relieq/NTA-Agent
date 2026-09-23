@@ -96,8 +96,10 @@ class DecisionService:
             return
         if action == "build_fort":
             # User picked an owned cell in the fort zone -> build a Cứ Điểm there.
+            # A fort is a city-type structure (ui=BuildCity): use CreateCity, NOT
+            # AddAreaBuild (which rejects it with ecode.500009).
             from nta_agent.runtime.fort_service import FORT_BUILD_ID
-            self.actions.add_build(int(cmd["index"]), FORT_BUILD_ID)
+            self.actions.create_city(int(cmd["index"]), FORT_BUILD_ID)
             return
         if action == "rename_army":
             # Chat action tool (human-initiated): rename an army via the hands.

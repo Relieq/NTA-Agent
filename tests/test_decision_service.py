@@ -106,12 +106,13 @@ def test_profile_edit_command_applies_to_live_profile(tmp_path):
     assert prof.occupy["max_loss"] == 9
 
 
-def test_build_fort_command_calls_add_build(tmp_path):
+def test_build_fort_command_calls_create_city(tmp_path):
+    # A Cứ Điểm is a city-type structure -> CreateCity, not AddAreaBuild (ecode.500009).
     acts = FakeActions()
-    acts.add_build = lambda index, build_id: acts.calls.append(("add_build", index, build_id))
+    acts.create_city = lambda index, build_id: acts.calls.append(("create_city", index, build_id))
     svc = DecisionService(acts, FakeConfig(), _cfg(tmp_path))
     svc._execute({"action": "build_fort", "index": 123456})
-    assert acts.calls == [("add_build", 123456, 2102)]  # FORT_BUILD_ID
+    assert acts.calls == [("create_city", 123456, 2102)]  # FORT_BUILD_ID
 
 
 def test_tick_executes_rename_army(tmp_path):
