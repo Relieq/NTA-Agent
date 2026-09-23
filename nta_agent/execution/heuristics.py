@@ -1756,7 +1756,13 @@ class ArmyComposer:
                 elif op == "recruit":
                     bu = actions.building_uid(self.barracks_id)
                     if bu:  # drill ONE pawn/tick into the short army; the queue paces the rest
-                        actions.drill_pawn(bu, a["pawn_id"], army_uid=a.get("army") or "")
+                        au = a.get("army") or ""
+                        # No strike army of this type has room -> drill into a NEW army,
+                        # which needs a real name: an empty one is rejected with
+                        # ecode.500070 "special characters" (the composer then could
+                        # never create strike armies and deadlocked).
+                        name = "" if au else _unused_army_name(list(armies.values()))
+                        actions.drill_pawn(bu, a["pawn_id"], army_uid=au, army_name=name)
             except Exception as e:
                 ecode = str(e).split("ecode.")[-1][:6] if "ecode." in str(e) else ""
                 # Not enough resources (500012) / recruit-queue full (500018): can't make
