@@ -1534,13 +1534,16 @@ class Logistics:
 
 @dataclass
 class Forge:
-    """Craft (materialize) unlocked COMMON equipment so it can be equipped.
+    """Craft unlocked COMMON equipment, then RECAST user-targeted equips.
 
-    A StudySelect-chosen equip sits in ``player.equipSlots`` as ``{id, lv}`` but is
-    unusable until FORGED — forging uid ``"<id>_<lv>"`` (engine EquipSlotObj.uid)
-    crafts it into ``player.equips``. We auto-craft common (non-pawn-locked) equips
-    when their multi-resource forge cost is affordable; specialized equips + recast
-    tuning stay the human's call. One forge at a time (server: ecode.500058).
+    1. Craft: a StudySelect-chosen equip sits in ``player.equipSlots`` as ``{id,
+       lv}`` but is unusable until FORGED — forging uid ``"<id>_<lv>"`` (engine
+       EquipSlotObj.uid) crafts it into ``player.equips``.
+    2. Recast: for equips the user targeted on the dashboard (``targets_source`` ->
+       ``{uid: {threshold, budget}}``), re-forge until the EFFECT rolls reach the
+       threshold or the item's IRON budget runs out (``spend_fn`` debits it). No
+       RestoreForge. Specialized (pawn-locked) equips are never touched.
+    One forge at a time (server: ecode.500058; ``currForgeEquip`` = busy).
     """
     name: str = "forge"
     fail_cooldown: int = 8
@@ -1549,8 +1552,11 @@ class Forge:
     config: object = None
     profile: object = None
     on_event: object = None
+    targets_source: object = None  # callable -> {equip_uid: {threshold, budget}}
+    spend_fn: object = None        # spend_fn(uid, iron): debit that item's iron budget
     _cooldown: int = 0
     _pending: str = ""   # equip uid to forge
+    _recast: object = None  # RecastDecision when _pending is a recast
 
     FORGE_BUSY_ECODE = "ecode.500058"  # a forge is already running
     LOW_RES_ECODE = "ecode.500012"     # not enough resources (iron) yet
@@ -1590,18 +1596,37 @@ class Forge:
                "gold": state.resources.gold}
         for c in cands:
             if affordable(c["cost"], res):
-                self._pending = c["uid"]
+                self._pending, self._recast = c["uid"], None
                 if self.on_event:
                     self.on_event("forge", {"uid": c["uid"], "id": c["id"], "cost": c["cost"]})
                 return True
-        return False
+        # 2) recast user-targeted equips toward their effect-quality threshold
+        if self.targets_source is None:
+            return False
+        try:
+            targets = self.targets_source() or {}
+        except Exception:
+            targets = {}
+        from nta_agent.execution.forge import next_recast
+        d = next_recast(equips, lambda i: cfg.table("equipBase").get(i),
+                        lambda t: cfg.table("equipEffect").get(t), targets, res)
+        if d is None:
+            return False
+        self._pending, self._recast = d.uid, d
+        if self.on_event:
+            self.on_event("forge_recast", {"uid": d.uid, "quality": round(d.quality, 3),
+                                           "iron": d.iron, "free": d.free})
+        return True
 
     def act(self, actions: Actions) -> None:
         uid, self._pending = self._pending, ""
+        recast, self._recast = self._recast, None
         if not uid:
             return
         try:
             actions.forge_equip(uid)
+            if recast is not None and recast.iron and self.spend_fn is not None:
+                self.spend_fn(uid, recast.iron)  # debit this item's iron budget
             # A forge takes time and its in-progress state isn't synced to us, so
             # wait it out instead of re-forging (which would hit ecode.500058).
             self._cooldown = self.forge_cooldown

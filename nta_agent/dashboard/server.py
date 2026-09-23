@@ -263,6 +263,41 @@ def read_health(cfg) -> dict:
                 "degraded": False}
 
 
+def read_forge_view(cfg) -> dict:
+    """Recast panel: agent-written forge.json rows, with targets re-read FRESH from
+    forge_targets.json so an edit shows immediately (not on the next agent tick)."""
+    from nta_agent.runtime import forge_targets
+    try:
+        data = json.loads(Path(cfg.forge_view_path).read_text(encoding="utf-8"))
+    except (OSError, ValueError):
+        data = {}
+    targets = forge_targets.load(cfg.forge_targets_path)
+    equips = [{**e, "target": targets.get(str(e.get("uid")))}
+              for e in (data.get("equips") or []) if isinstance(e, dict)]
+    return {"equips": equips, "busy": data.get("busy"), "iron": data.get("iron", 0)}
+
+
+def set_forge_target(cfg, body: dict) -> dict:
+    """Set/remove one equip's recast target: {uid, threshold_pct 0..100, budget iron}
+    or {uid, remove: true}."""
+    from nta_agent.runtime import forge_targets
+    uid = str((body or {}).get("uid") or "").strip()
+    if not uid:
+        return {"ok": False, "error": "thiếu uid"}
+    if body.get("remove"):
+        forge_targets.remove(cfg.forge_targets_path, uid)
+        return {"ok": True}
+    try:
+        pct = float(body.get("threshold_pct"))
+        budget = int(body.get("budget"))
+    except (TypeError, ValueError):
+        return {"ok": False, "error": "ngưỡng/ngân sách không hợp lệ"}
+    if not 0 <= pct <= 100 or budget < 0:
+        return {"ok": False, "error": "ngưỡng 0–100%, ngân sách ≥ 0"}
+    forge_targets.set_target(cfg.forge_targets_path, uid, pct / 100.0, budget)
+    return {"ok": True}
+
+
 def read_alerts(cfg) -> dict:
     """Early-warning state (alerts.json): capture / incoming enemy marches / approach."""
     try:
@@ -419,6 +454,8 @@ class Handler(BaseHTTPRequestHandler):
             self._json(200, read_health(cfg))
         elif parsed.path == "/api/alerts":
             self._json(200, read_alerts(cfg))
+        elif parsed.path == "/api/forge":
+            self._json(200, read_forge_view(cfg))
         elif parsed.path == "/api/agent/status":
             self._json(200, self.server.supervisor.status())
         elif parsed.path.startswith("/static/"):
@@ -474,6 +511,16 @@ class Handler(BaseHTTPRequestHandler):
             from nta_agent.runtime import fort_decisions
             fort_decisions.update(cfg.fort_decisions_path, idx, decision)
             self._json(200, recompute_forts(cfg))
+            return
+        if parsed.path == "/api/forge/target":
+            try:
+                length = int(self.headers.get("Content-Length", "0"))
+                body = json.loads(self.rfile.read(length) or b"{}")
+            except (ValueError, TypeError):
+                self._json(400, {"ok": False, "error": "bad json"})
+                return
+            r = set_forge_target(cfg, body if isinstance(body, dict) else {})
+            self._json(200 if r["ok"] else 400, r)
             return
         if parsed.path == "/api/forts/build":
             # User picked an owned cell in the recommended zone -> enqueue it (validated

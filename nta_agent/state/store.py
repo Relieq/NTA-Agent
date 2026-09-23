@@ -317,6 +317,19 @@ def apply_player_update(state: GameState, item: dict[str, Any]) -> None:
     bld = item.get("data_5")
     if isinstance(bld, dict):
         _apply_build_update(state, bld)
+    # FORGE_EQUIP_RET (34): a forge/recast finished -> engine clears currForgeEquip
+    # and upserts the equip (new attrs / recastCount / nextForgeFree).
+    eq = item.get("data_34")
+    if item.get("type") == 34 and isinstance(eq, dict) and eq.get("uid"):
+        player = state.raw.setdefault("player", {})
+        player["currForgeEquip"] = None
+        equips = player.setdefault("equips", [])
+        for i, e in enumerate(equips):
+            if isinstance(e, dict) and str(e.get("uid")) == str(eq["uid"]):
+                equips[i] = {**e, **eq}
+                break
+        else:
+            equips.append(dict(eq))
 
 
 def _apply_build_update(state: GameState, info: dict[str, Any]) -> None:

@@ -244,6 +244,16 @@ class Actions:
         attrs + iron + nextForgeFree/recastCount."""
         reply = self.session.request("game/HD_ForgeEquip", {"uid": str(equip_uid)})
         self._apply_result(reply)
+        # Mirror the engine: the reply's currForgeEquip marks the forge busy right
+        # away (FORGE_EQUIP_RET clears it on completion) and a recast re-rolls the
+        # equip's nextForgeFree chance.
+        player = self._state.raw.setdefault("player", {})
+        if isinstance(reply.get("currForgeEquip"), dict):
+            player["currForgeEquip"] = reply["currForgeEquip"]
+        if "nextForgeFree" in reply:
+            for e in player.get("equips") or []:
+                if isinstance(e, dict) and str(e.get("uid")) == str(equip_uid):
+                    e["nextForgeFree"] = bool(reply["nextForgeFree"])
         return reply
 
     def lock_equip_effect(self, equip_uid: str, effect: int) -> dict:
