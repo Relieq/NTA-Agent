@@ -46,27 +46,71 @@ def _chat_state():
                            resources=SimpleNamespace(**{k: 0 for k in _RES_KEYS}), raw={})
 
 
+def _pawn_names(cfg) -> dict:
+    """{pawn_id_str: Vietnamese name} from pawnText — so the LLM sees readable troop
+    types instead of raw ids (better input => it picks the right army)."""
+    try:
+        from nta_agent.data.config import GameConfig
+        rows = GameConfig.load().table("pawnText")
+    except Exception:
+        return {}
+    out = {}
+    for key, row in rows.items():
+        s = str(key)
+        if s.startswith("name_") and isinstance(row, dict):
+            out[s[len("name_"):]] = row.get("vi") or row.get("en") or s
+    return out
+
+
+def _troops_label(comp: dict, names: dict) -> str:
+    """'6× Lính Trường Thương, 3× Lính Cung Kỵ' from a composition dict."""
+    parts = sorted(comp.items(), key=lambda kv: -kv[1])
+    return ", ".join(f"{n}× {names.get(str(pid), pid)}" for pid, n in parts)
+
+
+def _armies_from_disk(cfg) -> list:
+    try:
+        return json.loads(Path(cfg.armies_path).read_text(encoding="utf-8"))
+    except (OSError, ValueError):
+        return []
+
+
+def _dominant_by_uid(armies) -> dict:
+    from collections import Counter
+    out = {}
+    for a in armies:
+        comp = Counter(str(p.get("id")) for p in (a.get("pawns") or []))
+        if comp:
+            out[str(a.get("uid"))] = max(comp, key=comp.get)
+    return out
+
+
 def handle_chat(cfg, message, *, history=None, propose=None):
-    """Turn a chat instruction into a guarded profile edit: LLM -> sanitize ->
-    apply -> persist profile.json -> queue a profile_edit command. Pure of HTTP."""
+    """LLM chat turn: apply profile edits immediately, and PROPOSE (not execute) any
+    army renames the player asked for — renames need explicit confirmation first
+    (see confirm_renames). Pure of HTTP."""
+    from collections import Counter
+
     from nta_agent.brain import llm as _llm
     from nta_agent.brain.digest import digest
-    from nta_agent.brain.guard import sanitize_edits
+    from nta_agent.brain.guard import sanitize_edits, sanitize_renames
     from nta_agent.brain.llm import BrainUnavailable
     from nta_agent.execution.profile import apply_edits, load_profile, save_profile
     propose = propose or _llm.propose
     profile = load_profile(cfg.profile_path)
-    try:
-        armies = json.loads(Path(cfg.armies_path).read_text(encoding="utf-8"))
-    except (OSError, ValueError):
-        armies = []
+    armies = _armies_from_disk(cfg)
     valid = {str(a.get("uid")) for a in armies}
     try:
         from nta_agent.data.config import GameConfig
         valid_build = set(GameConfig.load().in_city_build_ids())
     except Exception:
         valid_build = None
+    names = _pawn_names(cfg)
     dg = digest(_chat_state(), profile, armies)
+    # Better INPUT: label each army's troops by pawn NAME so the LLM can match a
+    # description ("đội rìu khiên") to the right uid without knowing pawn ids.
+    for row in dg.get("armies", []):
+        row["troops"] = _troops_label(row.get("composition") or {}, names)
     try:
         edits = propose(dg, profile, instruction=message, history=history or [])
     except BrainUnavailable as e:
@@ -78,38 +122,38 @@ def handle_chat(cfg, message, *, history=None, propose=None):
         apply_edits(profile, clean)
         save_profile(profile, cfg.profile_path)
         append_command(cfg.commands_path, {"action": "profile_edit", "edits": clean})
-    # Chat action tools (human-initiated) — executed by the hands via the command
-    # queue (the dashboard has no game session; the agent does). Rename armies now;
-    # more tools plug in the same way.
-    from collections import Counter
-
-    from nta_agent.brain.guard import sanitize_renames
-    from nta_agent.execution.rename_resolver import resolve_rename_plan
-    resolver_q = ""
-    plan = edits.get("rename_plan") if isinstance(edits, dict) else None
-    if isinstance(plan, list) and plan:
-        # Primary path: the hands resolve which army each name goes to, by PURE
-        # composition, and ask back on ambiguity (reliable regardless of the model).
-        renames, resolver_q = resolve_rename_plan(plan, armies)
-    else:
-        # Fallback: explicit uid renames (guard-verified against composition).
-        dominant_by_uid = {}
-        for a in armies:
-            comp = Counter(str(p.get("id")) for p in (a.get("pawns") or []))
-            if comp:
-                dominant_by_uid[str(a.get("uid"))] = max(comp, key=comp.get)
-        renames = sanitize_renames(edits, valid, dominant_by_uid)
-    idx_by_uid = {str(a.get("uid")): int(a.get("index", 0) or 0) for a in armies}
+    # Renames: the LLM PICKS the armies (by uid); we validate but DO NOT execute —
+    # the player confirms first (confirm_renames queues the commands).
+    renames = sanitize_renames(edits, valid, _dominant_by_uid(armies))
+    by_uid = {str(a.get("uid")): a for a in armies}
+    proposal = []
     for r in renames:
-        append_command(cfg.commands_path, {"action": "rename_army",
-                                           "index": idx_by_uid.get(r["uid"], 0),
-                                           "uid": r["uid"], "name": r["name"]})
-    question = resolver_q or str((edits or {}).get("question", "")).strip()
+        a = by_uid.get(r["uid"], {})
+        comp = Counter(str(p.get("id")) for p in (a.get("pawns") or []))
+        proposal.append({"uid": r["uid"], "name": r["name"],
+                         "current_name": a.get("name", ""),
+                         "troops": _troops_label(dict(comp), names)})
+    question = str((edits or {}).get("question", "")).strip()
     return {"ok": True, "applied": clean, "rationale": (edits or {}).get("rationale", ""),
-            "renames": renames, "question": question,
+            "renames": proposal, "needs_confirm": bool(proposal), "question": question,
             "active": profile.army.get("active", ""),
             "presets": list(profile.army.get("presets") or {}),
             "notes": profile.notes}
+
+
+def confirm_renames(cfg, renames):
+    """Execute confirmed renames: re-validate against the CURRENT armies, then queue
+    the rename_army commands for the hands. Pure of HTTP."""
+    from nta_agent.brain.guard import sanitize_renames
+    armies = _armies_from_disk(cfg)
+    valid = {str(a.get("uid")) for a in armies}
+    clean = sanitize_renames({"army_renames": renames}, valid, _dominant_by_uid(armies))
+    idx_by_uid = {str(a.get("uid")): int(a.get("index", 0) or 0) for a in armies}
+    for r in clean:
+        append_command(cfg.commands_path, {"action": "rename_army",
+                                           "index": idx_by_uid.get(r["uid"], 0),
+                                           "uid": r["uid"], "name": r["name"]})
+    return {"ok": True, "queued": clean}
 
 
 def _valid_build_ids():
@@ -449,6 +493,16 @@ class Handler(BaseHTTPRequestHandler):
             out = handle_chat(cfg, msg, history=hist)
             self.server.chat_history = (hist + [{"role": "user", "content": msg}])[-6:]
             self._json(200 if out.get("ok") else 503, out)
+            return
+        if parsed.path == "/api/chat/confirm":
+            try:
+                length = int(self.headers.get("Content-Length", "0"))
+                body = json.loads(self.rfile.read(length) or b"{}")
+                renames = body.get("renames") or []
+            except (ValueError, TypeError):
+                self._json(400, {"ok": False, "error": "bad json"})
+                return
+            self._json(200, confirm_renames(cfg, renames))
             return
         if parsed.path == "/api/profile":
             try:
