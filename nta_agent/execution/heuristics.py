@@ -23,6 +23,17 @@ class Rule(Protocol):
     def act(self, actions: Actions) -> None: ...
 
 
+def _forts_from(source) -> list | None:
+    """Fort cell indices from a rule's ``forts_source`` (chunk-decoded built forts),
+    or None to fall back to ``fortAutoSupports``. Best-effort: never raises."""
+    if source is None:
+        return None
+    try:
+        return list(source() or [])
+    except Exception:
+        return None
+
+
 def _record_res_block(rule, resource: str | None) -> None:
     """Report a resource-shortage back-off to the failure ledger (F2/brain).
 
@@ -1163,6 +1174,7 @@ class HealRouting:
     max_route_per_tick: int = 1
     on_event: object = None
     locked_source: object = None  # callable -> army-uid set the ArmyComposer owns (skip them)
+    forts_source: object = None   # callable -> built-fort cell indices (chunk decode)
     _cooldown: int = 0
     _pending: object = None
 
@@ -1188,7 +1200,7 @@ class HealRouting:
             if locked:
                 armies = [a for a in armies if str(a.get("uid")) not in locked]
         self._cooldown = self.check_every
-        terr = build_territory(state)
+        terr = build_territory(state, forts=_forts_from(self.forts_source))
         nodes = {terr.main_city} | {f.index for f in terr.forts}
         occupancy: dict[int, int] = {}
         for a in armies:
@@ -1417,6 +1429,7 @@ class Logistics:
     on_event: object = None
     locked_source: object = None  # callable -> army-uid set the ArmyComposer owns (skip them)
     owned_source: object = None   # callable -> owned cell-index set (drop off-territory redeploys)
+    forts_source: object = None   # callable -> built-fort cell indices (chunk decode)
     _cooldown: int = 0
     _pending: object = None   # ("plan", LogisticsAction) | ("redeploy", army, target)
 
@@ -1438,7 +1451,7 @@ class Logistics:
             return False
         from nta_agent.execution.logistics import plan_logistics, ready_armies
         from nta_agent.execution.territory import build_territory
-        terr = build_territory(state)
+        terr = build_territory(state, forts=_forts_from(self.forts_source))
         armies = actions.get_player_armys()
         # Never touch armies the ArmyComposer is arranging (its lock) — don't
         # consolidate or redeploy a strike army out from under the composer.

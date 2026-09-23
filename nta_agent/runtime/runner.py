@@ -111,15 +111,24 @@ def run(cfg: RuntimeConfig, *, ticks: int = 0, session=None, engine=None) -> Non
             return set()
         return {int(y) * 600 + int(x) for x, y in (data.get("enemy_cells") or [])}
 
+    def _forts_from_json():
+        # Built-fort cell indices from the (throttled) FortService output — detected
+        # from the map-chunk city decode (cityType==2), no extra request.
+        try:
+            data = json.loads(cfg.forts_path.read_text(encoding="utf-8"))
+        except Exception:
+            return []
+        return [int(y) * 600 + int(x) for x, y in (data.get("forts") or [])]
+
     def _territory_from_forts():
-        # (owned cell indices, speed-zone centers = main-city block + forts) for
-        # bridging — from the throttled FortService output, no extra request.
+        # (owned cell indices, speed-zone centers = main-city block + built forts)
+        # for bridging — from the throttled FortService output, no extra request.
         try:
             data = json.loads(cfg.forts_path.read_text(encoding="utf-8"))
         except Exception:
             return set(), []
         owned = {int(y) * 600 + int(x) for x, y in (data.get("owned_cells") or [])}
-        forts = [int(y) * 600 + int(x) for x, y in (data.get("accepted") or [])]
+        forts = _forts_from_json()
         main = int(getattr(session.state, "main_city_index", 0) or 0)
         centers = ([main, main + 1, main + 600, main + 601] if main else []) + forts
         return owned, centers
@@ -166,6 +175,10 @@ def run(cfg: RuntimeConfig, *, ticks: int = 0, session=None, engine=None) -> Non
             # every rule that moves/fills armies must skip the ones the composer owns
             if _composer is not None:
                 rule.locked_source = lambda: getattr(_composer, "locked_uids", set())
+            if getattr(rule, "name", "") in ("logistics", "heal_routing"):
+                # treat built forts as heal/relay nodes (fortAutoSupports is empty
+                # for a freshly built fort; detect them from the chunk city decode)
+                rule.forts_source = _forts_from_json
             if getattr(rule, "name", "") == "logistics":
                 # drop redeploys to off-territory cells (ecode.500039)
                 rule.owned_source = lambda: _territory_from_forts()[0]

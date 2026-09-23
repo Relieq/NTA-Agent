@@ -112,10 +112,24 @@ class GameConfig:
         return self.table("buildBase").get(build_id)
 
     def max_count(self, build_id: int) -> int:
-        """Max instances allowed of a building (abs(bt_count); 0/unknown → 1)."""
+        """Max instances allowed of a building (abs(bt_count); 0/unknown → 1).
+
+        City-type structures (Cứ Điểm 2102 etc.) carry bt_count 0 in buildBase —
+        their real cap lives in the ``city`` table (e.g. 2102 → 20), so fall back
+        to it when buildBase gives nothing.
+        """
         row = self.build_base(build_id)
         n = abs(int(row.get("bt_count", 0))) if row else 0
+        if not n:
+            crow = self.table("city").get(build_id) if self._has_table("city") else None
+            if crow:
+                n = abs(int(crow.get("bt_count", 0) or 0))
         return n or 1
+
+    def _has_table(self, name: str) -> bool:
+        if name in self._tables:
+            return True
+        return (self.config_dir / f"{name}.json").exists()
 
     @staticmethod
     def _build_in_mode(row: dict, room_type: int | None) -> bool:
