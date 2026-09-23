@@ -208,7 +208,7 @@ def read_forts_view(cfg) -> dict:
     except (OSError, ValueError):
         return {"owned_count": 0, "owned_cells": [], "accepted": [], "rejected": [],
                 "enemy_cells": [], "enemy_cities": [], "frontier": [], "recommendations": [],
-                "fort_zone": [], "fort_count": 0, "fort_cap": 0,
+                "fort_zone": [], "fort_count": 0, "forts": [], "fort_cap": 0,
                 "threats": [], "threat_summary": {"count": 0}, "pending": []}
     return {"owned_count": data.get("owned_count", 0),
             "owned_cells": data.get("owned_cells") or [],
@@ -220,6 +220,7 @@ def read_forts_view(cfg) -> dict:
             "recommendations": data.get("recommendations") or [],
             "fort_zone": data.get("fort_zone") or [],
             "fort_count": data.get("fort_count", 0),
+            "forts": data.get("forts") or [],
             "fort_cap": data.get("fort_cap", 0),
             "threats": data.get("threats") or [],
             "threat_summary": data.get("threat_summary") or {"count": 0},
