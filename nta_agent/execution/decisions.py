@@ -59,18 +59,27 @@ def _desc(config, text_name: str, value: int) -> str:
             parts.append(f"ST {atk.replace(',', '–')}")
         if hp:
             parts.append(f"Máu {hp.replace(',', '–')}")
-        eff_id = int(base.get("effect", 0) or 0)
-        if eff_id:
+        # ``effect`` is one effect id or a "|"-joined list of them (high-tier
+        # equips carry several); render each. A raw int() on the whole string
+        # threw ValueError and failed the decisions write every tick.
+        for tok in str(base.get("effect", "") or "").split("|"):
+            tok = tok.strip()
+            if not tok or not tok.lstrip("-").isdigit():
+                continue
+            eff_id = int(tok)
+            if not eff_id:
+                continue
             row = config.table(text_name).get(f"effect_{eff_id}") or {}
             tmpl = _clean(row.get("vi") or row.get("en") or "")
-            if tmpl:
-                fx = config.table("equipEffect").get(eff_id) or {}
-                sfx = str(fx.get("suffix") or "")
-                val = str(fx.get("value") or "").strip()
-                odds = str(fx.get("odds") or "").strip()
-                tmpl = tmpl.replace("{0}", (val.replace(",", "–") + sfx) if val else "")
-                tmpl = tmpl.replace("{1}", (odds.replace(",", "–") + "%") if odds else "")
-                parts.append(tmpl)
+            if not tmpl:
+                continue
+            fx = config.table("equipEffect").get(eff_id) or {}
+            sfx = str(fx.get("suffix") or "")
+            val = str(fx.get("value") or "").strip()
+            odds = str(fx.get("odds") or "").strip()
+            tmpl = tmpl.replace("{0}", (val.replace(",", "–") + sfx) if val else "")
+            tmpl = tmpl.replace("{1}", (odds.replace(",", "–") + "%") if odds else "")
+            parts.append(tmpl)
         if str(base.get("exclusive_pawn") or "").strip():
             parts.append("(chuyên dụng)")  # pawn-locked; agent won't auto-forge
         return " · ".join(parts)

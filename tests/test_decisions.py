@@ -41,6 +41,21 @@ def test_equip_decision_desc_has_stats():
     assert opts[6002]["desc"] == "Máu 20–70 · (chuyên dụng)"
 
 
+def test_equip_decision_desc_handles_multi_effect():
+    """A high-tier equip's ``effect`` is a pipe-joined list of effect ids
+    (e.g. "3|7"). Every effect must render — and int() must never choke on the
+    whole string (that failure spammed [decisions] write failed every tick)."""
+    cfg = FakeConfig()
+    cfg._t["equipText"]["effect_7"] = {"vi": "Hồi {0} máu"}
+    cfg._t["equipEffect"][7] = {"id": 7, "value": "30,50", "suffix": "", "odds": ""}
+    cfg._t["equipBase"][6003] = {"attack": "2,6", "hp": "", "exclusive_pawn": "", "effect": "3|7"}
+    cfg._t["equipText"]["name_6003"] = {"vi": "Rìu Thần"}
+    st = _state(equip={"e0": {"selectIds": [6003], "id": 0, "resetCount": 0, "lv": 5}})
+    ds = pending_decisions(st, cfg)
+    desc = ds[0].options[0]["desc"]
+    assert desc == "ST 2–6 · Có 20–40% gây 150–180% ST Bạo · Hồi 30–50 máu"
+
+
 def test_pending_pawn_decision_with_names():
     # selectIds are the pawn ids directly.
     st = _state(pawn={"s0": {"selectIds": [3101, 3102], "id": 0, "resetCount": 0, "lv": 1}})
