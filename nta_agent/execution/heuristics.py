@@ -1592,7 +1592,8 @@ class Forge:
         cands = craft_candidates(
             player.get("equipSlots") or {},
             lambda i: cfg.table("equipBase").get(i),
-            crafted, novice=(int(getattr(state, "room_type", 0) or 0) == 1))
+            crafted)  # normal forge_cost: room_type 1 is NOT the engine's isNoviceMode
+                      # (the tutorial sandbox) — live craft took forge_time 349s, not 200s
         res = {"cereal": state.resources.cereal, "timber": state.resources.timber,
                "stone": state.resources.stone, "iron": state.resources.iron,
                "gold": state.resources.gold}

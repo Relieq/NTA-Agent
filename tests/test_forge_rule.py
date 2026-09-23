@@ -178,3 +178,13 @@ def test_crafted_equip_without_id_is_not_recrafted():
     st = _state({"1": {"id": 6005, "lv": 1}}, equips=[{"uid": "6005_1", "attrs": []}], iron=99)
     rule = Forge(config=FakeConfig(BASE), profile=SimpleNamespace(forge={"enabled": True}))
     assert rule.applies(st, FakeActions()) is False
+
+
+def test_craft_uses_normal_forge_cost_even_in_room_type_1():
+    """room_type 1 != engine isNoviceMode: live craft of 6005 ran forge_time (349s),
+    not forge_time_novice (200s) -> the normal forge_cost applies (2 iron, not 3)."""
+    base = {6005: {"id": 6005, "exclusive_pawn": "", "forge_cost": "9,0,2",
+                   "forge_cost_novice": "9,0,3"}}
+    st = _state({"1": {"id": 6005, "lv": 1}}, iron=2, room=1)
+    rule = Forge(config=FakeConfig(base), profile=SimpleNamespace(forge={"enabled": True}))
+    assert rule.applies(st, FakeActions()) is True        # 2 iron is enough
