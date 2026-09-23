@@ -124,6 +124,28 @@ def test_act_continues_past_benign_action_failure():
     assert any(c[0] == "recruit" for c in acts.calls)   # recruit still executed
 
 
+def test_recruit_into_new_army_passes_valid_name():
+    """When no strike army of the type has room, the plan's recruit targets a NEW army
+    (army=None). drill_pawn must then get a non-empty army_name — an empty name is
+    rejected by the server with ecode.500070 "special characters" (live soak bug:
+    the composer could never create strike armies and deadlocked)."""
+    seen = []
+
+    class Acts(FakeActions):
+        def drill_pawn(self, bu, pid, army_uid="", army_name="", **kw):
+            seen.append((army_uid, army_name))
+
+    acts = Acts([{**_army("a1", [3101]), "name": "D1"}])   # an existing army named "D1"
+    r = ArmyComposer(profile=_profile(TARGET))
+    r._city = CITY
+    r._plan = {"actions": [{"op": "recruit", "pawn_id": 3305, "army": None, "count": 9}]}
+    r.act(acts)
+    assert seen, "recruit must still be attempted"
+    uid, name = seen[0]
+    assert uid == "" and name                  # new army, WITH a name
+    assert name != "D1"                        # not colliding with an existing army
+
+
 def test_act_treats_queue_full_500018_as_benign():
     class Acts(FakeActions):
         def drill_pawn(self, bu, pid, army_uid="", army_name="", **kw):
