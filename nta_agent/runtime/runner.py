@@ -166,6 +166,9 @@ def run(cfg: RuntimeConfig, *, ticks: int = 0, session=None, engine=None) -> Non
             # every rule that moves/fills armies must skip the ones the composer owns
             if _composer is not None:
                 rule.locked_source = lambda: getattr(_composer, "locked_uids", set())
+            if getattr(rule, "name", "") == "logistics":
+                # drop redeploys to off-territory cells (ecode.500039)
+                rule.owned_source = lambda: _territory_from_forts()[0]
         elif getattr(rule, "name", "") == "army_composer":
             rule.on_event = log.append
             rule.status_sink = _make_comp_status_sink()

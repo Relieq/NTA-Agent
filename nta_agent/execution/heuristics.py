@@ -312,6 +312,23 @@ class OccupyCell:
         scored.sort(key=lambda t: t[0])
         return scored[0][1]
 
+    def _select_idle(self, actions, i, locked):
+        """Idle, unlocked armies that can attack cell ``i``. Returns [] when the cell
+        already has enough/max of our armies — HD_GetSelectArmys then rejects with a
+        benign ecode (500037 area-full / 500081 enough-advancing / 500080 in-training);
+        a single such candidate must NOT abort the whole occupy sweep, so we skip it."""
+        from nta_agent.execution.army_health import is_idle
+        try:
+            sel = actions.select_armies(i)
+        except Exception as e:
+            ec = str(e).split("ecode.")[-1][:6] if "ecode." in str(e) else ""
+            if ec in ("500037", "500081", "500080"):
+                return []
+            raise
+        return [a for a in sel
+                if is_idle(a) and not a.get("drillPawns") and not a.get("curingPawns")
+                and str(a.get("uid")) not in locked]
+
     def _recall_order(self, cand, default):
         """Inc 3 contextual recall: if an active lesson's trigger matches this cell's
         guardian monster ids and prescribes an attack order, use it here (overriding
@@ -446,7 +463,6 @@ class OccupyCell:
             # land (verified live). But an army mid-recruit/cure (pending drill/curing
             # pawns) can't be sent and poisons the whole occupy with ecode.500000, so
             # exclude those (they show no busy `state`, so check the pawn queues).
-            from nta_agent.execution.army_health import is_idle
             # Armies the ArmyComposer is arranging are LOCKED — never send them to
             # occupy (would fight over pawns / rally). Composer takes priority.
             locked = set()
@@ -455,9 +471,7 @@ class OccupyCell:
                     locked = {str(u) for u in (self.locked_source() or ())}
                 except Exception:
                     locked = set()
-            avail = [a for a in actions.select_armies(i)
-                     if is_idle(a) and not a.get("drillPawns") and not a.get("curingPawns")
-                     and str(a.get("uid")) not in locked]
+            avail = self._select_idle(actions, i, locked)
             grp = []
             if self.profile is not None:
                 from nta_agent.execution.profile import active_formation
@@ -1325,11 +1339,14 @@ class Logistics:
     profile: object = None
     on_event: object = None
     locked_source: object = None  # callable -> army-uid set the ArmyComposer owns (skip them)
+    owned_source: object = None   # callable -> owned cell-index set (drop off-territory redeploys)
     _cooldown: int = 0
     _pending: object = None   # ("plan", LogisticsAction) | ("redeploy", army, target)
 
     # ecodes that mean "this exact move can't happen now" — back off, don't spam.
-    BUSY_ECODES = ("ecode.500019", "ecode.500036", "ecode.500037", "ecode.500020")
+    # 500039 = target isn't our land (a stale/off-territory redeploy) — drop quietly.
+    BUSY_ECODES = ("ecode.500019", "ecode.500036", "ecode.500037",
+                   "ecode.500020", "ecode.500039")
 
     def _cfg(self) -> dict | None:
         lg = getattr(self.profile, "logistics", None) if self.profile else None
@@ -1360,6 +1377,12 @@ class Logistics:
         # B: the brain assigned a topped-up army a destination -> send it out.
         redeploy = lg.get("redeploy") or {}
         if redeploy:
+            owned = set()
+            if self.owned_source is not None:
+                try:
+                    owned = {int(x) for x in (self.owned_source() or ())}
+                except Exception:
+                    owned = set()
             ready = {str(a.get("uid")): a for a in ready_armies(
                 armies, main, target=int(lg.get("target", 9)))}
             live = {str(a.get("uid")) for a in armies}
@@ -1367,6 +1390,9 @@ class Logistics:
                 uid, target = str(uid), int(target)
                 if uid not in live:
                     redeploy.pop(uid, None)          # army gone -> drop stale order
+                    continue
+                if owned and target not in owned:
+                    redeploy.pop(uid, None)          # off-territory (500039) -> drop
                     continue
                 army = ready.get(uid)
                 if army is None:
