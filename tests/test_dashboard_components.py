@@ -56,7 +56,7 @@ def test_armies_and_events_panels():
 def test_decisions_and_equipment_panels():
     dec = _c("DecisionsPanel.js")
     assert "/api/decisions" in dec and "/api/command" in dec and "reroll" in dec
-    assert "canReroll" in dec and "cần vàng" in dec       # gold guard on reroll
+    assert "canReroll" in dec and "REROLL_GOLD=50" in dec   # paid reroll = 50 gold (engine)
     eq = _c("EquipmentPanel.js")
     assert "/api/equipment" in eq and "equip" in eq
     assert "o.desc" in eq and "current_equip_desc" in eq  # equip descriptions shown

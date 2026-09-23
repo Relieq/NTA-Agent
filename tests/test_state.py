@@ -260,3 +260,15 @@ def test_forge_equip_ret_notify_updates_equip_and_clears_busy():
     # a first craft (new uid) is appended
     apply_notify(st, {"list": [{"type": 34, "data_34": {"uid": "6002_1", "id": 6002, "attrs": []}}]})
     assert [e["uid"] for e in p["equips"]] == ["6001_1", "6002_1"]
+
+
+def test_gold_comes_from_the_user_not_the_player():
+    """Gold lives on the lobby USER (engine user.setGold(e.gold)), not on the game
+    player — reading player.gold gave 0, so the dashboard blocked paid rerolls."""
+    from nta_agent.state import apply_user, from_entry_rst
+    st = from_entry_rst({"player": {"uid": "1"}}, user={"uid": "1", "gold": 180})
+    assert st.resources.gold == 180
+    from nta_agent.state.schema import GameState
+    g = GameState()
+    apply_user(g, {"uid": "1", "gold": 75})
+    assert g.resources.gold == 75

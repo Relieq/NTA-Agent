@@ -124,7 +124,8 @@ def from_entry_rst(rst: dict[str, Any], user: dict[str, Any] | None = None) -> G
         timber=_res_value(player.get("timber")),
         stone=_res_value(player.get("stone")),
         iron=_res_value(player.get("iron")),
-        gold=_res_value(player.get("gold")),
+        # gold lives on the lobby USER (engine user.setGold(e.gold)), not the player
+        gold=int((user or {}).get("gold") or 0) or _res_value(player.get("gold")),
         stamina=int(player.get("stamina", 0) or 0),
         # entry carries these flat too; without them exp_book showed 0 despite the
         # account holding books, blocking leveling. Field names verified live.
@@ -429,5 +430,7 @@ def apply_user(state: GameState, user: dict[str, Any]) -> GameState:
         session_id=str(user.get("sessionId", "")),
         raw=user,
     )
+    if "gold" in user:  # gold is a user-level currency (engine user.setGold)
+        state.resources.gold = int(user.get("gold") or 0)
     state.updated_at = time.time()
     return state
