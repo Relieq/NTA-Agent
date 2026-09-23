@@ -168,3 +168,33 @@ def test_expire_build_queue_drops_finished():
     # once the server stops sending it, the deadline is pruned
     kept, dl = expire_build_queue([], dl, 1200.0)
     assert kept == [] and dl == {}
+
+
+def test_apply_world_notify_tracks_marches_and_capture():
+    from nta_agent.state import apply_world_notify, from_entry_rst
+    st = from_entry_rst({"player": {"uid": "me", "mainCityIndex": 5}})
+    st.user.uid = "me"
+    march = {"uid": "m1", "owner": "enemy", "startIndex": 900, "targetIndex": 5,
+             "targetIsCity": True, "surplusTime": 60000}
+    apply_world_notify(st, {"list": [{"type": 13, "data_13": march}]}, now=100.0)
+    assert st.world_marches["m1"]["owner"] == "enemy"
+    assert st.world_marches["m1"]["_rx"] == 100.0          # receipt time for the ETA
+    apply_world_notify(st, {"list": [{"type": 14, "data_14": {"uid": "m1"}}]})
+    assert "m1" not in st.world_marches
+    # CAPTURE of SOMEONE ELSE is ignored; of us sets player.captureInfo (like the engine)
+    apply_world_notify(st, {"list": [{"type": 29, "data_29": {
+        "uid": "other", "attacker": "enemy", "time": 1, "index": 7}}]})
+    assert not st.raw["player"].get("captureInfo")
+    apply_world_notify(st, {"list": [{"type": 29, "data_29": {
+        "uid": "me", "attacker": "enemy", "time": 2, "index": 5}}]})
+    assert st.raw["player"]["captureInfo"] == {"uid": "enemy", "time": 2}
+
+
+def test_world_type6_does_not_touch_build_queue():
+    # NotifyType is shared: a WORLD item with type 6 must never be applied as the
+    # player BT_QUEUE update (it would wipe the build queue).
+    from nta_agent.state import apply_world_notify, from_entry_rst
+    st = from_entry_rst({"player": {"uid": "1",
+        "btQueues": [{"index": 5, "uid": "b1", "id": 2001, "lv": 6, "surplusTime": 5}]}})
+    apply_world_notify(st, {"list": [{"type": 6}]})
+    assert len(st.build_queue) == 1

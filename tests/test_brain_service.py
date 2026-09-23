@@ -310,3 +310,23 @@ def test_hallucinated_lesson_without_evidence_is_dropped(tmp_path):
                            "evidence": ["ghost"]}], "rationale": "x"})
     svc.tick(_state())
     assert LessonStore(tmp_path / "lessons.json").all() == []      # no evidence -> not stored
+
+
+def test_urgent_fires_on_early_warning_alerts(tmp_path):
+    """alerts.json level danger/captured (enemy march on us / city fell) or an
+    approach in forts.json wakes the brain promptly — not on the next cadence."""
+    ap = tmp_path / "alerts.json"
+    cfg = SimpleNamespace(profile_path=tmp_path / "profile.json",
+                          failures_path=tmp_path / "nf.json",
+                          forts_path=tmp_path / "forts.json",
+                          decisions_path=tmp_path / "nd.json", alerts_path=ap,
+                          res_pressure_window_s=3600, ledger_cap=100)
+    svc = BrainService(load_profile("none"), cfg)
+    ap.write_text(json.dumps({"level": "ok"}), encoding="utf-8")
+    assert svc._urgent(_state()) is False
+    ap.write_text(json.dumps({"level": "danger", "incoming": [{"uid": "m1"}]}), encoding="utf-8")
+    assert svc._urgent(_state()) is True
+    ap.write_text(json.dumps({"level": "ok"}), encoding="utf-8")
+    (tmp_path / "forts.json").write_text(json.dumps(
+        {"threat_summary": {"count": 0, "approaching": True}}), encoding="utf-8")
+    assert svc._urgent(_state()) is True

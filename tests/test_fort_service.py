@@ -152,3 +152,44 @@ def test_writes_threats_and_alerts_on_incursion(tmp_path):
     assert data["threat_summary"]["count"] >= 1
     assert data["threats"][0]["adjacent"] is True
     assert any(k == "threat_alert" for k, d in events)
+
+
+def test_rescans_periodically_even_if_land_unchanged(tmp_path):
+    """Threat detection must not go blind while territory is static: rescan every
+    `rescan_every_s` regardless of landCount (the 2026-09-23 siege went unseen for
+    4h because fort_service only rescanned on a landCount change)."""
+    calls = []
+
+    def scan(actions, main, uid, map_width=600, focus=None):
+        calls.append(1)
+        return {"owned": {100 * 600 + 100}, "cities": {}, "enemy_cells": set(),
+                "enemy_cities": {}, "frontier": set()}
+
+    clock = {"t": 1000.0}
+    _cfg, svc = _make(tmp_path, scan=scan, max_count_fn=lambda bid: 2,
+                      rescan_every_s=180, clock=lambda: clock["t"])
+    st = _state(land_count=1)
+    svc.tick(st)
+    clock["t"] += 60
+    svc.tick(st)                 # same land, too soon -> no rescan
+    assert len(calls) == 1
+    clock["t"] += 130
+    svc.tick(st)                 # same land but 190s elapsed -> rescan
+    assert len(calls) == 2
+
+
+def test_approach_alert_written_and_emitted(tmp_path):
+    events = []
+    main = 100 * 600 + 100
+
+    def scan(actions, main_, uid, map_width=600, focus=None):
+        return {"owned": {main}, "cities": {main: 1},
+                "enemy_cells": {104 * 600 + 100}, "enemy_cities": {}, "frontier": set()}
+
+    cfg, svc = _make(tmp_path, scan=scan, max_count_fn=lambda bid: 2,
+                     on_event=lambda k, d: events.append((k, d)))
+    svc.tick(_state(land_count=1, main=main))
+    data = json.loads(cfg.forts_path.read_text(encoding="utf-8"))
+    assert data["approach"]["near_count"] == 1
+    assert data["threat_summary"]["approaching"] is True     # brain _urgent keys off this
+    assert any(k == "threat_alert" and d.get("kind") == "approach" for k, d in events)

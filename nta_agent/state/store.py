@@ -313,6 +313,48 @@ def apply_notify(state: GameState, notify: dict[str, Any]) -> GameState:
     return state
 
 
+_WORLD_ADD_MARCH, _WORLD_REMOVE_MARCH, _WORLD_CAPTURE = 13, 14, 29  # engine NotifyType
+
+
+def apply_world_notify(state: GameState, notify: dict[str, Any],
+                       now: float | None = None) -> GameState:
+    """Apply a GAME_ONUPDATEWORLDINFO_NOTIFY ({list: [OnUpdateWorldInfoNotify]}).
+
+    Kept separate from the player notify: NotifyType is shared, so a world item's
+    ``type`` must never reach ``apply_player_update`` (type 6 would wipe the build
+    queue). Handled: ADD_MARCH / REMOVE_MARCH (world marches, incl. other players'
+    — the siege early warning) and CAPTURE aimed at us (sets player.captureInfo
+    exactly like the engine's setCaptureInfo: {uid: attacker, time}).
+    """
+    now = time.time() if now is None else now
+    me = str(getattr(state.user, "uid", "") or "")
+    for item in notify.get("list", []):
+        if not isinstance(item, dict):
+            continue
+        t = item.get("type")
+        if t == _WORLD_ADD_MARCH and isinstance(item.get("data_13"), dict):
+            m = dict(item["data_13"])
+            m["_rx"] = now
+            if m.get("uid"):
+                state.world_marches[str(m["uid"])] = m
+        elif t == _WORLD_REMOVE_MARCH and isinstance(item.get("data_14"), dict):
+            state.world_marches.pop(str(item["data_14"].get("uid", "")), None)
+        elif t == _WORLD_CAPTURE and isinstance(item.get("data_29"), dict):
+            c = item["data_29"]
+            if me and str(c.get("uid", "")) == me:
+                state.raw.setdefault("player", {})["captureInfo"] = {
+                    "uid": str(c.get("attacker", "")), "time": c.get("time", 0)}
+    state.updated_at = time.time()
+    return state
+
+
+def set_world_marches(state: GameState, marches: list, now: float | None = None) -> None:
+    """Replace the world-march view from a full ``HD_GetMarchs`` list (resync)."""
+    now = time.time() if now is None else now
+    state.world_marches = {str(m["uid"]): {**m, "_rx": now}
+                           for m in (marches or []) if isinstance(m, dict) and m.get("uid")}
+
+
 def apply_user(state: GameState, user: dict[str, Any]) -> GameState:
     """Populate the User block from a LOBBY_HD_TRYLOGIN_S2C ``user`` object."""
     state.user = User(

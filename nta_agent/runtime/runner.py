@@ -67,7 +67,8 @@ def run(cfg: RuntimeConfig, *, ticks: int = 0, session=None, engine=None) -> Non
     from nta_agent.runtime.errorlog import ErrorLog
     errlog = ErrorLog(cfg.errors_path, config)
     _ERROR_KINDS = {"connection_lost", "recover_retry", "captcha_failed",
-                    "captcha_detected", "config_missing", "interrupted"}
+                    "captcha_detected", "config_missing", "interrupted",
+                    "captured"}  # main city fell: the player must decide (re-create/settle)
 
     def on_event(kind, detail=None):
         log.append(kind, detail)
@@ -88,6 +89,10 @@ def run(cfg: RuntimeConfig, *, ticks: int = 0, session=None, engine=None) -> Non
     brain = BrainService(profile, cfg, on_event=on_event, actions=agent.actions)
     from nta_agent.runtime.fort_service import FortService
     forts = FortService(cfg, agent.actions, on_event=on_event)
+    # Early warning (capture / incoming hostile marches / approach) -> alerts.json.
+    from nta_agent.runtime.alert_service import AlertService
+    alerts = AlertService(cfg, agent.actions, on_event=on_event,
+                          poll_every=getattr(cfg, "march_poll_every", 6))
     # F2/brain: hands-side failure ledger + loss observer (Cách A — brain only reads).
     from nta_agent.execution.ledger import FailureLedger
     from nta_agent.execution.loss_observer import LossObserver
@@ -213,6 +218,7 @@ def run(cfg: RuntimeConfig, *, ticks: int = 0, session=None, engine=None) -> Non
         _safe(write_snapshot, state, cfg.snapshot_path)
         _safe(log.tick, i, fired, state)
         _safe(_write_health)
+        _safe(alerts.tick, state)  # observe-only: runs even when paused/captured
         # pick up dashboard edits + stop the brain from clobbering them (shared obj)
         _safe(reload_into, profile, cfg.profile_path)
         run_services(state, cfg, service, brain, forts, _safe, observer=observer)

@@ -31,6 +31,7 @@ class Agent:
     on_event: callable | None = None  # on_event(kind, detail) for logging
     captcha: object = None  # a CaptchaSolver (or None): solves ANTI_CHEAT challenges
     health: object = None   # a HealthMonitor (or None): F1 proactive staleness recovery
+    _captured: bool = False  # safe mode latch: main city captured -> act on nothing
 
     def __post_init__(self):
         self.actions = Actions(self.session)
@@ -42,6 +43,20 @@ class Agent:
     def tick(self) -> list[str]:
         """One observe->decide->act cycle. Returns the rules that fired."""
         self.session.sync()  # apply pending pushes into state
+        # Main city captured: every action is futile or harmful (no barracks, armies
+        # gone) and the next move — re-create / settle / wait — is the PLAYER's. Stay
+        # synced, surface it once, and act on nothing until it clears.
+        from nta_agent.execution.alerts import capture_info
+        cap = capture_info(self.session.state)
+        if cap is not None:
+            if not self._captured:
+                self._captured = True
+                self._emit("captured", {"attacker": str(cap.get("uid", "")),
+                                        "time": cap.get("time", 0)})
+            return ["captured"]
+        if self._captured:
+            self._captured = False
+            self._emit("capture_cleared")
         try:
             return self.engine.tick(self.session.state, self.actions)
         except CaptchaRequired as e:

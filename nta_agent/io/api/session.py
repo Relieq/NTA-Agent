@@ -240,9 +240,20 @@ class GameSession:
 
     def sync(self) -> GameState:
         """Apply pending player/user update pushes into state, keeping it current."""
-        from nta_agent.state.store import accrue_output, apply_notify, expire_build_queue
+        from nta_agent.state.store import (
+            accrue_output,
+            apply_notify,
+            apply_world_notify,
+            expire_build_queue,
+        )
         for p in self.drain_pushes():
-            if isinstance(p.data, dict) and "list" in p.data:
+            if not (isinstance(p.data, dict) and "list" in p.data):
+                continue
+            # World notifies share NotifyType numbering with player ones — route them
+            # separately (marches / capture), never through the player updater.
+            if "WORLDINFO" in (p.msg_type or "").upper():
+                apply_world_notify(self.state, p.data)
+            else:
                 apply_notify(self.state, p.data)
         # Fill resources from production locally (the client does this; the server
         # only pushes on changes) so stock never freezes between pushes.
