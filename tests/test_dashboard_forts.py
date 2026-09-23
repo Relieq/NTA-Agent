@@ -65,3 +65,19 @@ def test_forge_view_and_target_update(tmp_path):
     assert set_forge_target(cfg, {"uid": "6001_1", "threshold_pct": 150, "budget": 1})["ok"] is False
     assert set_forge_target(cfg, {"uid": "6001_1", "remove": True})["ok"] is True
     assert read_forge_view(cfg)["equips"][0]["target"] is None
+
+
+def test_set_forge_target_per_stat_mins(tmp_path):
+    from nta_agent.dashboard.server import read_forge_view, set_forge_target
+    cfg = RuntimeConfig(distinct_id="x", log_dir=tmp_path)
+    Path(cfg.forge_view_path).write_text(json.dumps({"equips": [{"uid": "6101_1"}]}),
+                                         encoding="utf-8")
+    r = set_forge_target(cfg, {"uid": "6101_1", "budget": 20,
+                               "mins": {"3.value": 170, "3.odds": 35, "7.value": ""}})
+    assert r["ok"] is True
+    t = read_forge_view(cfg)["equips"][0]["target"]
+    assert t["mins"] == {"3.value": 170.0, "3.odds": 35.0} and t["budget"] == 20   # blank dropped
+    # malformed stat key / negative / nothing set -> rejected
+    assert set_forge_target(cfg, {"uid": "6101_1", "budget": 1, "mins": {"x.y": 1}})["ok"] is False
+    assert set_forge_target(cfg, {"uid": "6101_1", "budget": 1, "mins": {"3.value": -1}})["ok"] is False
+    assert set_forge_target(cfg, {"uid": "6101_1", "budget": 1, "mins": {}})["ok"] is False

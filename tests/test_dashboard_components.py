@@ -141,6 +141,7 @@ def test_status_header_shows_early_warning_banner():
 
 def test_forge_panel_wired():
     fp = _c("ForgePanel.js")
-    assert "/api/forge" in fp and "/api/forge/target" in fp and "threshold_pct" in fp
+    assert "/api/forge" in fp and "/api/forge/target" in fp and "mins" in fp
+    assert "possible" in fp and ".odds" in fp          # per-stat minimums per effect
     app = _c("App.js")
     assert "ForgePanel" in app

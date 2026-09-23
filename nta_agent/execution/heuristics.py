@@ -1618,7 +1618,7 @@ class Forge:
         self._pending, self._recast = d.uid, d
         if self.on_event:
             self.on_event("forge_recast", {"uid": d.uid, "quality": round(d.quality, 3),
-                                           "iron": d.iron, "free": d.free})
+                                           "unmet": d.unmet, "iron": d.iron, "free": d.free})
         return True
 
     def act(self, actions: Actions) -> None:
