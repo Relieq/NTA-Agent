@@ -112,3 +112,14 @@ def test_build_fort_command_calls_add_build(tmp_path):
     svc = DecisionService(acts, FakeConfig(), _cfg(tmp_path))
     svc._execute({"action": "build_fort", "index": 123456})
     assert acts.calls == [("add_build", 123456, 2102)]  # FORT_BUILD_ID
+
+
+def test_tick_executes_rename_army(tmp_path):
+    cfg = _cfg(tmp_path)
+    act = FakeActions()
+    act.rename_army = lambda index, uid, name: act.calls.append(("rename", index, uid, name))
+    svc = DecisionService(act, FakeConfig(), cfg)
+    append_command(cfg.commands_path,
+                   {"action": "rename_army", "index": 79542, "uid": "A", "name": "Đội 1"})
+    svc.tick(_state())
+    assert ("rename", 79542, "A", "Đội 1") in act.calls

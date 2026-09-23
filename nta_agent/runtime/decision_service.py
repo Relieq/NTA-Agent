@@ -99,6 +99,11 @@ class DecisionService:
             from nta_agent.runtime.fort_service import FORT_BUILD_ID
             self.actions.add_build(int(cmd["index"]), FORT_BUILD_ID)
             return
+        if action == "rename_army":
+            # Chat action tool (human-initiated): rename an army via the hands.
+            self.actions.rename_army(int(cmd.get("index", 0) or 0),
+                                     str(cmd["uid"]), str(cmd["name"]))
+            return
         track = cmd.get("track")
         tp = _TRACK_TP.get(track)
         if tp is None:

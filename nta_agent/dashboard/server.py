@@ -74,10 +74,23 @@ def handle_chat(cfg, message, *, history=None, propose=None):
     except Exception as e:  # network/parse — surface, change nothing
         return {"ok": False, "error": str(e)}
     clean = sanitize_edits(edits, profile, valid, valid_build_ids=valid_build)
-    apply_edits(profile, clean)
-    save_profile(profile, cfg.profile_path)
-    append_command(cfg.commands_path, {"action": "profile_edit", "edits": clean})
+    if clean:
+        apply_edits(profile, clean)
+        save_profile(profile, cfg.profile_path)
+        append_command(cfg.commands_path, {"action": "profile_edit", "edits": clean})
+    # Chat action tools (human-initiated) — executed by the hands via the command
+    # queue (the dashboard has no game session; the agent does). Rename armies now;
+    # more tools plug in the same way.
+    from nta_agent.brain.guard import sanitize_renames
+    renames = sanitize_renames(edits, valid)
+    idx_by_uid = {str(a.get("uid")): int(a.get("index", 0) or 0) for a in armies}
+    for r in renames:
+        append_command(cfg.commands_path, {"action": "rename_army",
+                                           "index": idx_by_uid.get(r["uid"], 0),
+                                           "uid": r["uid"], "name": r["name"]})
+    question = str((edits or {}).get("question", "")).strip()
     return {"ok": True, "applied": clean, "rationale": (edits or {}).get("rationale", ""),
+            "renames": renames, "question": question,
             "active": profile.army.get("active", ""),
             "presets": list(profile.army.get("presets") or {}),
             "notes": profile.notes}
