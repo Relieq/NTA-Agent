@@ -198,3 +198,25 @@ def test_world_type6_does_not_touch_build_queue():
         "btQueues": [{"index": 5, "uid": "b1", "id": 2001, "lv": 6, "surplusTime": 5}]}})
     apply_world_notify(st, {"list": [{"type": 6}]})
     assert len(st.build_queue) == 1
+
+
+def test_update_output_honors_flags():
+    """UpdateOutPut carries `flags` (OutPutFlagEnum): the client updates ONLY the
+    flagged resources (engine updateOutputByFlags). A cereal-only update that also
+    carries an empty/unflagged `stone` block must NOT zero stone — that bug made the
+    agent think stone was always 0, so BuildOrder never afforded an upgrade."""
+    from nta_agent.state.store import apply_update_output, from_entry_rst
+    st = from_entry_rst({"player": {"uid": "1", "cereal": {"value": 100},
+                                    "timber": {"value": 900}, "stone": {"value": 1500}}})
+    apply_update_output(st, {"flags": [3], "cereal": {"value": 40}, "stone": {},
+                             "timber": {"value": 0}})
+    assert st.resources.cereal == 40          # flagged -> applied
+    assert st.resources.stone == 1500         # unflagged -> untouched
+    assert st.resources.timber == 900
+    apply_update_output(st, {"flags": [5, 2], "stone": {"value": 1200, "opHour": 250},
+                             "warehouseCap": 3000})
+    assert st.resources.stone == 1200 and st.production["stone"] == 250
+    assert st.warehouse_cap == 3000
+    # no flags at all -> full update (ENTRY-style / legacy replies)
+    apply_update_output(st, {"cereal": {"value": 7}, "stone": {"value": 8}, "iron": 3})
+    assert (st.resources.cereal, st.resources.stone, st.resources.iron) == (7, 8, 3)
