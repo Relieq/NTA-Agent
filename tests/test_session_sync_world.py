@@ -68,3 +68,18 @@ def test_sync_applies_area_build_notify():
         data={"type": 9, "index": 5, "data_9": "f"})]
     GameSession.sync(fake)
     assert {b.id for b in st.builds} == {2001}   # REMOVE_BUILD
+
+
+def test_expired_build_queue_item_bumps_building_level():
+    """No build-complete push reaches us reliably; when a queue item's time is up we
+    drop it (existing) AND apply its target level to the building, like the client."""
+    fake = _fake([])
+    st = fake.state
+    st.main_city_index = 5
+    from nta_agent.state.store import _building
+    st.builds = [_building({"index": 5, "uid": "k", "id": 2002, "lv": 1})]
+    st.build_queue = [{"index": 5, "uid": "k", "id": 2002, "lv": 2, "surplusTime": 0}]
+    fake._bt_deadlines = {"k": 0.0}             # already due
+    GameSession.sync(fake)
+    assert st.build_queue == []
+    assert {b.id: b.lv for b in st.builds}[2002] == 2

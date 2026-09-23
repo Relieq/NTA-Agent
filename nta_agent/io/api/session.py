@@ -45,6 +45,22 @@ class PushRecord:
     error: str = ""
 
 
+def decode_push(codec, msg_type: str, raw: bytes) -> dict[str, Any]:
+    """Decode a server push. The GAME_ON*INFO_NOTIFY schema types wrap a repeated
+    ``list`` of items, but live pushes arrive as a SINGLE item (first byte 0x08 =
+    the item's ``type`` varint; a wrapper would start 0x0a = ``list``). Decode the
+    item and wrap it as ``{list: [item]}`` so the appliers see one shape. Payloads
+    that really are wrapped, and item-shaped schemas (area notify), decode as-is."""
+    fields = (codec.schema.get(msg_type) or {}).get("fields") or []
+    wrapper_item = next((f.get("sub") for f in fields
+                         if f.get("name") == "list" and f.get("rule") == "repeated"), None)
+    if wrapper_item and raw and raw[0] != 0x0A:
+        item = codec.decode(wrapper_item, raw)
+        if isinstance(item.get("type"), int):
+            return {"list": [item]}
+    return codec.decode(msg_type, raw)
+
+
 @dataclass
 class GameSession:
     server: ServerConfig
@@ -222,7 +238,7 @@ class GameSession:
         data: dict[str, Any] = {}
         if msg_type and raw:
             try:
-                data = self.client.codec.decode(msg_type, raw)
+                data = decode_push(self.client.codec, msg_type, raw)
             except Exception:
                 data = {"_raw_len": len(raw)}
         elif raw:
@@ -268,8 +284,19 @@ class GameSession:
         accrue_output(self.state, time.time())
         # Belt-and-suspenders: drop finished builds by wall-clock even if the
         # build-complete push was missed, so construction never freezes.
+        before = list(self.state.build_queue or [])
         self.state.build_queue, self._bt_deadlines = expire_build_queue(
             self.state.build_queue, self._bt_deadlines, time.time())
+        # A finished item's building reaches the item's target level (like the
+        # client's local countdown); a later authoritative push/ENTRY overrides.
+        from nta_agent.state.store import _apply_build_update
+        for item in before:
+            if item in self.state.build_queue or not item.get("uid"):
+                continue
+            cur = next((b for b in self.state.builds if b.uid == str(item["uid"])), None)
+            if cur is None or int(item.get("lv", 0) or 0) > cur.lv:
+                _apply_build_update(self.state, {k: item.get(k) for k in
+                                                 ("index", "uid", "id", "lv")})
         # Stamp an absolute completion time so the dashboard can count down live
         # (surplusTime alone is static between server updates -> looks frozen).
         for item in self.state.build_queue:
