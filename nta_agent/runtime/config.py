@@ -25,6 +25,7 @@ class RuntimeConfig:
     ledger_cap: int = 100
     lessons_cap: int = 50
     stale_after: float = 90.0   # F1: seconds of silence before a health probe
+    march_poll_every: int = 6   # ticks between HD_GetMarchs resyncs (siege early warning)
 
     @property
     def snapshot_path(self) -> Path:
@@ -61,6 +62,10 @@ class RuntimeConfig:
     @property
     def health_path(self) -> Path:
         return self.log_dir / "health.json"
+
+    @property
+    def alerts_path(self) -> Path:
+        return self.log_dir / "alerts.json"
 
     @property
     def pending_forts_path(self) -> Path:

@@ -87,8 +87,15 @@ class BrainService:
             forts = json.loads(self.cfg.forts_path.read_text(encoding="utf-8"))
         except Exception:
             forts = {}
-        if (forts.get("threat_summary") or {}).get("count"):
-            return True  # enemy touching our border
+        ts = forts.get("threat_summary") or {}
+        if ts.get("count") or ts.get("approaching"):
+            return True  # enemy touching our border / closing in on the capital
+        try:
+            alerts = json.loads(self.cfg.alerts_path.read_text(encoding="utf-8"))
+        except Exception:
+            alerts = {}
+        if alerts.get("level") in ("danger", "captured"):
+            return True  # enemy march heading for us, or the capital has fallen
         player = (getattr(state, "raw", None) or {}).get("player") or {}
         if len(player.get("injuryPawns") or []) >= 5:
             return True  # heavy casualties

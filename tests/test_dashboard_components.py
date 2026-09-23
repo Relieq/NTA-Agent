@@ -131,3 +131,9 @@ def test_brain_chat_panel_and_final_order():
         "DecisionsPanel", "EquipmentPanel", "TerritoryPanel", "FortsPanel", "BuildOrderPanel",
         "BrainChatPanel", "EventsPanel")]
     assert order == sorted(order)  # components appear in this order (template runs last)
+
+
+def test_status_header_shows_early_warning_banner():
+    sh = _c("StatusHeader.js")
+    assert "/api/alerts" in sh
+    assert "THÀNH CHÍNH ĐÃ BỊ CHIẾM" in sh and "QUÂN ĐỊCH ĐANG TIẾN VÀO" in sh

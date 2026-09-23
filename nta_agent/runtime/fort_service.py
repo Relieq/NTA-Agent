@@ -1,18 +1,20 @@
 """Throttled territory scan → fort recommendations, written to forts.json.
 
-Runs each tick but does real work only when ``player.landCount`` changes (the
-cheap change signal), so most ticks cost zero requests. On a change it decodes
-the owned cells (Tier B chunks) and computes deterministic fort recommendations,
-then writes ``forts.json`` for the dashboard. Never blocks or kills the loop.
+Runs each tick but does real work only when ``player.landCount`` changes or the
+periodic threat rescan is due (``rescan_every_s``), so most ticks cost zero
+requests. A scan decodes the owned cells (Tier B chunks), computes deterministic
+fort recommendations + threat/approach warnings, then writes ``forts.json`` for
+the dashboard and the brain. Never blocks or kills the loop.
 """
 from __future__ import annotations
 
 import json
 import sys
+import time
 
 from nta_agent.execution.fort_advisor import plan_forts, recommend_forts
 from nta_agent.execution.territory import scan_map
-from nta_agent.execution.threat import detect_incursions
+from nta_agent.execution.threat import approach_summary, detect_incursions
 from nta_agent.runtime import fort_decisions
 
 FORT_BUILD_ID = 2102  # Cứ Điểm
@@ -20,7 +22,8 @@ FORT_BUILD_ID = 2102  # Cứ Điểm
 
 class FortService:
     def __init__(self, cfg, actions, on_event=None, scan=None,
-                 recommend=None, max_count_fn=None, map_width=600, radius=6):
+                 recommend=None, max_count_fn=None, map_width=600, radius=6,
+                 rescan_every_s: float = 180.0, approach_radius: int = 8, clock=None):
         self.cfg = cfg
         self.actions = actions
         self._on_event = on_event or (lambda *a: None)
@@ -29,7 +32,15 @@ class FortService:
         self._max_count_fn = max_count_fn
         self.map_width = map_width
         self.radius = radius
+        # Rescan on a landCount change OR every rescan_every_s: threat detection must
+        # never go blind while territory is static (the 2026-09-23 capital siege went
+        # unseen for 4h because only a landCount change triggered a rescan).
+        self.rescan_every_s = rescan_every_s
+        self.approach_radius = approach_radius
+        self._clock = clock or time.time
         self._last_land = None
+        self._last_scan = None
+        self._prev_approach = None
 
     def _max_forts(self) -> int:
         if self._max_count_fn is not None:
@@ -44,9 +55,12 @@ class FortService:
         try:
             player = (getattr(state, "raw", None) or {}).get("player", {}) or {}
             land = player.get("landCount")
-            if land is not None and land == self._last_land:
-                return  # no new territory -> no fetch
+            now = self._clock()
+            due = self._last_scan is None or now - self._last_scan >= self.rescan_every_s
+            if land is not None and land == self._last_land and not due:
+                return  # no new territory and not due for a threat rescan -> no fetch
             self._last_land = land
+            self._last_scan = now
 
             main = int(state.main_city_index or player.get("mainCityIndex", 0) or 0)
             uid = str(getattr(getattr(state, "user", None), "uid", "") or "")
@@ -91,6 +105,13 @@ class FortService:
             # P3: detect enemy touching/penetrating our convex-hull territory.
             threat = detect_incursions(owned, m.get("enemy_cells", ()),
                                        m.get("enemy_cities") or {}, main, mw)
+            # P1b: enemy massing NEAR the capital (before it touches our hull).
+            approach = approach_summary(m.get("enemy_cells", ()), m.get("enemy_cities") or {},
+                                        main, mw, radius=self.approach_radius,
+                                        prev=self._prev_approach)
+            self._prev_approach = approach
+            threat["summary"]["approaching"] = approach["approaching"]
+            threat["summary"]["near_count"] = approach["near_count"]
             fort_coords = sorted([i % mw, i // mw] for i in fort_indices)
             payload = {"owned_count": len(owned), "owned_cells": cells,
                        "accepted": accepted_coords, "rejected": rejected_coords,
@@ -99,13 +120,16 @@ class FortService:
                        "fort_zone": zone_coords, "fort_count": len(fort_indices),
                        "forts": fort_coords, "fort_cap": cap,
                        "threats": threat["threats"][:50],
-                       "threat_summary": threat["summary"]}
+                       "threat_summary": threat["summary"],
+                       "approach": approach, "scanned_at": now}
             path = self.cfg.forts_path
             path.parent.mkdir(parents=True, exist_ok=True)
             path.write_text(json.dumps(payload, ensure_ascii=False, indent=2),
                             encoding="utf-8")
             self._on_event("fort_scan", {"owned": len(owned), "recs": len(recs)})
             if threat["summary"]["count"]:  # P3: surface a defensive alert
-                self._on_event("threat_alert", threat["summary"])
+                self._on_event("threat_alert", {"kind": "incursion", **threat["summary"]})
+            if approach["approaching"]:     # P3b: enemy closing in on the capital
+                self._on_event("threat_alert", {"kind": "approach", **approach})
         except Exception as e:  # never kill the loop
             sys.stderr.write(f"[fort] tick failed: {e}\n")

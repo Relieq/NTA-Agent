@@ -94,3 +94,40 @@ def detect_incursions(owned, enemy_cells, enemy_cities=None, main=0, map_width=6
         "directions": sorted({t["direction"] for t in threats}),
     }
     return {"threats": threats, "summary": summary}
+
+
+def _dist_to_block(x: int, y: int, mx: int, my: int) -> int:
+    """Manhattan distance to the 2x2 main-city block [mx,mx+1] x [my,my+1]."""
+    return max(mx - x, 0, x - (mx + 1)) + max(my - y, 0, y - (my + 1))
+
+
+def approach_summary(enemy_cells, enemy_cities, main: int, map_width: int = 600, *,
+                     radius: int = 8, prev: dict | None = None) -> dict:
+    """Enemy footprint within ``radius`` of the main-city block, and whether it GREW.
+
+    P1 (``detect_incursions``) only fires once an enemy touches our hull; a siege
+    force can mass right outside it first. ``approaching`` is True when an enemy is
+    within ``radius`` and — versus the previous scan — it got closer or there are
+    more of them (a static neighbour stays quiet, so a crowded server doesn't spam).
+    """
+    mx, my = main % map_width, main // map_width
+    cities = dict(enemy_cities or {})
+    near = []
+    for e in {int(i) for i in (enemy_cells or ())} | {int(i) for i in cities}:
+        x, y = e % map_width, e // map_width
+        d = _dist_to_block(x, y, mx, my)
+        if d <= radius:
+            near.append((d, x, y, e in cities))
+    near.sort()
+    min_dist = near[0][0] if near else None
+    approaching = False
+    if near:
+        if prev is None or prev.get("min_dist") is None:
+            approaching = True
+        else:
+            approaching = (min_dist < prev["min_dist"]
+                           or len(near) > int(prev.get("near_count", 0) or 0))
+    return {"near_count": len(near), "min_dist": min_dist,
+            "nearest_xy": [near[0][1], near[0][2]] if near else None,
+            "has_city": any(n[3] for n in near), "radius": radius,
+            "approaching": approaching}

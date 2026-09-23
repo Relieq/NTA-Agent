@@ -263,6 +263,14 @@ def read_health(cfg) -> dict:
                 "degraded": False}
 
 
+def read_alerts(cfg) -> dict:
+    """Early-warning state (alerts.json): capture / incoming enemy marches / approach."""
+    try:
+        return json.loads(Path(cfg.alerts_path).read_text(encoding="utf-8"))
+    except (OSError, ValueError):
+        return {"level": "ok", "captured": None, "incoming": [], "approach": {}}
+
+
 def read_errors(cfg) -> dict:
     """Structured error summary (errors.jsonl) for a post-run review."""
     from nta_agent.runtime.errorlog import ErrorLog
@@ -409,6 +417,8 @@ class Handler(BaseHTTPRequestHandler):
             self._json(200, read_lessons(cfg))
         elif parsed.path == "/api/health":
             self._json(200, read_health(cfg))
+        elif parsed.path == "/api/alerts":
+            self._json(200, read_alerts(cfg))
         elif parsed.path == "/api/agent/status":
             self._json(200, self.server.supervisor.status())
         elif parsed.path.startswith("/static/"):

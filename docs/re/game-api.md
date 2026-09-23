@@ -38,7 +38,7 @@ Response: envelope `S2C_RESULT{data,error}`; `error` rỗng = OK, ngược lại
 |---|---|---|---|
 | `HD_GetAreaInfo` | ✅ | `{index, noRecord:bool}` | 1 ô: owner, cityId, landId, hp, armys[].pawns. `actions.get_area`. |
 | `HD_GetMapChunk` | ✅ | `{chunkId}` | Chunk nén `cells: map<uid, PlayerCellBytesInfo{indexs1,indexs2,cities}>`. chunk=100², chunkId=cy*6+cx. `actions.get_map_chunk`. Decode ở `execution/mapchunk.py`. |
-| `HD_GetMarchs` | ✅ | `{}` | Danh sách hành quân đang chạy. `actions.get_marches`. |
+| `HD_GetMarchs` | ✅ | `{}` | Danh sách hành quân thế giới `{list:[MarchInfo]}` (engine vẽ cả march của người chơi khác: `owner`, `startIndex`, `targetIndex`, `targetUid`, `targetIsCity`, `surplusTime`). `actions.get_marches`; `AlertService` poll để cảnh báo quân địch đang tới. |
 | `HD_GetSelectArmys` | ✅ | `{index, type}` | Đạo quân có thể điều từ `index`. `actions.get_select_armys`. |
 | `HD_GetPlayerArmys` | ✅ | `{}` | Mọi đạo quân + pawns. `actions.get_player_armys`. **Verify live 2026-09-17:** army `{uid,name,index,state,marchSpeed,pawns}`; pawn `{uid,id,lv,attackSpeed,equip, hp}` với **`hp` = map `{0:cur, 1:max}`** (không phải list/curHp). Đội đứng ở thành → `index`=mainCityIndex. |
 | `HD_GetTondenDist` | ❓ | — | Cự ly/thông tin đồn điền (Tonden). |
@@ -112,7 +112,9 @@ Mô hình chi phí rương/loot: `execution/treasure_model.py`, cơ chế: [trea
 | `HD_MoveAreaBuild` | ❓ | — | Di dời công trình. |
 | `HD_CancelBT` / `HD_InDoneBt` / `HD_GetBTCityQueues` | ❓ | — | Huỷ / hoàn tất tức thì / đọc hàng đợi xây (BuildTask). |
 | `HD_BuyAddOutput` | ❓ | — | Mua tăng sản lượng. |
-| `HD_CreateCity` / `HD_ReCreateMainCity` / `HD_DismantleCity` | ❓ | — | Lập/tái lập/phá thành. |
+| `HD_ReCreateMainCity` | ✅ | `{lang}` | **Tái lập thành chính sau khi bị chiếm** (verify live 2026-09-23): server tự chọn vị trí mới, trả `{playerInfo}` → bắt đầu lại (landCount=4 khối 2×2, 3 công trình lv1, tài nguyên 700, binh chủng về ô mở khoá đầu). Lỗi `NOT_CITY_INDEX` có thể xảy ra. QUYẾT ĐỊNH CỦA NGƯỜI CHƠI. |
+| `HD_GetFallMainCityIndexs` | ❓ | `{}` | `{fallMainCityIndexs}` — các thành chính đã rơi (engine vẽ đổ nát). |
+| `HD_DismantleCity` | ❓ | — | Phá thành. |
 | `HD_ChangeCitySkin` / `HD_GetCitySkins` | ❓ | — | Skin thành. |
 
 ## 8. Pawn / army (tuyển, quản lý)
@@ -205,3 +207,12 @@ RestoreForge, RestoreSmeltEquip, SendCellEmoji, SendChat, SendMail, SetArmySpeed
 SmeltingEquip, Spectate, SpeedUpCuringPawn, StudySelect, SyncCellInfo, UnsubscribeChunk,
 UpAreaBuild, UpdateAlliChatChannel, UsePawnSkin, UseUpScrollUpPawnLv, VoteAlliLeader, WatchArea,
 WorshipHero.
+
+
+## World notify `GAME_ONUPDATEWORLDINFO_NOTIFY` (push, verify RE 2026-09-23)
+
+`{list:[OnUpdateWorldInfoNotify{type, data_<type>}]}` — `NotifyType` dùng CHUNG số với notify player
+(BT_QUEUE=6…), nên `session.sync` định tuyến world riêng (`store.apply_world_notify`), không qua
+`apply_player_update`. Đang xử lý: `ADD_MARCH=13` (data_13 MarchInfo) / `REMOVE_MARCH=14` →
+`state.world_marches`; **`CAPTURE=29`** (data_29 `{uid, time, attacker, index, landCount}`) — nếu
+`uid`=mình → `player.captureInfo={uid: attacker, time}` (giống engine `setCaptureInfo`) → Agent vào chế độ an toàn.

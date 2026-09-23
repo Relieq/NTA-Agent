@@ -36,3 +36,13 @@ def test_read_forts_view_missing_returns_empty(tmp_path):
                  "enemy_cells": [], "enemy_cities": [], "frontier": [], "recommendations": [],
                  "fort_zone": [], "fort_count": 0, "forts": [], "fort_cap": 0,
                  "threats": [], "threat_summary": {"count": 0}, "pending": []}
+
+
+def test_read_alerts_default_and_file(tmp_path):
+    from nta_agent.dashboard.server import read_alerts
+    cfg = RuntimeConfig(distinct_id="x", log_dir=tmp_path)
+    assert read_alerts(cfg)["level"] == "ok"
+    Path(cfg.alerts_path).parent.mkdir(parents=True, exist_ok=True)
+    Path(cfg.alerts_path).write_text(json.dumps(
+        {"level": "captured", "captured": {"uid": "36781907"}}), encoding="utf-8")
+    assert read_alerts(cfg)["captured"]["uid"] == "36781907"

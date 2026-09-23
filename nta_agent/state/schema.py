@@ -89,6 +89,9 @@ class GameState:
     areas: dict[int, Area] = field(default_factory=dict)
     builds: list[Building] = field(default_factory=list)  # the player's own buildings (live)
     marches: list[March] = field(default_factory=list)
+    # world marches (incl. OTHER players') keyed by uid, from world ADD/REMOVE_MARCH
+    # notifies + HD_GetMarchs resync; raw MarchInfo dicts + "_rx" receipt time.
+    world_marches: dict[str, dict] = field(default_factory=dict)
     pawn_slots: list[Slot] = field(default_factory=list)
     policy_slots: list[Slot] = field(default_factory=list)
     equip_slots: list[Slot] = field(default_factory=list)
