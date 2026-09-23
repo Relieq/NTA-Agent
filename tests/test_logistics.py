@@ -228,3 +228,36 @@ def test_digest_rally_points_from_farm_group():
     d = digest(st, prof, armies=armies)
     # rally at the farm cell 5555 only; 2 armies there -> 3 free slots of 5
     assert d["rally_points"] == [{"index": 5555, "farm_armies": 1, "free_slots": 3}]
+
+
+def test_redeploy_drops_off_territory_target():
+    st = _state(MAIN)
+    acts = FakeActions([_army("A", MAIN, 9)], MAIN)      # full army already home
+    rule = Logistics(check_every=0, profile=_prof(redeploy={"A": 999999}))
+    rule.owned_source = lambda: {MAIN, 5555}             # 999999 is not ours
+    assert rule.applies(st, acts) is False               # off-territory redeploy dropped
+    assert "A" not in rule.profile.logistics["redeploy"]  # stale order removed
+    assert acts.moved == []
+
+
+def test_redeploy_to_owned_target_proceeds():
+    st = _state(MAIN)
+    acts = FakeActions([_army("A", MAIN, 9)], MAIN)
+    rule = Logistics(check_every=0, profile=_prof(redeploy={"A": 5555}))
+    rule.owned_source = lambda: {MAIN, 5555}
+    assert rule.applies(st, acts) is True
+    rule.act(acts)
+    assert acts.moved == [(["A"], 5555)]
+
+
+def test_act_quiets_500039():
+    st = _state(MAIN)
+    acts = FakeActions([_army("A", MAIN, 9)], MAIN)
+
+    def boom(armies, target, **kw):
+        raise RuntimeError("game/HD_MoveCellArmy: ecode.500039")
+    acts.move_cell_army = boom
+    rule = Logistics(check_every=0, profile=_prof(redeploy={"A": 5555}))
+    rule.owned_source = lambda: {MAIN, 5555}
+    assert rule.applies(st, acts) is True
+    rule.act(acts)   # must NOT raise (500039 is quiet)
