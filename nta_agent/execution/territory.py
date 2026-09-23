@@ -53,14 +53,22 @@ class Territory:
         return [self.main_city] + [f.index for f in self.forts]
 
 
-def build_territory(state, map_width: int = 600) -> Territory:
+def build_territory(state, map_width: int = 600, forts=None) -> Territory:
+    """Territory from player state. ``fortAutoSupports`` only lists forts with the
+    auto-support toggle registered (empty for a freshly built Cứ Điểm), so callers
+    that know the real fort cells — from the map-chunk city decode — pass them via
+    ``forts`` (an iterable of cell indices); auto_support is filled from
+    ``fortAutoSupports`` where known. Without it we fall back to the toggle list.
+    """
     player = (getattr(state, "raw", None) or {}).get("player", {}) or {}
     main = int(player.get("mainCityIndex", 0) or 0)
-    forts = [Fort(index=int(f.get("index", 0)), auto_support=bool(f.get("val")))
-             for f in (player.get("fortAutoSupports") or []) if isinstance(f, dict)]
+    auto = {int(f.get("index", 0)): bool(f.get("val"))
+            for f in (player.get("fortAutoSupports") or []) if isinstance(f, dict)}
+    idxs = {int(i) for i in forts} if forts is not None else set(auto)
+    fort_list = [Fort(index=i, auto_support=auto.get(i, False)) for i in sorted(idxs)]
     garrisons = [int(d.get("index", 0)) for d in (player.get("armyDists") or [])
                  if isinstance(d, dict)]
-    return Territory(main_city=main, forts=forts, garrisons=garrisons, map_width=map_width)
+    return Territory(main_city=main, forts=fort_list, garrisons=garrisons, map_width=map_width)
 
 
 def _neighbor_chunks(owned: list[int], cid: int, map_width: int) -> set[int]:

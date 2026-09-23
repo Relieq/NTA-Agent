@@ -37,6 +37,22 @@ def test_routes_wounded_army_to_main():
     assert acts.moved == [(["hurt"], main)]
 
 
+def test_routes_to_fort_from_forts_source():
+    """A built fort (absent from fortAutoSupports) supplied via forts_source is a
+    valid heal node — a wounded army nearer it than the city routes there."""
+    main = 100 * 600 + 100
+    fort = 110 * 600 + 100         # far from main
+    st = _state(main, forts=[])    # fortAutoSupports empty
+    hurt = 111 * 600 + 100         # 1 cell from the fort, 11 from main
+    armies = [{"index": hurt, "uid": "hurt", "pawns": [{"hp": [10, 100]}]}]
+    acts = FakeActions(armies)
+    rule = HealRouting(check_every=0, fort_capacity=5)
+    rule.forts_source = lambda: [fort]
+    assert rule.applies(st, acts) is True
+    rule.act(acts)
+    assert acts.moved == [(["hurt"], fort)]   # routed to the fort, not the far city
+
+
 def test_skips_locked_army():
     # a wounded army the ArmyComposer owns must not be routed away to heal.
     main = 100 * 600 + 100

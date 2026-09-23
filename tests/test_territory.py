@@ -28,6 +28,25 @@ def test_build_territory_from_player_fields():
     assert set(t.nodes()) == {main, main + 10, main + 20}
 
 
+def test_build_territory_forts_param_overrides_autosupports():
+    """A freshly built fort is absent from fortAutoSupports; callers pass the real
+    fort indices (from the chunk city decode) via `forts`. auto_support is still
+    filled from fortAutoSupports where known."""
+    W = 600
+    main = 100 * W + 100
+    built = main + 30  # detected from chunk, NOT in fortAutoSupports
+    st = _state({
+        "mainCityIndex": main,
+        "fortAutoSupports": [{"index": main + 10, "val": True}],  # only one, with auto-support
+    })
+    t = build_territory(st, map_width=W, forts=[built, main + 10])
+    idx = {f.index for f in t.forts}
+    assert idx == {built, main + 10}                          # uses the passed set
+    assert Fort(index=main + 10, auto_support=True) in t.forts  # auto flag kept
+    assert Fort(index=built, auto_support=False) in t.forts     # unknown -> False
+    assert built in set(t.nodes())                             # heal/relay node now
+
+
 def test_geometry_pos_dist_near_main():
     W = 600
     main = 100 * W + 100  # 2x2 block corner (100,100)..(101,101)
