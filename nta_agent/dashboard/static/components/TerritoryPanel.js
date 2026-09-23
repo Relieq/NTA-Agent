@@ -120,7 +120,6 @@ export default {
      ctx.font="bold "+Math.min(13,scale-4)+"px system-ui"; ctx.textAlign="center"; ctx.textBaseline="middle";
      ctx.lineWidth=3; ctx.strokeStyle="#0b1320"; ctx.strokeText(String(c.pawns), cx, cy);
      ctx.fillStyle=col; ctx.fillText(String(c.pawns), cx, cy); } });
-   data.forts.forEach(([x,y])=>{ if(inView(x,y)) box(x,y,"#d95926"); });
    data.accepted.forEach(([x,y])=>{ if(inView(x,y)){ box(x,y,"#d95926");
     ctx.fillStyle="#0b1320"; ctx.beginPath(); ctx.arc(sX(x)+scale/2,sY(y)+scale/2,Math.max(1.5,scale/6),0,7); ctx.fill(); } });
    ctx.strokeStyle="#8b949e"; ctx.lineWidth=1; ctx.setLineDash([2,2]);   // biên giới trống
@@ -158,6 +157,20 @@ export default {
     if(!inZone(x,y-1)){ ctx.moveTo(sX(x),sY(y)+scale); ctx.lineTo(sX(x)+scale,sY(y)+scale); }
    }
    ctx.stroke(); ctx.setLineDash([]);
+   // Built Cứ Điểm: a DISTINCT marker so it never blends into the orange
+   // recommendation zone — purple fill + gold border + a 🏯 glyph (a small gold
+   // pip when the cell is too tiny for a glyph). Drawn last so it sits on top.
+   data.forts.forEach(([x,y])=>{ if(!inView(x,y)) return;
+    box(x,y,"#8957e5");                                   // purple fill (distinct)
+    ctx.strokeStyle="#f5b301"; ctx.lineWidth=2;           // gold border
+    ctx.strokeRect(sX(x)+1.5,sY(y)+1.5,scale-3,scale-3);
+    const cx=sX(x)+scale/2, cy=sY(y)+scale/2;
+    if(scale>=16){ ctx.font=Math.min(scale-3,16)+"px system-ui";
+     ctx.textAlign="center"; ctx.textBaseline="middle";
+     ctx.lineWidth=3; ctx.strokeStyle="#0b1320"; ctx.strokeText("🏯", cx, cy);
+     ctx.fillText("🏯", cx, cy); }
+    else { ctx.fillStyle="#f5b301"; ctx.beginPath();
+     ctx.arc(cx,cy,Math.max(1.5,scale/5),0,7); ctx.fill(); } });
    if(hover && inView(hover.x,hover.y)){ ctx.strokeStyle="#58a6ff"; ctx.lineWidth=2;
     ctx.strokeRect(sX(hover.x)+1,sY(hover.y)+1,scale-2,scale-2); }
    ctx.restore();
@@ -185,7 +198,7 @@ export default {
     c.armies.push({name:a.name||"?", state:(a.state)|0, label:a.state_label||"", pawns:n});
     c.pawns+=n; c.maxState=Math.max(c.maxState,(a.state)|0); });
    data={ main:t.main_city||0, mw, owned:f.owned_cells||[], accepted:f.accepted||[],
-    forts:(t.forts||[]).map(x=>[x.x,x.y]),
+    forts:f.forts||[],   // built Cứ Điểm from the chunk city decode (authoritative)
     garr:(t.garrisons||[]).map(i=>[i%mw, Math.floor(i/mw)]),
     enemy:f.enemy_cells||[], enemyCities:f.enemy_cities||[], frontier:f.frontier||[],
     zone:f.fort_zone||[], fortCount:f.fort_count||0, fortCap:f.fort_cap||0, armyCells };
@@ -271,7 +284,7 @@ export default {
    <span><b style="color:#199e70">■</b> ô đã chiếm (liền lãnh địa)</span>
    <span><b style="color:#e3b341">▢</b> ô đã chiếm nhưng RỜI (không nối với thành)</span>
    <span><b style="color:#39d0d8">⬡</b> bao lãnh địa (hull nối biên vùng liền chứa thành)</span>
-   <span><b style="color:#d95926">■</b> Cứ Điểm (đã có)</span>
+   <span>🏯 <b style="color:#8957e5">■</b> Cứ Điểm đã xây (viền vàng)</span>
    <span><b style="color:#d95926">▨</b> vùng gợi ý xây Cứ Điểm — bấm 1 ô để agent xây</span>
    <span>quân (số=lính): <b style="color:#c3c2b7">▢</b>rảnh <b style="color:#58a6ff">▢</b>hành quân <b style="color:#da3633">▢</b>đang đánh</span>
    <span><b style="color:#da3633">■</b> ô địch</span>

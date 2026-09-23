@@ -2,15 +2,19 @@ import { getJSON, usePolling } from "../api.js";
 const { ref } = window.Vue;
 export default {
  setup(){
-  const f=ref({owned_count:0,fort_zone:[],fort_count:0,fort_cap:0,pending:[]});
+  const f=ref({owned_count:0,fort_zone:[],fort_count:0,fort_cap:0,pending:[],forts:[]});
   async function load(){ const v=await getJSON("/api/forts");
    if(v) f.value={owned_count:v.owned_count||0, fort_zone:v.fort_zone||[],
-                  fort_count:v.fort_count||0, fort_cap:v.fort_cap||0, pending:v.pending||[]}; }
+                  fort_count:v.fort_count||0, fort_cap:v.fort_cap||0,
+                  pending:v.pending||[], forts:v.forts||[]}; }
   usePolling(load, 4000);
   return { f };
  },
  template:`<div class="card full"><h2>Cứ Điểm</h2>
   <div>Ô đã chiếm: <b>{{ f.owned_count||0 }}</b> · Cứ Điểm: <b>{{ f.fort_count }}</b><span v-if="f.fort_cap">/{{ f.fort_cap }}</span></div>
+  <div v-if="(f.forts||[]).length" style="margin-top:6px;font-size:13px">
+   🏯 <b>Cứ Điểm đã xây:</b>
+   <span v-for="(c,i) in f.forts" :key="i" style="color:#8957e5">({{ c[0] }},{{ c[1] }})<span v-if="i<f.forts.length-1"> · </span></span></div>
   <div v-if="f.fort_cap && f.fort_count>=f.fort_cap" class="muted" style="margin-top:6px;color:#e3b341">
    Đã đủ số Cứ Điểm — không cần xây thêm.</div>
   <div v-else class="muted" style="margin-top:6px;font-size:13px">

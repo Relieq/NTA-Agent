@@ -56,8 +56,17 @@ class FortService:
             m = self._scan(self.actions, main, uid, map_width=self.map_width)
             owned = m["owned"]
 
-            fort_indices = [int(f.get("index", 0)) for f in
-                            (player.get("fortAutoSupports") or []) if isinstance(f, dict)]
+            # Detect built forts from the AUTHORITATIVE map-chunk city decode:
+            # our cities map is {index: cityType} with cityType 1 = main city,
+            # 2 = Cứ Điểm (fort). fortAutoSupports only lists forts with the
+            # auto-support toggle registered (empty for a freshly built fort), so
+            # relying on it left forts invisible. Union the two to be safe.
+            cities = m.get("cities") or {}
+            fort_set = {int(i) for i, t in cities.items()
+                        if int(t) != 1 and int(i) != main}
+            fort_set.update(int(f.get("index", 0)) for f in
+                            (player.get("fortAutoSupports") or []) if isinstance(f, dict))
+            fort_indices = sorted(fort_set)
             decisions = fort_decisions.load(self.cfg.fort_decisions_path)
             enemy = set(m.get("enemy_cells", ())) | set((m.get("enemy_cities") or {}).keys())
             recs, accepted = plan_forts(main, owned, fort_indices, decisions,
@@ -82,12 +91,13 @@ class FortService:
             # P3: detect enemy touching/penetrating our convex-hull territory.
             threat = detect_incursions(owned, m.get("enemy_cells", ()),
                                        m.get("enemy_cities") or {}, main, mw)
+            fort_coords = sorted([i % mw, i // mw] for i in fort_indices)
             payload = {"owned_count": len(owned), "owned_cells": cells,
                        "accepted": accepted_coords, "rejected": rejected_coords,
                        "enemy_cells": enemy_cells, "enemy_cities": enemy_cities,
                        "frontier": frontier, "recommendations": recs,
                        "fort_zone": zone_coords, "fort_count": len(fort_indices),
-                       "fort_cap": cap,
+                       "forts": fort_coords, "fort_cap": cap,
                        "threats": threat["threats"][:50],
                        "threat_summary": threat["summary"]}
             path = self.cfg.forts_path

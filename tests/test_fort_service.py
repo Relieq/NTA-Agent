@@ -29,6 +29,30 @@ def _make(tmp_path, **kw):
     return cfg, FortService(cfg=cfg, actions=object(), **kw)
 
 
+def test_detects_forts_from_city_decode(tmp_path):
+    """A built Cứ Điểm shows up in the map-chunk city decode as cityType==2
+    (main city = 1). fort_service must detect forts from THERE — not from
+    player.fortAutoSupports (which is empty for a freshly built fort) — and write
+    a `forts` coord list + accurate fort_count so the dashboard can mark them.
+    """
+    main = 100 * 600 + 100
+    fort = 105 * 600 + 103        # a built fort cell (73,552)-style
+    owned = {main, fort, 100 * 600 + 101}
+
+    def scan(actions, main, uid, map_width=600, focus=None):
+        return {"owned": set(owned),
+                "cities": {main: 1, fort: 2},   # main=1, fort=2
+                "enemy_cells": set(), "enemy_cities": {}, "frontier": set()}
+
+    cfg, svc = _make(tmp_path, scan=scan, max_count_fn=lambda bid: 3)
+    # fortAutoSupports empty -> old code would report 0 forts
+    svc.tick(_state(land_count=3, main=main, forts=[]))
+    data = json.loads(cfg.forts_path.read_text(encoding="utf-8"))
+    assert data["fort_count"] == 1
+    assert [103, 105] in data["forts"]          # fort coord written for the map
+    assert [100, 100] not in data["forts"]      # main city is NOT a fort
+
+
 def test_scans_and_writes_on_first_tick(tmp_path):
     owned = {100 * 600 + 100, 120 * 600 + 100}
 
