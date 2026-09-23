@@ -1584,9 +1584,11 @@ class Forge:
         player = (state.raw or {}).get("player") or {}
         if player.get("currForgeEquip"):
             return False  # a forge is already running
-        from nta_agent.execution.forge import affordable, craft_candidates
+        from nta_agent.execution.forge import affordable, craft_candidates, equip_id
         equips = player.get("equips") or []
-        crafted = {int(e.get("id", 0) or 0) for e in equips if isinstance(e, dict)}
+        # live EquipInfo may omit `id` -> derive from uid, or a crafted equip looks
+        # un-crafted and gets "crafted" again (= an unwanted, paid recast)
+        crafted = {equip_id(e) for e in equips if isinstance(e, dict)}
         cands = craft_candidates(
             player.get("equipSlots") or {},
             lambda i: cfg.table("equipBase").get(i),

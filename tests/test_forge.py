@@ -143,3 +143,18 @@ def test_forge_view_lists_common_equips_with_quality_and_target():
     assert r["target"] == {"threshold": 0.8, "budget": 12} and r["iron_cost"] == 3
     assert r["effects"][0]["text"] == "Có 30% gây 165% ST Bạo"
     assert r["effects"][0]["value_range"] == [150, 180] and r["effects"][0]["odds_range"] == [20, 40]
+
+
+def test_equip_id_derived_from_uid_when_missing():
+    """Live EquipInfo can omit `id` (engine derives it from uid "<id>_<lv>");
+    without it the equipBase lookup failed (name #0, cost 0, recast skipped)."""
+    e = _eq()
+    del e["id"]
+    t = {"6001_1": {"threshold": 0.8, "budget": 10}}
+    d = next_recast([e], base_of, eff_row, t, RICH)
+    assert d is not None and d.iron == 3
+    from nta_agent.execution.forge import forge_view
+    rows = forge_view([e], base_of, eff_row, {}, name_of={6001: "Rìu"}.get,
+                      effect_text={3: "Có <color=#000001>{1}</c> gây <color=#000001>{0}</c> ST Bạo"}.get)
+    assert rows[0]["id"] == 6001 and rows[0]["name"] == "Rìu" and rows[0]["iron_cost"] == 3
+    assert rows[0]["effects"][0]["text"] == "Có 30% gây 165% ST Bạo"     # markup stripped
