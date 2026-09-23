@@ -14,6 +14,7 @@ lookups) — see ``parse_attrs`` for the attr layout (RE: engine updateAttr).
 """
 from __future__ import annotations
 
+import re
 from dataclasses import dataclass
 
 # CType -> resource name (engine enum, verified: 1 cereal,2 timber,3 stone,9 iron…).
@@ -77,6 +78,24 @@ def parse_range(s) -> tuple[int, int] | None:
 def is_common(base: dict) -> bool:
     """Common equipment (agent may forge) is not locked to a pawn."""
     return not str((base or {}).get("exclusive_pawn", "") or "").strip()
+
+
+_MARKUP = re.compile(r"</?c(?:olor=[^>]*)?>", re.IGNORECASE)  # Cocos rich-text tags
+
+
+def equip_id(equip: dict) -> int:
+    """The equipBase id. Live EquipInfo may omit ``id`` — the engine derives it from
+    the uid ``"<id>_<lv>"`` (setId) — so fall back to the uid prefix."""
+    try:
+        eid = int((equip or {}).get("id") or 0)
+    except (TypeError, ValueError):
+        eid = 0
+    if eid:
+        return eid
+    try:
+        return int(str((equip or {}).get("uid", "")).split("_")[0])
+    except (TypeError, ValueError):
+        return 0
 
 
 def parse_attrs(equip: dict) -> dict:
@@ -143,7 +162,7 @@ def next_recast(equips, base_of, effect_row, targets, resources, *, busy=False):
         e = by_uid.get(str(uid))
         if e is None:
             continue
-        base = base_of(int(e.get("id", 0) or 0)) or {}
+        base = base_of(equip_id(e)) or {}
         if not is_common(base):
             continue
         q = effect_quality(e, effect_row)
@@ -168,7 +187,7 @@ def forge_view(equips, base_of, effect_row, targets, *, name_of=None, effect_tex
     for e in equips or []:
         if not isinstance(e, dict):
             continue
-        eid = int(e.get("id", 0) or 0)
+        eid = equip_id(e)
         base = base_of(eid) or {}
         if not is_common(base):
             continue
@@ -176,7 +195,7 @@ def forge_view(equips, base_of, effect_row, targets, *, name_of=None, effect_tex
         for eff in parse_attrs(e)["effects"]:
             row = effect_row(eff["type"]) or {}
             sfx = str(row.get("suffix") or "")
-            tmpl = (effect_text(eff["type"]) if effect_text else None) or ""
+            tmpl = _MARKUP.sub("", (effect_text(eff["type"]) if effect_text else None) or "")
             text = (tmpl.replace("{0}", f"{eff['value']}{sfx}")
                         .replace("{1}", f"{eff['odds']}%")) if tmpl else ""
             effs.append({"type": eff["type"], "value": eff["value"], "odds": eff["odds"],

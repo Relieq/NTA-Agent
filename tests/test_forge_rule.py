@@ -170,3 +170,11 @@ def test_free_recast_spends_nothing():
     assert rule.applies(st, acts) is True
     rule.act(acts)
     assert acts.forged == ["6001_1"] and spent == []
+
+
+def test_crafted_equip_without_id_is_not_recrafted():
+    """Live EquipInfo omits `id`; the crafted set must derive it from the uid or the
+    rule re-"crafts" (= pays for a recast of) an equip that already exists."""
+    st = _state({"1": {"id": 6005, "lv": 1}}, equips=[{"uid": "6005_1", "attrs": []}], iron=99)
+    rule = Forge(config=FakeConfig(BASE), profile=SimpleNamespace(forge={"enabled": True}))
+    assert rule.applies(st, FakeActions()) is False
