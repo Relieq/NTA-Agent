@@ -3,14 +3,14 @@
 User rules (2026-09-18, see memory nta-agent-forge-leveling):
 - Only forge COMMON equipment (``equipBase.exclusive_pawn`` empty); never the
   specialized (pawn-locked) ones.
-- Baseline: forge each un-forged common equip once.
-- For user-designated MAIN equips, recast toward a PER-ITEM threshold within a
+- Baseline: craft (first-forge) each unlocked common equip (``craft_candidates``).
+- For user-designated MAIN equips, recast toward a PER-ITEM threshold on the
+  EFFECT rolls (value/odds; attack/hp don't count — user 2026-09-23) within a
   PER-ITEM iron budget. No RestoreForge (too costly) — we simply stop as soon as
   a roll meets the threshold, so we keep it.
 
-Pure over an explicit interface (normalized equip dicts + a base lookup), so no
-live-shape guessing leaks into the tested logic; the raw→normalized adapter is
-wired/verified separately when equipment exists.
+Pure over the engine shapes (EquipInfo ``attrs``, equipBase/equipEffect rows via
+lookups) — see ``parse_attrs`` for the attr layout (RE: engine updateAttr).
 """
 from __future__ import annotations
 
@@ -79,76 +79,116 @@ def is_common(base: dict) -> bool:
     return not str((base or {}).get("exclusive_pawn", "") or "").strip()
 
 
-def stat_fraction(equip: dict, base: dict) -> float | None:
-    """Where the equip's forgeable stat sits in its range (0..1), or None.
+def parse_attrs(equip: dict) -> dict:
+    """Engine EquipInfo ``attrs`` -> ``{attack, hp, effects:[{type, value, odds}]}``.
 
-    Uses whichever of attack/hp carries a range in the base row."""
-    for key in ("attack", "hp"):
-        rng = parse_range((base or {}).get(key, ""))
-        if rng is None:
+    Each attr is ``[kind, type, value, odds, smeltId]`` (engine updateAttr):
+    kind 0 = main stat (type 1 hp / 2 attack), kind 2 = effect (type = equipEffect
+    id, value, odds). Items may be ``{"attr": [...]}`` or bare lists."""
+    out = {"attack": 0, "hp": 0, "effects": []}
+    for a in (equip or {}).get("attrs") or []:
+        arr = a.get("attr") if isinstance(a, dict) else a
+        if not isinstance(arr, (list, tuple)) or len(arr) < 3:
             continue
-        lo, hi = rng
-        if hi <= lo:
-            return 1.0
-        cur = int((equip or {}).get(key, 0) or 0)
-        return max(0.0, min(1.0, (cur - lo) / (hi - lo)))
-    return None
+        kind, typ, val = int(arr[0] or 0), int(arr[1] or 0), int(arr[2] or 0)
+        if kind == 0:
+            if typ == 1:
+                out["hp"] += val
+            elif typ == 2:
+                out["attack"] += val
+        elif kind == 2:
+            odds = int(arr[3] or 0) if len(arr) > 3 else 0
+            out["effects"].append({"type": typ, "value": val, "odds": odds})
+    return out
+
+
+def effect_quality(equip: dict, effect_row) -> float | None:
+    """How good the equip's EFFECT rolls are, 0..1 (user: only effects matter).
+
+    Mean position of every rolled effect number (value, odds) inside its
+    ``equipEffect`` range; attack/hp are ignored. None when nothing is rangeable."""
+    fracs = []
+    for eff in parse_attrs(equip)["effects"]:
+        row = effect_row(eff["type"]) or {}
+        for key in ("value", "odds"):
+            rng = parse_range(row.get(key, ""))
+            if rng is None or rng[1] <= rng[0]:
+                continue
+            lo, hi = rng
+            fracs.append(max(0.0, min(1.0, (eff[key] - lo) / (hi - lo))))
+    return sum(fracs) / len(fracs) if fracs else None
 
 
 @dataclass
-class ForgeDecision:
+class RecastDecision:
     uid: str
-    kind: str   # "forge" (baseline, once) | "recast" (toward the item's threshold)
-    cost: int   # iron spent (0 when a free recast is used)
+    quality: float     # current effect quality (below the target)
+    cost: dict         # full forge cost to pay ({} when this recast is free)
+    iron: int          # iron charged to the item's budget (0 when free)
+    free: bool
 
 
-def _forge_cost(base: dict) -> int:
-    return int((base or {}).get("forge_cost", 0) or 0)
+def next_recast(equips, base_of, effect_row, targets, resources, *, busy=False):
+    """The next RECAST toward a user target, or None.
 
-
-def next_forge(equips, base_of, targets=None, *, iron=0, free_count=0, busy=False):
-    """The next forge action, or None.
-
-    ``equips``: normalized dicts ``{uid, id, is_forged, attack, hp, recast_count,
-    next_forge_free}``. ``base_of(id)`` -> equipBase row (attack/hp ranges,
-    forge_cost, reforge_count, exclusive_pawn). ``targets``: ``{uid: {"threshold":
-    0..1, "budget": remaining_iron}}`` for main equips. ``busy``: an equip is
-    mid-forge (server allows one at a time)."""
-    if busy:
+    ``equips``: raw EquipInfo dicts (player.equips). ``targets``: ``{uid:
+    {threshold: 0..1, budget: iron}}``. A recast pays the equip's full
+    ``forge_cost`` (timber/stone/iron…) unless ``nextForgeFree``; only the IRON part
+    counts against the item's budget. Stops (None for that item) once its effect
+    quality reaches the threshold — no RestoreForge, so the good roll is kept."""
+    if busy or not targets:
         return None
-    targets = targets or {}
-
-    def cost_for(base, equip):
-        if free_count > 0 or (equip or {}).get("next_forge_free"):
-            return 0
-        return _forge_cost(base)
-
-    # Baseline: forge each un-forged common equip once.
-    for e in equips:
-        base = base_of(e.get("id"))
-        if not is_common(base) or e.get("is_forged"):
-            continue
-        c = cost_for(base, e)
-        if c == 0 or iron >= c:
-            return ForgeDecision(uid=str(e.get("uid")), kind="forge", cost=c)
-
-    # Recast targeted main equips toward their per-item threshold, within budget.
-    by_uid = {str(e.get("uid")): e for e in equips}
+    by_uid = {str(e.get("uid")): e for e in (equips or []) if isinstance(e, dict)}
     for uid, cfg in targets.items():
         e = by_uid.get(str(uid))
         if e is None:
             continue
-        base = base_of(e.get("id"))
+        base = base_of(int(e.get("id", 0) or 0)) or {}
         if not is_common(base):
             continue
-        reforge_max = int((base or {}).get("reforge_count", 0) or 0)
-        if reforge_max and int(e.get("recast_count", 0) or 0) >= reforge_max:
-            continue  # hit the recast cap
-        frac = stat_fraction(e, base)
-        if frac is None or frac >= float(cfg.get("threshold", 1.0)):
-            continue  # already good enough
-        c = cost_for(base, e)
-        if c > 0 and (int(cfg.get("budget", 0) or 0) < c or iron < c):
-            continue  # out of this item's iron budget or global iron
-        return ForgeDecision(uid=str(uid), kind="recast", cost=c)
+        q = effect_quality(e, effect_row)
+        if q is None or q >= float(cfg.get("threshold", 1.0)):
+            continue
+        free = bool(e.get("nextForgeFree"))
+        cost = {} if free else parse_cost(base.get("forge_cost"))
+        iron = int(cost.get("iron", 0))
+        if not free and (iron > int(cfg.get("budget", 0) or 0)
+                         or not affordable(cost, resources)):
+            continue
+        return RecastDecision(uid=str(uid), quality=q, cost=cost, iron=iron, free=free)
     return None
+
+
+def forge_view(equips, base_of, effect_row, targets, *, name_of=None, effect_text=None):
+    """Dashboard rows for the recast panel: every COMMON equip with its current
+    effect rolls (filled text + ranges), effect quality, recast count, per-recast
+    iron cost and the user's target. Pure; lookups injected."""
+    targets = targets or {}
+    rows = []
+    for e in equips or []:
+        if not isinstance(e, dict):
+            continue
+        eid = int(e.get("id", 0) or 0)
+        base = base_of(eid) or {}
+        if not is_common(base):
+            continue
+        effs = []
+        for eff in parse_attrs(e)["effects"]:
+            row = effect_row(eff["type"]) or {}
+            sfx = str(row.get("suffix") or "")
+            tmpl = (effect_text(eff["type"]) if effect_text else None) or ""
+            text = (tmpl.replace("{0}", f"{eff['value']}{sfx}")
+                        .replace("{1}", f"{eff['odds']}%")) if tmpl else ""
+            effs.append({"type": eff["type"], "value": eff["value"], "odds": eff["odds"],
+                         "value_range": list(parse_range(row.get("value", "")) or []),
+                         "odds_range": list(parse_range(row.get("odds", "")) or []),
+                         "text": text})
+        q = effect_quality(e, effect_row)
+        uid = str(e.get("uid"))
+        rows.append({"uid": uid, "id": eid, "name": (name_of(eid) if name_of else None) or f"#{eid}",
+                     "quality": None if q is None else round(q, 3),
+                     "effects": effs, "recast_count": int(e.get("recastCount", 0) or 0),
+                     "next_free": bool(e.get("nextForgeFree")),
+                     "iron_cost": int(parse_cost(base.get("forge_cost")).get("iron", 0)),
+                     "target": targets.get(uid)})
+    return rows

@@ -137,3 +137,10 @@ def test_status_header_shows_early_warning_banner():
     sh = _c("StatusHeader.js")
     assert "/api/alerts" in sh
     assert "THÀNH CHÍNH ĐÃ BỊ CHIẾM" in sh and "QUÂN ĐỊCH ĐANG TIẾN VÀO" in sh
+
+
+def test_forge_panel_wired():
+    fp = _c("ForgePanel.js")
+    assert "/api/forge" in fp and "/api/forge/target" in fp and "threshold_pct" in fp
+    app = _c("App.js")
+    assert "ForgePanel" in app

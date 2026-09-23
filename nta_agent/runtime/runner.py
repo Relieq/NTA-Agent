@@ -201,6 +201,11 @@ def run(cfg: RuntimeConfig, *, ticks: int = 0, session=None, engine=None) -> Non
             rule.pending_source = lambda: fort_queue.load(cfg.pending_forts_path)
             rule.remove_fn = lambda i: fort_queue.remove(cfg.pending_forts_path, i)
             rule.on_event = log.append
+        elif getattr(rule, "name", "") == "forge":
+            from nta_agent.runtime import forge_targets as _ft
+            rule.on_event = log.append
+            rule.targets_source = lambda: _ft.load(cfg.forge_targets_path)
+            rule.spend_fn = lambda uid, iron: _ft.spend(cfg.forge_targets_path, uid, iron)
         elif getattr(rule, "name", "") == "build_order":
             from nta_agent.runtime import fort_queue as _fq
             rule.pending_forts_source = lambda: _fq.load(cfg.pending_forts_path)
@@ -215,6 +220,29 @@ def run(cfg: RuntimeConfig, *, ticks: int = 0, session=None, engine=None) -> Non
     from nta_agent.execution.profile import reload_into
     from nta_agent.runtime.new_game import check_new_game
 
+    def _write_forge_view(state):  # recast panel rows for the dashboard
+        if config is None:
+            return
+        from nta_agent.execution.forge import forge_view
+        from nta_agent.runtime import forge_targets as _ft
+        text = config.table("equipText")
+        player = (state.raw or {}).get("player") or {}
+
+        def _vi(key):
+            row = text.get(key) or {}
+            return row.get("vi") or row.get("en")
+        rows = forge_view(player.get("equips") or [],
+                          lambda i: config.table("equipBase").get(i),
+                          lambda t: config.table("equipEffect").get(t),
+                          _ft.load(cfg.forge_targets_path),
+                          name_of=lambda i: _vi(f"name_{i}"),
+                          effect_text=lambda t: _vi(f"effect_{t}"))
+        out = {"equips": rows, "busy": player.get("currForgeEquip") or None,
+               "iron": state.resources.iron}
+        p = cfg.forge_view_path
+        p.parent.mkdir(parents=True, exist_ok=True)
+        p.write_text(json.dumps(out, ensure_ascii=False), encoding="utf-8")
+
     def _write_health():  # F1: connection-health telemetry for the dashboard
         p = cfg.health_path
         p.parent.mkdir(parents=True, exist_ok=True)
@@ -226,6 +254,7 @@ def run(cfg: RuntimeConfig, *, ticks: int = 0, session=None, engine=None) -> Non
         _safe(log.tick, i, fired, state)
         _safe(_write_health)
         _safe(alerts.tick, state)  # observe-only: runs even when paused/captured
+        _safe(_write_forge_view, state)
         # pick up dashboard edits + stop the brain from clobbering them (shared obj)
         _safe(reload_into, profile, cfg.profile_path)
         # a NEW main city (re-created after capture) = new game: drop stale uid/cell state

@@ -241,3 +241,22 @@ def test_expire_build_queue_is_sequential():
     # a lone item with no time left is done immediately
     kept, _ = expire_build_queue([{"uid": "c", "id": 2003, "lv": 2}], {}, now=5.0)
     assert kept == []
+
+
+def test_forge_equip_ret_notify_updates_equip_and_clears_busy():
+    """FORGE_EQUIP_RET (player notify 34, data_34 EquipInfo): the engine clears
+    currForgeEquip and upserts the equip — the recast loop reads the new rolls."""
+    from nta_agent.state import apply_notify, from_entry_rst
+    st = from_entry_rst({"player": {"uid": "1",
+        "equips": [{"uid": "6001_1", "id": 6001, "attrs": [{"attr": [2, 3, 150, 20]}]}],
+        "currForgeEquip": {"uid": "6001_1", "needTime": 300000}}})
+    apply_notify(st, {"list": [{"type": 34, "data_34": {
+        "uid": "6001_1", "id": 6001, "attrs": [{"attr": [2, 3, 175, 38]}],
+        "recastCount": 1, "nextForgeFree": True}}]})
+    p = st.raw["player"]
+    assert not p.get("currForgeEquip")
+    assert p["equips"][0]["attrs"] == [{"attr": [2, 3, 175, 38]}]
+    assert p["equips"][0]["nextForgeFree"] is True and len(p["equips"]) == 1
+    # a first craft (new uid) is appended
+    apply_notify(st, {"list": [{"type": 34, "data_34": {"uid": "6002_1", "id": 6002, "attrs": []}}]})
+    assert [e["uid"] for e in p["equips"]] == ["6001_1", "6002_1"]

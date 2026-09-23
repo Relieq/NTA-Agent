@@ -68,6 +68,14 @@ class RuntimeConfig:
         return self.log_dir / "alerts.json"
 
     @property
+    def forge_targets_path(self) -> Path:
+        return self.log_dir / "forge_targets.json"   # {equip_uid: {threshold, budget}}
+
+    @property
+    def forge_view_path(self) -> Path:
+        return self.log_dir / "forge.json"           # recast panel rows (dashboard)
+
+    @property
     def pending_forts_path(self) -> Path:
         return self.log_dir / "pending_forts.json"
 

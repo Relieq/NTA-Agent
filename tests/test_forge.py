@@ -1,85 +1,106 @@
+"""Forge core: crafting + RECAST toward a per-item EFFECT-quality threshold.
+
+User rules (2026-09-18 + 2026-09-23): only COMMON equips (exclusive_pawn empty);
+recast a user-designated equip until its EFFECT rolls (value + odds, each within
+equipEffect ranges) reach the item's threshold, or its IRON budget runs out.
+Main stats (attack/hp) don't count. No RestoreForge.
+"""
 from nta_agent.execution.forge import (
+    effect_quality,
     is_common,
-    next_forge,
+    next_recast,
+    parse_attrs,
     parse_range,
-    stat_fraction,
 )
 
+# equipBase-like rows (forge_cost is the multi-resource config string)
 BASE = {
-    6001: {"id": 6001, "attack": "6,15", "hp": "", "forge_cost": 10, "reforge_count": 5, "exclusive_pawn": ""},
-    6002: {"id": 6002, "attack": "", "hp": "60,130", "forge_cost": 10, "reforge_count": 5, "exclusive_pawn": ""},
-    9001: {"id": 9001, "attack": "6,15", "forge_cost": 10, "reforge_count": 5, "exclusive_pawn": "3101"},  # specialized
+    6001: {"id": 6001, "attack": "1,5", "hp": "20,40", "effect": "3",
+           "forge_cost": "2,0,100|3,0,100|9,0,3", "exclusive_pawn": ""},
+    9001: {"id": 9001, "attack": "1,5", "effect": "3", "forge_cost": "9,0,3",
+           "exclusive_pawn": "3101"},                       # specialized -> never
 }
+EFFECT = {3: {"id": 3, "value": "150,180", "odds": "20,40", "suffix": "%"},   # crit: dmg% + chance%
+          7: {"id": 7, "value": "30,50", "odds": ""}}           # no odds range
 
 
 def base_of(i):
     return BASE.get(i)
 
 
-def _e(uid, id_, is_forged=True, attack=0, hp=0, recast=0, free=False):
-    return {"uid": uid, "id": id_, "is_forged": is_forged, "attack": attack,
-            "hp": hp, "recast_count": recast, "next_forge_free": free}
+def eff_row(t):
+    return EFFECT.get(t)
 
 
-def test_parse_range_and_fraction():
-    assert parse_range("6,15") == (6, 15)
+def _eq(uid="6001_1", id_=6001, effects=((3, 165, 30),), attack=3, hp=30, free=False, recast=0):
+    """Engine EquipInfo: attrs = [[0, 2(atk)|1(hp), v], [2, effectType, value, odds], ...]."""
+    attrs = [{"attr": [0, 2, attack]}, {"attr": [0, 1, hp]}]
+    attrs += [{"attr": [2, t, v, o]} for t, v, o in effects]
+    return {"uid": uid, "id": id_, "attrs": attrs, "recastCount": recast, "nextForgeFree": free}
+
+
+RICH = {"timber": 999, "stone": 999, "iron": 99}
+
+
+def test_parse_range():
+    assert parse_range("150,180") == (150, 180)
     assert parse_range("") is None
-    assert stat_fraction({"attack": 6}, BASE[6001]) == 0.0
-    assert stat_fraction({"attack": 15}, BASE[6001]) == 1.0
-    assert abs(stat_fraction({"hp": 95}, BASE[6002]) - (35 / 70)) < 1e-9
 
 
 def test_is_common():
-    assert is_common(BASE[6001]) is True
-    assert is_common(BASE[9001]) is False  # exclusive_pawn set
+    assert is_common(BASE[6001]) and not is_common(BASE[9001])
 
 
-def test_baseline_forges_unforged_common():
-    equips = [_e("u1", 6001, is_forged=False)]
-    d = next_forge(equips, base_of, iron=100)
-    assert d.uid == "u1" and d.kind == "forge" and d.cost == 10
+def test_parse_attrs_engine_shape():
+    a = parse_attrs(_eq(effects=((3, 165, 30), (7, 40, 0))))
+    assert a["attack"] == 3 and a["hp"] == 30
+    assert a["effects"] == [{"type": 3, "value": 165, "odds": 30},
+                            {"type": 7, "value": 40, "odds": 0}]
 
 
-def test_skips_specialized_equipment():
-    equips = [_e("s1", 9001, is_forged=False)]           # specialized -> never
-    assert next_forge(equips, base_of, iron=100) is None
+def test_effect_quality_ignores_main_stats():
+    # value 165 in 150..180 = 0.5 ; odds 30 in 20..40 = 0.5 -> 0.5
+    assert effect_quality(_eq(), eff_row) == 0.5
+    # maxed effects -> 1.0 regardless of terrible attack/hp
+    assert effect_quality(_eq(effects=((3, 180, 40),), attack=1, hp=20), eff_row) == 1.0
+    # effect without an odds range only scores its value: (40-30)/20 = 0.5
+    assert effect_quality(_eq(effects=((7, 40, 0),)), eff_row) == 0.5
+    assert effect_quality(_eq(effects=()), eff_row) is None       # nothing to judge
 
 
-def test_recast_when_below_threshold_and_budget_ok():
-    equips = [_e("u1", 6001, attack=8)]                  # frac = 2/9 ≈ 0.22
-    targets = {"u1": {"threshold": 0.9, "budget": 100}}
-    d = next_forge(equips, base_of, targets, iron=100)
-    assert d.uid == "u1" and d.kind == "recast" and d.cost == 10
+def test_recast_below_threshold_within_iron_budget():
+    t = {"6001_1": {"threshold": 0.8, "budget": 10}}
+    d = next_recast([_eq()], base_of, eff_row, t, RICH)
+    assert d.uid == "6001_1" and d.iron == 3 and d.free is False
+    assert d.cost == {"timber": 100, "stone": 100, "iron": 3}
+    assert d.quality == 0.5
 
 
-def test_no_recast_when_threshold_met():
-    equips = [_e("u1", 6001, attack=15)]                 # frac 1.0 >= 0.9
-    targets = {"u1": {"threshold": 0.9, "budget": 100}}
-    assert next_forge(equips, base_of, targets, iron=100) is None
+def test_stop_when_threshold_reached():
+    t = {"6001_1": {"threshold": 0.5, "budget": 10}}
+    assert next_recast([_eq()], base_of, eff_row, t, RICH) is None
 
 
-def test_no_recast_when_item_budget_exhausted():
-    equips = [_e("u1", 6001, attack=8)]
-    targets = {"u1": {"threshold": 0.9, "budget": 5}}    # < forge_cost 10
-    assert next_forge(equips, base_of, targets, iron=100) is None
+def test_iron_budget_exhausted_or_unaffordable():
+    assert next_recast([_eq()], base_of, eff_row, {"6001_1": {"threshold": 1, "budget": 2}},
+                       RICH) is None                           # budget 2 < 3 iron
+    poor = {"timber": 999, "stone": 50, "iron": 99}           # stone short
+    assert next_recast([_eq()], base_of, eff_row, {"6001_1": {"threshold": 1, "budget": 9}},
+                       poor) is None
 
 
-def test_no_recast_past_reforge_cap():
-    equips = [_e("u1", 6001, attack=8, recast=5)]        # reforge_count 5 reached
-    targets = {"u1": {"threshold": 0.9, "budget": 100}}
-    assert next_forge(equips, base_of, targets, iron=100) is None
+def test_free_recast_ignores_budget_and_cost():
+    t = {"6001_1": {"threshold": 1, "budget": 0}}
+    d = next_recast([_eq(free=True)], base_of, eff_row, t, {"iron": 0})
+    assert d.free is True and d.iron == 0 and d.cost == {}
 
 
-def test_free_recast_costs_zero_and_ignores_budget():
-    equips = [_e("u1", 6001, attack=8, free=True)]
-    targets = {"u1": {"threshold": 0.9, "budget": 0}}    # no budget, but free
-    d = next_forge(equips, base_of, targets, iron=0)
-    assert d.kind == "recast" and d.cost == 0
-
-
-def test_busy_blocks_all():
-    equips = [_e("u1", 6001, is_forged=False)]
-    assert next_forge(equips, base_of, iron=100, busy=True) is None
+def test_specialized_busy_and_untargeted_skipped():
+    t = {"9001_1": {"threshold": 1, "budget": 99}}
+    assert next_recast([_eq("9001_1", 9001)], base_of, eff_row, t, RICH) is None
+    t = {"6001_1": {"threshold": 1, "budget": 99}}
+    assert next_recast([_eq()], base_of, eff_row, t, RICH, busy=True) is None
+    assert next_recast([_eq()], base_of, eff_row, {}, RICH) is None     # no target
 
 
 def test_parse_cost_multi_resource():
@@ -107,3 +128,18 @@ def test_craft_candidates_from_slots():
     assert cands[0]["cost"] == {"iron": 3}
     # already crafted -> skipped
     assert craft_candidates(slots, lambda i: base.get(i), crafted_ids={6001}) == []
+
+
+def test_forge_view_lists_common_equips_with_quality_and_target():
+    from nta_agent.execution.forge import forge_view
+    names = {6001: "Rìu Chiến", 9001: "Khiên Riêng"}
+    texts = {3: "Có {1} gây {0} ST Bạo"}
+    rows = forge_view([_eq(effects=((3, 165, 30),), recast=2), _eq("9001_1", 9001)],
+                      base_of, eff_row, {"6001_1": {"threshold": 0.8, "budget": 12}},
+                      name_of=names.get, effect_text=texts.get)
+    assert [r["uid"] for r in rows] == ["6001_1"]              # specialized hidden
+    r = rows[0]
+    assert r["name"] == "Rìu Chiến" and r["quality"] == 0.5 and r["recast_count"] == 2
+    assert r["target"] == {"threshold": 0.8, "budget": 12} and r["iron_cost"] == 3
+    assert r["effects"][0]["text"] == "Có 30% gây 165% ST Bạo"
+    assert r["effects"][0]["value_range"] == [150, 180] and r["effects"][0]["odds_range"] == [20, 40]
