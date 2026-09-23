@@ -1638,6 +1638,7 @@ class ArmyComposer:
     profile: object = None
     on_event: object = None          # on_event(kind, detail) -> surface to log/brain
     status_sink: object = None       # status_sink(dict) -> persist status for the brain advice loop
+    target_sink: object = None       # target_sink() -> persist "goal met, clear strike_target"
     fail_cooldown: int = 10
     res_cooldown: int = 60           # back off when short on resources / recruit queue (pacing)
     blocked_cooldown: int = 60
@@ -1647,7 +1648,6 @@ class ArmyComposer:
     locked_uids: set = field(default_factory=set)     # armies occupy/logistics must skip
     _plan: object = None
     _blocked_notified: bool = False
-    _done_notified: bool = False
 
     def _target(self):
         if self.profile is None:
@@ -1713,13 +1713,22 @@ class ArmyComposer:
             return False
         self._blocked_notified = False
         if plan["done"]:
-            self._status({"active": True, "blocked": False, "done": True,
+            # ONE-SHOT goal (user 2026-09-23): the group is assembled -> clear the
+            # target so the composer stands down instead of re-activating (and
+            # competing with occupy) every time the group later runs short.
+            self._status({"active": False, "blocked": False, "done": True,
                           "issues": issues, "strike": self._strike_uids})
-            if self.on_event and not self._done_notified:
+            if self.on_event:
                 self.on_event("composition_done", {"strike": self._strike_uids})
-                self._done_notified = True
+            self.profile.army["strike_target"] = []
+            if self.target_sink is not None:
+                try:
+                    self.target_sink()
+                except Exception:
+                    pass
+            self.locked_uids = set()
+            self._strike_uids = []
             return False
-        self._done_notified = False
         self._status({"active": True, "blocked": False, "done": False,
                       "issues": issues, "strike": self._strike_uids})
         return bool(plan["actions"])
