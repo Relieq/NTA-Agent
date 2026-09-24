@@ -1,7 +1,9 @@
 """Validate + clamp LLM-proposed profile edits before applying."""
 from __future__ import annotations
 
+import re
 import types
+import unicodedata
 
 _ROLES = {"archer", "tank"}
 _EXPANSION = {"none", "spiral", "octopus", "hybrid"}
@@ -261,3 +263,61 @@ def sanitize_lessons(edits, ledger, valid_army_uids, valid_build_ids=None) -> li
             item["validated_by"] = str(le["validated_by"])[:120]
         out.append(item)
     return out[:10]
+
+
+# ---- rename ambiguity guards (deterministic, after the LLM proposes) ---------------
+# Evidence (2026-09-24 eval, memory nta-agent-jev): the chat LLM confidently renames
+# the wrong army when (1) the player refers to an army by POSITION ("đội đầu tiên" —
+# list order isn't stable in-game) or (2) by a pawn TYPE that several armies share.
+_POSITIONAL = re.compile(
+    r"\b(dau tien|thu nhat|thu hai|thu ba|thu tu|thu nam|thu \d+|cuoi cung|sau cung"
+    r"|tren cung|duoi cung|dau danh sach|cuoi danh sach|ben trai|ben phai)\b")
+
+
+def _fold(s: str) -> str:
+    """Lowercase, strip Vietnamese diacritics (đ -> d)."""
+    s = unicodedata.normalize("NFD", str(s or "").lower().replace("đ", "d"))
+    return "".join(ch for ch in s if unicodedata.category(ch) != "Mn")
+
+
+def _names_army(instruction_compact: str, name: str) -> bool:
+    key = re.sub(r"[^a-z0-9]", "", _fold(name))
+    return len(key) >= 2 and key in instruction_compact
+
+
+def rename_ambiguity(instruction, renames, armies) -> str | None:
+    """A clarification question if the proposed renames are unsafe, else None.
+
+    ``renames``: [{uid, name}] (already sanitized). ``armies``: [{uid, name,
+    dominant, troops}]. An army the player NAMED explicitly is always trusted.
+    Otherwise ask when (1) the player pointed by position, or (2) another army with
+    the same dominant pawn type exists and isn't renamed in the same batch."""
+    if not renames:
+        return None
+    folded = _fold(instruction)
+    compact = re.sub(r"[^a-z0-9]", "", folded)
+    by_uid = {str(a.get("uid")): a for a in armies}
+    batch = {str(r.get("uid")) for r in renames}
+    unnamed = [by_uid[u] for u in batch
+               if u in by_uid and not _names_army(compact, by_uid[u].get("name", ""))]
+    if not unnamed:
+        return None
+
+    def cand(a):
+        return f"• {a.get('name', '?')} — {a.get('troops', '')}"
+
+    if _POSITIONAL.search(folded):
+        doms = {str(a.get("dominant")) for a in unnamed}
+        pool = [a for a in armies if str(a.get("dominant")) in doms]
+        return ("Bạn chỉ đội theo vị trí, nhưng thứ tự đội trong game không cố định nên "
+                "tôi không chắc là đội nào. Bạn muốn đổi tên đội nào (gọi theo tên đội)?\n"
+                + "\n".join(cand(a) for a in pool))
+    for a in unnamed:
+        peers = [b for b in armies if str(b.get("dominant")) == str(a.get("dominant"))
+                 and str(b.get("uid")) not in batch]
+        if peers:
+            pool = [a, *peers]
+            return ("Có nhiều đội cùng loại lính khớp mô tả của bạn, tôi không chắc đội nào. "
+                    "Bạn muốn đổi tên đội nào (gọi theo tên đội)?\n"
+                    + "\n".join(cand(b) for b in pool))
+    return None
