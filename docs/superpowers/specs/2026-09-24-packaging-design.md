@@ -84,7 +84,7 @@ backend `GET /api/setup` (trạng thái), `POST /api/setup/run {step}`:
 | 2 | Giả lập | `adb devices`; nhiều máy → cho chọn, lưu `adb_serial` | ✓ |
 | 3 | Root | `su -c id` chứa `uid=0` | ✓ |
 | 4 | Game + phiên bản | `dumpsys package twgame.global.acers` → versionName; so `SUPPORTED_GAME_VERSION` | ✓ |
-| 5 | Dữ liệu game | cần khoá XXTEA; `pm path` → pull `base.apk` (temp) → giải mã `msg.jsc` → `gamedata\schema.json`; bảng config → `gamedata\config`; giải mã engine → `gamedata\engine\index.js`; ghi `meta.json`; xoá apk tạm | ✓ |
+| 5 | Dữ liệu game | tự dò khoá XXTEA từ `libcocos2djs.so`; `pm path` → pull `base.apk` (temp) → giải mã `msg.jsc` → `gamedata\schema.json`; bảng config → `gamedata\config`; giải mã engine → `gamedata\engine\index.js`; ghi `meta.json`; xoá apk tạm | ✓ |
 | 6 | Distinct id | root đọc `shared_prefs/com.thinkingdata.analyse.xml` (randomID) → settings | ✓ |
 | 7 | Token | `bootstrap.read_account_token` → `token.txt` (chưa có → hướng dẫn đăng nhập Google trong game rồi thử lại) | ✓ |
 | 8 | Key | trỏ sang trang Cài đặt | ✗ |
@@ -107,8 +107,8 @@ backend `GET /api/setup` (trạng thái), `POST /api/setup/run {step}`:
 - **Không bao giờ** ghi bí mật vào events/errors/log; API trả dạng che (`sk-…a1b2`); dashboard vẫn chỉ
   bind `127.0.0.1`.
 - Trang **"Cài đặt"**: OpenAI key (ẩn ký tự + nút "Kiểm tra key" gọi `GET /v1/models`), model brain
-  (mặc định `gpt-4o-mini`), `brain_max_calls`, **khoá giải mã dữ liệu game** (XXTEA — người dùng nhận
-  riêng từ bạn; **bắt buộc** — xem mục 9), giả lập/ADB serial.
+  (mặc định `gpt-4o-mini`), `brain_max_calls`, **khoá giải mã dữ liệu game** (XXTEA —
+  tuỳ chọn, chỉ để nhập đè khoá tự dò — xem mục 9), giả lập/ADB serial.
 - `llm.default_chat()` đọc key qua `settings.get` **mỗi lần gọi** → đổi key không cần restart;
   trống key → `BrainUnavailable` như hiện tại.
 
@@ -167,9 +167,11 @@ backend `GET /api/setup` (trạng thái), `POST /api/setup/run {step}`:
 ## 9. Rủi ro và điểm cần lưu ý
 
 - **Khoá XXTEA:** không nhúng vào bản phát hành (tránh phát tán công cụ bẻ mã hoá tài nguyên game).
-  Người dùng nhập ở Cài đặt. **Sửa khi triển khai:** khoá là BẮT BUỘC, không phải tuỳ chọn —
-  `schema.json` (giao thức protobuf, sinh từ `msg.jsc` mã hoá XXTEA) là dữ liệu game gitignore, thiếu
-  nó agent không đăng nhập được. Lưu ý: khoá hiện có trong `CLAUDE.md` của repo công khai.
+  **Sửa khi triển khai:** khoá là BẮT BUỘC (`schema.json` — giao thức protobuf, sinh từ `msg.jsc` mã
+  hoá XXTEA — là dữ liệu game gitignore; thiếu nó agent không đăng nhập được). Giải pháp cuối: khoá
+  nằm dạng chuỗi rõ trong `libcocos2djs.so` của game, nên bước 5 **tự dò** khoá từ APK của người
+  dùng (`gamedata.find_xxtea_key`: thử các chuỗi ≥16 ký tự lên file `internal/index.jsc` 320 byte,
+  ~1.6s). Không repo/bản phát hành nào chứa khoá; ô XXTEA trong Cài đặt chỉ để nhập đè.
 - **Điều khoản game:** bot có thể bị khoá tài khoản — nêu rõ trong README và màn hình đầu.
 - **Antivirus/SmartScreen:** exe không ký số có thể bị cảnh báo → có `.bat` dự phòng + hướng dẫn.
 - **Giao thức đổi khi game cập nhật:** khoá Start khi phiên bản game không khớp; bạn phát hành bản vá.

@@ -29,7 +29,6 @@ Không cần cài Python hay Node: app đã kèm sẵn.
 - **LDPlayer 9** (Android 9). Tải ở ldplayer.net.
 - Game **Ninety Thousand Acres** đã cài trong LDPlayer, **đúng phiên bản app hỗ trợ**
   (xem bước 4).
-- **XXTEA key**: xin từ người chia sẻ app cho bạn, **bắt buộc** (xem bước 5).
 - (Tuỳ chọn) **OpenAI API key** để bật "bộ não" chiến lược + chat.
 
 ---
@@ -73,8 +72,7 @@ App **không** kèm dữ liệu của game. Bước này lấy file cài đặt 
 của bạn**, rồi giải mã giao thức, các bảng số liệu và engine trận đánh vào thư mục dữ liệu
 riêng của bạn.
 
-- Cần nhập **XXTEA key** ở phần Cài đặt trước (bắt buộc: thiếu key thì agent không nói
-  chuyện được với máy chủ).
+- Khoá giải mã được **tự tìm trong chính bản game của bạn**, bạn không cần nhập gì.
 - Mất khoảng 10–30 giây. Phải **dừng agent** trước khi chạy lại bước này.
 - Khi game cập nhật phiên bản, hãy chạy lại bước này.
 
@@ -101,7 +99,7 @@ Khi đủ 7 bước ✅, bấm **▶ Start** ở góc trên.
 |---|---|
 | OpenAI API key | Tuỳ chọn. Bật bộ não chiến lược + chat. Tính phí vào tài khoản OpenAI của bạn; nút **Kiểm tra OpenAI key** thử key miễn phí. |
 | Model / Giới hạn lượt gọi | Model OpenAI (mặc định `gpt-4o-mini`) và số lần gọi tối đa mỗi phiên. |
-| XXTEA key | **Bắt buộc**, dùng ở bước 5. |
+| XXTEA key | Để trống: app tự tìm khoá trong bản game của bạn. Chỉ nhập khi bước 5 báo không tìm được. |
 | adb.exe / Thiết bị ADB | Chỉ cần khi app không tự dò được. |
 
 Key được **mã hoá bằng tài khoản Windows của bạn**: copy file sang máy khác sẽ không đọc
@@ -136,7 +134,7 @@ Mọi thứ của riêng bạn nằm ở `%LOCALAPPDATA%\NTA-Agent\`:
 | Start báo "Chưa hoàn tất Thiết lập" | Mở tab Thiết lập, chạy các bước còn ❌. |
 | Agent chuyển sang CRASHED | Xem `%LOCALAPPDATA%\NTA-Agent\run\errors.jsonl` và `dashboard.log`. Token hết hạn thì làm lại bước 7. |
 | Game trong giả lập bị đăng xuất | Bình thường: agent và game dùng chung một phiên. |
-| Bước 5 báo "kiểm tra XXTEA key" | Key sai. Nhập lại đúng key rồi chạy lại. |
+| Bước 5 báo "không tìm được khoá" | Game có thể đã đổi cách lưu khoá: báo người chia sẻ app, hoặc nhập XXTEA key thủ công ở Cài đặt. |
 
 ---
 
