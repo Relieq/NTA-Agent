@@ -3,8 +3,10 @@ from __future__ import annotations
 
 import os
 from collections.abc import Mapping
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from pathlib import Path
+
+from nta_agent import paths
 
 
 class ConfigError(Exception):
@@ -15,10 +17,10 @@ class ConfigError(Exception):
 class RuntimeConfig:
     distinct_id: str
     host: str = "nine-hk.twomiles.cn"
-    token_path: Path = Path("build/nta_token.txt")
+    token_path: Path = field(default_factory=lambda: paths.token_path())
     interval: float = 5.0
     max_backoff: float = 60.0
-    log_dir: Path = Path("build/run")
+    log_dir: Path = field(default_factory=lambda: paths.run_dir())
     brain_every_ticks: int = 60
     brain_max_calls: int = 50
     res_pressure_window_s: float = 3600.0
@@ -124,10 +126,10 @@ class RuntimeConfig:
         return cls(
             distinct_id=distinct,
             host=env.get("NTA_SERVER_HOST", "nine-hk.twomiles.cn"),
-            token_path=Path(env.get("NTA_TOKEN_PATH", "build/nta_token.txt")),
+            token_path=Path(env.get("NTA_TOKEN_PATH") or paths.token_path()),
             interval=float(env.get("NTA_TICK_INTERVAL", "5.0")),
             max_backoff=float(env.get("NTA_MAX_BACKOFF", "60.0")),
-            log_dir=Path(env.get("NTA_LOG_DIR", "build/run")),
+            log_dir=Path(env.get("NTA_LOG_DIR") or paths.run_dir()),
             brain_every_ticks=int(env.get("NTA_BRAIN_EVERY", "60")),
             brain_max_calls=int(env.get("NTA_BRAIN_MAX_CALLS", "50")),
         )

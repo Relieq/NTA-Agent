@@ -8,6 +8,7 @@ import threading
 import time
 from pathlib import Path
 
+from nta_agent import paths
 from nta_agent.runtime.control import read_mode, reset, write_control
 from nta_agent.runtime.proc import hard_kill, pid_alive
 
@@ -70,7 +71,8 @@ class AgentSupervisor:
             if self._alive():
                 return self._status()
             reset(self.cfg.control_path)
-            self._proc = subprocess.Popen([sys.executable, "-m", "nta_agent"])
+            self._proc = subprocess.Popen([sys.executable, "-m", "nta_agent"],
+                                          cwd=str(paths.app_dir()))
             self._pid = self._proc.pid
             self._started_at = time.time()
             self._user_stopped = False

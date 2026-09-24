@@ -15,7 +15,7 @@ import json
 from dataclasses import dataclass, field
 from pathlib import Path
 
-_CONFIG_DIR = Path(__file__).with_name("config")
+from nta_agent import paths as _paths
 
 # Resource type codes used across cost strings.
 RESOURCE_BY_TYPE = {1: "cereal", 2: "timber", 3: "stone"}
@@ -61,12 +61,12 @@ class BuildUpgrade:
 
 @dataclass
 class GameConfig:
-    config_dir: Path = _CONFIG_DIR
+    config_dir: Path = field(default_factory=lambda: _paths.config_dir())
     _tables: dict[str, dict[int, dict]] = field(default_factory=dict)
 
     @classmethod
     def load(cls, config_dir: Path | str | None = None) -> GameConfig:
-        gc = cls(config_dir=Path(config_dir) if config_dir else _CONFIG_DIR)
+        gc = cls(config_dir=Path(config_dir) if config_dir else _paths.config_dir())
         if not gc.config_dir.exists():
             raise FileNotFoundError(
                 "config tables not found at %s — run tools/re/extract_config.py" % gc.config_dir
