@@ -631,7 +631,7 @@ class Handler(BaseHTTPRequestHandler):
             port = self.server.server_address[1]
             try:
                 if parsed.path.endswith("apply"):
-                    updater.spawn(port, manifest_url=info["update"]["manifest_url"])
+                    updater.spawn(port, assets=info["update"]["assets"])
                 else:
                     updater.spawn(port, rollback_=True)
             except OSError as e:

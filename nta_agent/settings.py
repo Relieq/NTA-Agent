@@ -23,8 +23,9 @@ KEYS = {  # setting -> env var that overrides it
     "adb_serial": "NTA_ADB_SERIAL",
     "xxtea_key": "NTA_XXTEA_KEY",
     "dashboard_port": "NTA_DASHBOARD_PORT",
+    "update_token": "NTA_UPDATE_TOKEN",
 }
-SECRETS = {"openai_api_key", "xxtea_key"}
+SECRETS = {"openai_api_key", "xxtea_key", "update_token"}
 
 
 def _path() -> Path:
