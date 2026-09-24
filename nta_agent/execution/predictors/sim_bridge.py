@@ -7,15 +7,15 @@ so callers can fall back to the cheap stats predictor without crashing the loop.
 from __future__ import annotations
 
 import json
+import os
 import queue
 import subprocess
 import threading
 from pathlib import Path
 
-# tools/battlesim/server.js, relative to the repo root (…/nta_agent/execution/predictors/).
-_DEFAULT_SERVER = (
-    Path(__file__).resolve().parents[3] / "tools" / "battlesim" / "server.js"
-)
+from nta_agent import paths
+
+_DEFAULT_SERVER = paths.app_dir() / "tools" / "battlesim" / "server.js"
 
 
 class SimUnavailable(Exception):
@@ -152,7 +152,10 @@ def get_bridge() -> SimBridge:
     """Process-wide singleton bridge."""
     global _bridge
     if _bridge is None:
-        _bridge = SimBridge()
+        # Engine + config tables live outside the app folder once packaged.
+        env = {**os.environ, "NTA_ENGINE_JS": str(paths.engine_js()),
+               "NTA_CONFIG_DIR": str(paths.config_dir())}
+        _bridge = SimBridge(node=paths.node_exe(), env=env)
     return _bridge
 
 

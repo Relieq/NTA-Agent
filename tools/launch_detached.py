@@ -24,12 +24,13 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
+from nta_agent import paths
 from nta_agent.env import load_dotenv
 from nta_agent.runtime.config import RuntimeConfig
 from nta_agent.runtime.proc import hard_kill, pid_alive
 
 TARGETS = {"dashboard": ["-m", "nta_agent.dashboard"], "agent": ["-m", "nta_agent"]}
-_REPO = str(Path(__file__).resolve().parent.parent)
+_REPO = str(paths.app_dir())
 
 
 def _pidfile(cfg, target):

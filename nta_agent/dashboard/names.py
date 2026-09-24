@@ -5,12 +5,13 @@ import json
 import re
 from pathlib import Path
 
-_DEFAULT_CONFIG = Path("nta_agent/data/config")
+from nta_agent import paths
+
 _NAME_KEY = re.compile(r"^name_(\d+)$")
 
 
 def load_build_names(config_dir: Path | None = None) -> dict[int, str]:
-    path = Path(config_dir or _DEFAULT_CONFIG) / "buildText.json"
+    path = Path(config_dir or paths.config_dir()) / "buildText.json"
     try:
         rows = json.loads(path.read_text(encoding="utf-8"))
     except (OSError, ValueError):

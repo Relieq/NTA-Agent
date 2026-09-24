@@ -2,6 +2,7 @@ from pathlib import Path
 
 import pytest
 
+from nta_agent import paths
 from nta_agent.runtime.config import ConfigError, RuntimeConfig
 
 
@@ -11,10 +12,10 @@ def test_from_env_defaults():
     assert cfg.host == "nine-hk.twomiles.cn"
     assert cfg.interval == 5.0
     assert cfg.max_backoff == 60.0
-    assert cfg.token_path == Path("build/nta_token.txt")
-    assert cfg.log_dir == Path("build/run")
-    assert cfg.snapshot_path == Path("build/run/state.json")
-    assert cfg.event_log_path == Path("build/run/events.jsonl")
+    assert cfg.token_path == paths.token_path()
+    assert cfg.log_dir == paths.run_dir()
+    assert cfg.snapshot_path == paths.run_dir() / "state.json"
+    assert cfg.event_log_path == paths.run_dir() / "events.jsonl"
 
 
 def test_from_env_overrides():

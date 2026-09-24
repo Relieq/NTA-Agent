@@ -1,12 +1,20 @@
-import { getJSON, usePolling, ago } from "../api.js";
+import { getJSON, postJSON, usePolling, ago } from "../api.js";
 import ControlBar from "./ControlBar.js";
-const { ref } = window.Vue;
+const { ref, onMounted } = window.Vue;
 export default {
  components:{ ControlBar },
  setup(){
   const snap=ref("…");
   const health=ref(null);
   const alerts=ref(null);
+  const upd=ref(null); const updMsg=ref("");
+  onMounted(async ()=>{ upd.value=await getJSON("/api/update/check"); });
+  async function doUpdate(){
+   if(!confirm("Cập nhật lên "+upd.value.update.version+"? Agent sẽ dừng, app tự khởi động lại (~1 phút).")) return;
+   const r=await postJSON("/api/update/apply",{});
+   updMsg.value=(r&&r.ok) ? "Đang cập nhật… trang sẽ tự tải lại." : ((r&&r.error)||"Lỗi");
+   if(r&&r.ok) setTimeout(()=>location.reload(), 45000);
+  }
   usePolling(async ()=>{
    const s=await getJSON("/api/state");
    snap.value=(s&&s.ok)? ("snapshot "+ago(s.updated_at)) : "chưa có snapshot";
@@ -22,12 +30,18 @@ export default {
   };
   const hcolor=(h)=> h&&h.degraded ? "#da3633" : "#199e70";
   const eta=(s)=>{ s=Math.round(s||0); return s>=60 ? Math.floor(s/60)+"p"+(s%60)+"s" : s+"s"; };
-  return { snap, health, hlabel, hcolor, alerts, eta };
+  return { snap, health, hlabel, hcolor, alerts, eta, upd, updMsg, doUpdate };
  },
  template:`<div><header><div><h1>NTA Agent</h1>
    <div class="muted" style="font-size:12px">{{ snap }}</div>
    <div v-if="health" style="font-size:12px" :style="{color:hcolor(health)}">{{ hlabel(health) }}</div></div>
   <ControlBar/></header>
+  <div v-if="upd && upd.update" role="status"
+   style="background:#0d2a45;border:1px solid #58a6ff;color:#b6d8ff;padding:6px 12px;margin:0 16px 8px;border-radius:6px;display:flex;gap:10px;align-items:center;flex-wrap:wrap">
+   <b>⬆ Có bản mới {{ upd.update.version }}</b><span>(đang dùng {{ upd.current }})</span>
+   <button @click="doUpdate">Cập nhật</button>
+   <a v-if="upd.update.page" :href="upd.update.page" target="_blank" rel="noopener" style="color:#b6d8ff">xem thay đổi</a>
+   <span v-if="updMsg">{{ updMsg }}</span></div>
   <div v-if="alerts && alerts.level==='captured'" role="alert"
    style="background:#3d0d0d;border:1px solid #da3633;color:#ffb3ad;padding:8px 12px;margin:0 16px 8px;border-radius:6px">
    <b>⛔ THÀNH CHÍNH ĐÃ BỊ CHIẾM</b> bởi người chơi <b>{{ alerts.captured.uid }}</b>.

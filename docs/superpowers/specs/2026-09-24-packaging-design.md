@@ -41,7 +41,8 @@ NTA-Agent\                         ← thư mục app; bị thay khi cập nhậ
   settings.json                    cài đặt (bí mật mã hoá DPAPI — mục 4)
   token.txt
   gamedata\config\*.json           trích từ base.apk
-  gamedata\engine\index.js         engine đã giải mã (chỉ khi có khoá XXTEA)
+  gamedata\schema.json             schema protobuf (giải mã msg.jsc — BẮT BUỘC, xem mục 9)
+  gamedata\engine\index.js         engine đã giải mã
   gamedata\meta.json               {game_version, extracted_at}
   run\                             events/state/profile/alerts… (thay build\run)
   backups\app-<ver>\               tối đa 2 bản
@@ -83,7 +84,7 @@ backend `GET /api/setup` (trạng thái), `POST /api/setup/run {step}`:
 | 2 | Giả lập | `adb devices`; nhiều máy → cho chọn, lưu `adb_serial` | ✓ |
 | 3 | Root | `su -c id` chứa `uid=0` | ✓ |
 | 4 | Game + phiên bản | `dumpsys package twgame.global.acers` → versionName; so `SUPPORTED_GAME_VERSION` | ✓ |
-| 5 | Dữ liệu game | `pm path` → pull `base.apk` (temp) → `extract_config.py` → `gamedata\config`; nếu có khoá XXTEA: giải mã engine → `gamedata\engine\index.js`; ghi `meta.json`; xoá apk tạm | ✓ (config) |
+| 5 | Dữ liệu game | cần khoá XXTEA; `pm path` → pull `base.apk` (temp) → giải mã `msg.jsc` → `gamedata\schema.json`; bảng config → `gamedata\config`; giải mã engine → `gamedata\engine\index.js`; ghi `meta.json`; xoá apk tạm | ✓ |
 | 6 | Distinct id | root đọc `shared_prefs/com.thinkingdata.analyse.xml` (randomID) → settings | ✓ |
 | 7 | Token | `bootstrap.read_account_token` → `token.txt` (chưa có → hướng dẫn đăng nhập Google trong game rồi thử lại) | ✓ |
 | 8 | Key | trỏ sang trang Cài đặt | ✗ |
@@ -107,7 +108,7 @@ backend `GET /api/setup` (trạng thái), `POST /api/setup/run {step}`:
   bind `127.0.0.1`.
 - Trang **"Cài đặt"**: OpenAI key (ẩn ký tự + nút "Kiểm tra key" gọi `GET /v1/models`), model brain
   (mặc định `gpt-4o-mini`), `brain_max_calls`, **khoá giải mã dữ liệu game** (XXTEA — người dùng nhận
-  riêng từ bạn; không có → battle sim tắt, dùng dự đoán thống kê), giả lập/ADB serial.
+  riêng từ bạn; **bắt buộc** — xem mục 9), giả lập/ADB serial.
 - `llm.default_chat()` đọc key qua `settings.get` **mỗi lần gọi** → đổi key không cần restart;
   trống key → `BrainUnavailable` như hiện tại.
 
@@ -166,7 +167,9 @@ backend `GET /api/setup` (trạng thái), `POST /api/setup/run {step}`:
 ## 9. Rủi ro và điểm cần lưu ý
 
 - **Khoá XXTEA:** không nhúng vào bản phát hành (tránh phát tán công cụ bẻ mã hoá tài nguyên game).
-  Người dùng nhập ở Cài đặt; thiếu khoá → không có battle sim (vẫn chạy được).
+  Người dùng nhập ở Cài đặt. **Sửa khi triển khai:** khoá là BẮT BUỘC, không phải tuỳ chọn —
+  `schema.json` (giao thức protobuf, sinh từ `msg.jsc` mã hoá XXTEA) là dữ liệu game gitignore, thiếu
+  nó agent không đăng nhập được. Lưu ý: khoá hiện có trong `CLAUDE.md` của repo công khai.
 - **Điều khoản game:** bot có thể bị khoá tài khoản — nêu rõ trong README và màn hình đầu.
 - **Antivirus/SmartScreen:** exe không ký số có thể bị cảnh báo → có `.bat` dự phòng + hướng dẫn.
 - **Giao thức đổi khi game cập nhật:** khoá Start khi phiên bản game không khớp; bạn phát hành bản vá.

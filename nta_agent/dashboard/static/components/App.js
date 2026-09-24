@@ -16,7 +16,10 @@ import IntelPanel from "./IntelPanel.js";
 import LevelingConfigPanel from "./LevelingConfigPanel.js";
 import FarmGroupPanel from "./FarmGroupPanel.js";
 import LearningPanel from "./LearningPanel.js";
-const { ref } = window.Vue;
+import SetupPanel from "./SetupPanel.js";
+import SettingsPanel from "./SettingsPanel.js";
+import { getJSON } from "../api.js";
+const { ref, onMounted } = window.Vue;
 const TABS=[
  {id:"overview", label:"Tổng quan", icon:"▦"},
  {id:"army",     label:"Quân đội",  icon:"⚔"},
@@ -24,14 +27,18 @@ const TABS=[
  {id:"intel",    label:"Cố vấn",    icon:"🧭"},
  {id:"build",    label:"Xây dựng & Chiến thuật", icon:"🛠"},
  {id:"log",      label:"Nhật ký",   icon:"📜"},
+ {id:"setup",    label:"Thiết lập & Cài đặt", icon:"⚙"},
 ];
 function loadTab(){ try{ return localStorage.getItem("nta.tab")||"overview"; }catch(e){ return "overview"; } }
 export default {
  components:{ StatusHeader, Sidebar, ResourcePanel, CityPanel, MiscPanel, ArmiesPanel,
-  DecisionsPanel, EquipmentPanel, ForgePanel, TerritoryPanel, FortsPanel, BuildOrderPanel, BrainChatPanel, EventsPanel, IntelPanel, LevelingConfigPanel, FarmGroupPanel, LearningPanel },
+  DecisionsPanel, EquipmentPanel, ForgePanel, TerritoryPanel, FortsPanel, BuildOrderPanel, BrainChatPanel, EventsPanel, IntelPanel, LevelingConfigPanel, FarmGroupPanel, LearningPanel, SetupPanel, SettingsPanel },
  setup(){
   const activeTab=ref(loadTab());
   function select(id){ activeTab.value=id; try{ localStorage.setItem("nta.tab", id); }catch(e){} }
+  // Packaged app, first run: land on Setup until every step passes.
+  onMounted(async ()=>{ const s=await getJSON("/api/setup");
+   if(s && s.packaged && !s.ready) activeTab.value="setup"; });
   return { TABS, activeTab, select };
  },
  template:`<div><StatusHeader/>
@@ -50,6 +57,8 @@ export default {
      <BuildOrderPanel/><BrainChatPanel/></div>
     <div v-if="activeTab==='log'" class="grid">
      <EventsPanel/></div>
+    <div v-if="activeTab==='setup'" class="grid">
+     <SetupPanel/><SettingsPanel/></div>
    </main>
   </div></div>`
 };

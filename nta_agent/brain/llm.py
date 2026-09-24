@@ -2,8 +2,9 @@
 from __future__ import annotations
 
 import json
-import os
 import urllib.request
+
+from nta_agent import settings
 
 
 class BrainUnavailable(Exception):
@@ -147,10 +148,11 @@ def propose(digest: dict, profile, chat=None, instruction=None, history=None) ->
 
 
 def default_chat():
-    key = os.environ.get("OPENAI_API_KEY")
+    # Read per call: a key entered in the dashboard Settings works without a restart.
+    key = settings.get("openai_api_key")
     if not key:
         raise BrainUnavailable("OPENAI_API_KEY not set")
-    model = os.environ.get("OPENAI_MODEL", "gpt-4o-mini")
+    model = settings.get("openai_model", "gpt-4o-mini")
 
     def chat(messages):
         body = json.dumps({"model": model, "messages": messages, "temperature": 0.2,

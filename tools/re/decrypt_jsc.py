@@ -1,23 +1,25 @@
 """Decrypt Cocos Creator XXTEA-encrypted assets (.jsc, proto/msg.d, ...) for NTA.
 
-Cocos encrypts JS/asset payloads with XXTEA using a 16-byte key, optionally
-zlib/gzip-compressing the plaintext. This standalone decryptor needs no engine.
+Thin CLI over ``nta_agent.gamedata`` (XXTEA + optional zlib/gzip).
 
     python tools/re/decrypt_jsc.py <encrypted_file> [-o out] [-k KEY]
 
-Key defaults to the one recovered via tools/re/hook_xxtea.js (see tools/re/KEY.txt).
+Key comes from -k, env NTA_XXTEA_KEY or the gitignored tools/re/KEY.txt.
 """
 from __future__ import annotations
 
 import argparse
-import struct
-import zlib
+import os
+import sys
 from pathlib import Path
+
+sys.path.insert(0, str(Path(__file__).resolve().parents[2]))
+
+from nta_agent.gamedata import decrypt_bytes, maybe_decompress, xxtea_decrypt  # noqa: F401
 
 
 def _load_key() -> bytes:
     """Key comes from env NTA_XXTEA_KEY or the gitignored tools/re/KEY.txt — never hardcoded."""
-    import os
     env = os.environ.get("NTA_XXTEA_KEY")
     if env:
         return env.encode()
@@ -27,75 +29,10 @@ def _load_key() -> bytes:
             if line.strip().startswith("key"):
                 return line.split("=", 1)[1].strip().encode()
     raise SystemExit("XXTEA key not found: set NTA_XXTEA_KEY or create tools/re/KEY.txt")
-DELTA = 0x9E3779B9
-MASK = 0xFFFFFFFF
-
-
-def _to_uint32_list(data: bytes, include_len: bool):
-    n = len(data) >> 2
-    out = list(struct.unpack("<%dI" % n, data[: n * 4])) if n else []
-    if include_len:
-        out.append(len(data))
-    return out
-
-
-def _to_bytes(v, include_len: bool) -> bytes:
-    length = len(v)
-    raw = b"".join(struct.pack("<I", x & MASK) for x in v)
-    if include_len:
-        n = v[-1]
-        raw = b"".join(struct.pack("<I", v[i] & MASK) for i in range(length - 1))
-        return raw[:n]
-    return raw
-
-
-def xxtea_decrypt(data: bytes, key: bytes) -> bytes:
-    if not data:
-        return b""
-    v = _to_uint32_list(data, False)
-    k = _to_uint32_list(key.ljust(16, b"\0"), False)
-    n = len(v)
-    if n < 2:
-        return data
-    rounds = 6 + 52 // n
-    total = (rounds * DELTA) & MASK
-    y = v[0]
-    while total != 0:
-        e = (total >> 2) & 3
-        p = n - 1
-        while p > 0:
-            z = v[p - 1]
-            mx = (((z >> 5) ^ (y << 2)) + ((y >> 3) ^ (z << 4))) ^ ((total ^ y) + (k[(p & 3) ^ e] ^ z))
-            v[p] = (v[p] - mx) & MASK
-            y = v[p]
-            p -= 1
-        z = v[n - 1]
-        mx = (((z >> 5) ^ (y << 2)) + ((y >> 3) ^ (z << 4))) ^ ((total ^ y) + (k[(0 & 3) ^ e] ^ z))
-        v[0] = (v[0] - mx) & MASK
-        y = v[0]
-        total = (total - DELTA) & MASK
-    return _to_bytes(v, False)
-
-
-def maybe_decompress(b: bytes) -> bytes:
-    if b[:2] == b"\x1f\x8b":
-        try: return zlib.decompress(b, 16 + zlib.MAX_WBITS)
-        except Exception: pass
-    if b[:1] == b"\x78":
-        try: return zlib.decompress(b)
-        except Exception: pass
-    try: return zlib.decompress(b, -zlib.MAX_WBITS)
-    except Exception: return b
 
 
 def decrypt_file(path: Path, key: bytes) -> bytes:
-    raw = path.read_bytes()
-    # Cocos may prepend a sign header; try raw first, then skip common sign lengths.
-    for skip in (0,):
-        dec = xxtea_decrypt(raw[skip:], key)
-        out = maybe_decompress(dec)
-        return out
-    return b""
+    return decrypt_bytes(path.read_bytes(), key)
 
 
 def main():
