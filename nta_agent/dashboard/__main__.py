@@ -2,9 +2,9 @@
 from __future__ import annotations
 
 import argparse
-import os
 import sys
 
+from nta_agent import settings
 from nta_agent.dashboard.server import serve
 from nta_agent.runtime.config import ConfigError, RuntimeConfig
 
@@ -13,10 +13,10 @@ def main(argv: list[str] | None = None) -> int:
     ap = argparse.ArgumentParser(prog="nta_agent.dashboard", description="NTA monitoring dashboard.")
     from nta_agent.env import load_dotenv
     load_dotenv()
-    ap.add_argument("--port", type=int, default=int(os.environ.get("NTA_DASHBOARD_PORT", "8787")))
+    ap.add_argument("--port", type=int, default=int(settings.get("dashboard_port") or 8787))
     args = ap.parse_args(argv)
     try:
-        cfg = RuntimeConfig.from_env()
+        cfg = RuntimeConfig.from_env(require_distinct=False)
     except ConfigError as e:
         sys.stderr.write(f"config error: {e}\n")
         return 2

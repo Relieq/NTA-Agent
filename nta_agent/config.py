@@ -7,11 +7,12 @@ variables (prefix ``NTA_``) for machines where BlueStacks is installed elsewhere
 
 from __future__ import annotations
 
-import os
 import re
 import shutil
 from dataclasses import dataclass
 from pathlib import Path
+
+from nta_agent import settings as user_settings
 
 # Known emulator adb binaries, in preference order. LDPlayer is the primary
 # target (one-click root); BlueStacks is kept as a fallback. Override with NTA_ADB_PATH.
@@ -31,7 +32,7 @@ DEFAULT_SCREEN_H = 900
 
 def _find_adb() -> str:
     """Locate an adb binary: NTA_ADB_PATH → LDPlayer/BlueStacks → adb on PATH."""
-    override = os.environ.get("NTA_ADB_PATH")
+    override = user_settings.get("adb_path")  # env NTA_ADB_PATH > settings.json
     if override:
         return override
     for cand in _ADB_CANDIDATES:
@@ -68,7 +69,7 @@ class Settings:
 
     @classmethod
     def detect(cls) -> Settings:
-        serial = os.environ.get("NTA_ADB_SERIAL")
+        serial = user_settings.get("adb_serial")
         if not serial:
             port = _detect_adb_port()
             # Prefer the LDPlayer-style serial; fall back to the BlueStacks TCP endpoint.

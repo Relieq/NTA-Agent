@@ -6,7 +6,7 @@ from collections.abc import Mapping
 from dataclasses import dataclass, field
 from pathlib import Path
 
-from nta_agent import paths
+from nta_agent import paths, settings
 
 
 class ConfigError(Exception):
@@ -118,10 +118,14 @@ class RuntimeConfig:
         return self.log_dir / "fort_decisions.json"
 
     @classmethod
-    def from_env(cls, env: Mapping[str, str] | None = None) -> RuntimeConfig:
+    def from_env(cls, env: Mapping[str, str] | None = None,
+                 require_distinct: bool = True) -> RuntimeConfig:
+        """Env first, then the user's settings.json (packaged app). The dashboard
+        passes ``require_distinct=False`` so it can run the first-time Setup."""
         env = os.environ if env is None else env
-        distinct = env.get("NTA_DISTINCT_ID", "").strip()
-        if not distinct:
+        distinct = (env.get("NTA_DISTINCT_ID", "").strip()
+                    or (settings.get("distinct_id") or "").strip())
+        if not distinct and require_distinct:
             raise ConfigError("NTA_DISTINCT_ID is required")
         return cls(
             distinct_id=distinct,
@@ -131,5 +135,6 @@ class RuntimeConfig:
             max_backoff=float(env.get("NTA_MAX_BACKOFF", "60.0")),
             log_dir=Path(env.get("NTA_LOG_DIR") or paths.run_dir()),
             brain_every_ticks=int(env.get("NTA_BRAIN_EVERY", "60")),
-            brain_max_calls=int(env.get("NTA_BRAIN_MAX_CALLS", "50")),
+            brain_max_calls=int(env.get("NTA_BRAIN_MAX_CALLS")
+                                or settings.get("brain_max_calls") or 50),
         )
