@@ -559,6 +559,10 @@ class Handler(BaseHTTPRequestHandler):
             self._json(200, read_settings())
         elif parsed.path == "/api/app":
             self._json(200, read_app_info())
+        elif parsed.path == "/api/update/check":
+            from nta_agent import updater
+            force = parse_qs(parsed.query).get("force", ["0"])[0] == "1"
+            self._json(200, updater.cached_check(force=force))
         elif parsed.path.startswith("/static/"):
             code, ctype, body = serve_static(parsed.path[len("/static/"):])
             self._send(code, body, ctype)
@@ -611,6 +615,32 @@ class Handler(BaseHTTPRequestHandler):
                 return
             r = update_settings(body)
             self._json(200 if r["ok"] else 400, r)
+            return
+        if parsed.path in ("/api/update/apply", "/api/update/rollback"):
+            if self._body() is None:
+                return
+            from nta_agent import paths, updater
+            if not paths.is_packaged():
+                self._json(400, {"ok": False, "error": "chỉ dùng được ở bản đóng gói"})
+                return
+            info = updater.cached_check()
+            if parsed.path.endswith("apply") and not info.get("update"):
+                self._json(400, {"ok": False, "error": "không có bản cập nhật"})
+                return
+            self.server.supervisor.stop()
+            port = self.server.server_address[1]
+            try:
+                if parsed.path.endswith("apply"):
+                    updater.spawn(port, manifest_url=info["update"]["manifest_url"])
+                else:
+                    updater.spawn(port, rollback_=True)
+            except OSError as e:
+                self._json(500, {"ok": False, "error": f"không chạy được updater: {e}"})
+                return
+            self._json(200, {"ok": True, "restarting": True})
+            import os
+            import threading
+            threading.Timer(0.5, lambda: os._exit(0)).start()  # updater waits for our exit
             return
         if parsed.path == "/api/settings/test-key":
             if self._body() is None:

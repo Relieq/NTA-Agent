@@ -15,8 +15,16 @@ const FIELDS=[
 export default {
  setup(){
   const cur=ref({}); const draft=ref({}); const msg=ref(""); const ok=ref(true);
-  const app=ref({});
-  async function load(){ cur.value=(await getJSON("/api/settings"))||{}; app.value=(await getJSON("/api/app"))||{}; }
+  const app=ref({}); const upd=ref(null);
+  async function load(){ cur.value=(await getJSON("/api/settings"))||{}; app.value=(await getJSON("/api/app"))||{};
+   upd.value=await getJSON("/api/update/check"); }
+  async function checkNow(){ upd.value=await getJSON("/api/update/check?force=1");
+   flash(upd.value&&upd.value.update ? "Có bản mới "+upd.value.update.version : ((upd.value&&upd.value.error)||"Đang dùng bản mới nhất"), true); }
+  async function rollback(){
+   if(!confirm("Quay về phiên bản trước? Agent sẽ dừng và app khởi động lại.")) return;
+   const r=await postJSON("/api/update/rollback",{});
+   flash((r&&r.ok) ? "Đang quay về bản cũ… tải lại trang sau ~1 phút." : ((r&&r.error)||"Lỗi"), !!(r&&r.ok));
+  }
   function flash(t,good){ msg.value=t; ok.value=good; setTimeout(()=>{msg.value="";},4000); }
   async function save(){
    const body={};
@@ -35,7 +43,7 @@ export default {
    flash(r&&r.ok ? "Key hợp lệ ✅" : ((r&&r.error)||"Lỗi"), !!(r&&r.ok));
   }
   onMounted(load);
-  return { FIELDS, cur, draft, msg, ok, app, save, clear, testKey };
+  return { FIELDS, cur, draft, msg, ok, app, upd, save, clear, testKey, checkNow, rollback };
  },
  template:`<div class="card full"><h2>Cài đặt</h2>
   <div class="muted" style="font-size:12px;margin-bottom:6px">
@@ -55,6 +63,9 @@ export default {
   <div style="display:flex;gap:10px;align-items:center;margin-top:8px;flex-wrap:wrap">
    <button @click="save">Lưu</button>
    <button @click="testKey">Kiểm tra OpenAI key</button>
+   <template v-if="app.packaged">
+    <button @click="checkNow">Kiểm tra cập nhật</button>
+    <button v-if="upd && upd.has_backup" @click="rollback">↩ Quay về bản trước</button></template>
    <span v-if="msg" :style="{color: ok ? '#199e70' : '#da3633', fontSize:'12px'}">{{ msg }}</span></div>
  </div>`
 };
