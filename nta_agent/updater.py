@@ -57,25 +57,40 @@ def _safe_url(url: str) -> bool:
     return u.scheme == "https" and any(host == h or host.endswith("." + h) for h in _HOSTS)
 
 
-def _fetch_json(url: str) -> dict:
+def _request(url: str, accept: str, token: str | None) -> urllib.request.Request:
     req = urllib.request.Request(url, headers={"User-Agent": "NTA-Agent-updater",
-                                               "Accept": "application/vnd.github+json"})
-    with urllib.request.urlopen(req, timeout=15) as r:
+                                               "Accept": accept})
+    if token:
+        # Unredirected: a private asset download 302s to a signed storage URL that
+        # rejects (and must never receive) the GitHub token.
+        req.add_unredirected_header("Authorization", "Bearer " + token)
+    return req
+
+
+def _token() -> str | None:
+    return os.environ.get("NTA_UPDATE_TOKEN") or None
+
+
+def _fetch_json(url: str, token: str | None = None) -> dict:
+    with urllib.request.urlopen(_request(url, "application/vnd.github+json",
+                                         token or _token()),
+                                timeout=15) as r:
         return json.loads(r.read().decode("utf-8"))
 
 
 def check(fetch=None, current: str = "dev", repo: str = REPO) -> dict | None:
-    """Latest release if newer than ``current``: {version, notes, manifest_url, page}."""
+    """Latest release if newer than ``current``:
+    {version, notes, page, assets: {name: api asset url}} (works for private repos)."""
     rel = (fetch or _fetch_json)(_API.format(repo=repo))
     ver = str(rel.get("tag_name", "")).lstrip("vV")
     if not ver or not newer(ver, current):
         return None
-    man = next((a.get("browser_download_url") for a in rel.get("assets", [])
-                if a.get("name") == "manifest.json"), None)
-    if not man or not _safe_url(man):
+    assets = {a.get("name"): a.get("url") for a in rel.get("assets", [])
+              if a.get("name") and _safe_url(str(a.get("url") or ""))}
+    if "manifest.json" not in assets:
         return None
     return {"version": ver, "notes": str(rel.get("body") or "")[:4000],
-            "manifest_url": man, "page": rel.get("html_url", "")}
+            "page": rel.get("html_url", ""), "assets": assets}
 
 
 def plan(manifest: dict, current_runtime: dict) -> str:
@@ -200,9 +215,10 @@ def _wait_pid_exit(pid: int, timeout: float = 30.0) -> None:
 
 
 def _download(url: str, dst: Path) -> None:
+    """Download a release asset via its API url (``Accept: octet-stream``)."""
     if not _safe_url(url):
         raise ValueError(f"refusing non-GitHub URL: {url}")
-    req = urllib.request.Request(url, headers={"User-Agent": "NTA-Agent-updater"})
+    req = _request(url, "application/octet-stream", _token())
     with urllib.request.urlopen(req, timeout=60) as r, open(dst, "wb") as f:
         shutil.copyfileobj(r, f, 1 << 20)
 
@@ -233,19 +249,18 @@ def _runtime_versions(root: Path) -> dict:
         return {}
 
 
-def run_update(root: Path, data: Path, manifest_url: str, port: int) -> int:
+def run_update(root: Path, data: Path, assets: dict, port: int) -> int:
+    """``assets`` = {asset name: API url} of the release (from :func:`check`)."""
     root, data = Path(root).resolve(), Path(data).resolve()
     backups = data / "backups"
     try:
-        if not _safe_url(manifest_url):
-            raise ValueError("bad manifest url")
         tmp = Path(tempfile.mkdtemp(prefix="nta-upd-"))
         man_p = tmp / "manifest.json"
-        _download(manifest_url, man_p)
+        _download(assets["manifest.json"], man_p)
         manifest = json.loads(man_p.read_text(encoding="utf-8"))
         kind = plan(manifest, _runtime_versions(root))
         asset = manifest["assets"][kind]
-        url = manifest_url.rsplit("/", 1)[0] + "/" + asset["name"]
+        url = assets[asset["name"]]
         zp = tmp / asset["name"]
         _log(data, f"downloading {kind} {manifest.get('version')} from {url}")
         _download(url, zp)
@@ -296,7 +311,7 @@ def main(argv=None) -> int:
     ap.add_argument("--data", required=True)
     ap.add_argument("--wait-pid", type=int, default=0)
     ap.add_argument("--port", type=int, default=8787)
-    ap.add_argument("--manifest-url")
+    ap.add_argument("--assets", help="JSON file {asset name: API url}")
     ap.add_argument("--rollback", action="store_true")
     a = ap.parse_args(argv)
     _wait_pid_exit(a.wait_pid)
@@ -304,13 +319,15 @@ def main(argv=None) -> int:
     root, data = Path(a.root), Path(a.data)
     if a.rollback:
         return run_rollback(root, data)
-    return run_update(root, data, a.manifest_url, a.port)
+    assets = json.loads(Path(a.assets).read_text(encoding="utf-8"))
+    return run_update(root, data, assets, a.port)
 
 
 # ------------------------------------------------ dashboard-side helpers ---- #
-def spawn(port: int, manifest_url: str | None = None, rollback_: bool = False) -> None:
-    """Copy the bundled Python + this file to %TEMP% and run the updater from there."""
-    from nta_agent import paths
+def spawn(port: int, assets: dict | None = None, rollback_: bool = False) -> None:
+    """Copy the bundled Python + this file to %TEMP% and run the updater from there.
+    The GitHub token (private repo) travels in the child's environment only."""
+    from nta_agent import paths, settings
     root = paths.root_dir()
     tmp = Path(tempfile.gettempdir()) / "nta-updater"
     shutil.rmtree(tmp, ignore_errors=True)
@@ -319,8 +336,16 @@ def spawn(port: int, manifest_url: str | None = None, rollback_: bool = False) -
     args = [str(tmp / "python" / "pythonw.exe"), str(tmp / "nta_updater.py"),
             "--root", str(root), "--data", str(paths.data_dir()),
             "--wait-pid", str(os.getpid()), "--port", str(port)]
-    args += ["--rollback"] if rollback_ else ["--manifest-url", str(manifest_url)]
-    subprocess.Popen(args, cwd=str(tmp), creationflags=_DETACHED, close_fds=True)
+    if rollback_:
+        args += ["--rollback"]
+    else:
+        (tmp / "assets.json").write_text(json.dumps(assets or {}), encoding="utf-8")
+        args += ["--assets", str(tmp / "assets.json")]
+    env = dict(os.environ)
+    tok = settings.get("update_token")
+    if tok:
+        env["NTA_UPDATE_TOKEN"] = tok
+    subprocess.Popen(args, cwd=str(tmp), env=env, creationflags=_DETACHED, close_fds=True)
 
 
 def cached_check(max_age_s: float = 6 * 3600, force: bool = False, fetch=None) -> dict:
@@ -337,12 +362,17 @@ def cached_check(max_age_s: float = 6 * 3600, force: bool = False, fetch=None) -
             return c
     except (OSError, ValueError):
         pass
+    from nta_agent import settings
     out = {"current": cur, "packaged": True, "update": None, "checked_at": time.time(),
            "has_backup": latest_backup(paths.backups_dir()) is not None}
+    tok = settings.get("update_token")
     try:
-        out["update"] = check(fetch=fetch, current=cur)
+        out["update"] = check(fetch=fetch or (lambda url: _fetch_json(url, tok)), current=cur)
     except urllib.error.HTTPError as e:
-        if e.code != 404:  # 404 = the repo has no release yet: nothing to update to
+        if e.code in (401, 403) or (e.code == 404 and not tok):
+            # the repo is private: 404 without a token, 401/403 with a bad one
+            out["error"] = "cần GitHub token hợp lệ (Cài đặt) để kiểm tra cập nhật"
+        elif e.code != 404:  # 404 with a token = no release yet: nothing to update to
             out["error"] = f"không kiểm tra được: HTTP {e.code}"
     except (OSError, ValueError) as e:
         out["error"] = f"không kiểm tra được: {e}"

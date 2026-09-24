@@ -75,14 +75,23 @@ def test_plan_full_when_runtime_changes():
 
 
 def test_check_reads_latest_release():
+    api = "https://api.github.com/repos/x/y/releases/assets/"
     rel = {"tag_name": "v0.2.0", "body": "notes",
-           "assets": [{"name": "manifest.json",
-                       "browser_download_url": "https://github.com/x/y/releases/download/v0.2.0/manifest.json"}]}
+           "assets": [{"name": "manifest.json", "url": api + "1"},
+                      {"name": "NTA-Agent-0.2.0-app.zip", "url": api + "2"}]}
     r = updater.check(fetch=lambda url: rel, current="0.1.0")
-    assert r["version"] == "0.2.0" and r["manifest_url"].endswith("manifest.json")
+    assert r["version"] == "0.2.0"
+    assert r["assets"] == {"manifest.json": api + "1", "NTA-Agent-0.2.0-app.zip": api + "2"}
     assert updater.check(fetch=lambda url: rel, current="0.2.0") is None
-    rel["assets"][0]["browser_download_url"] = "https://evil.example/manifest.json"
+    rel["assets"][0]["url"] = "https://evil.example/manifest.json"
     assert updater.check(fetch=lambda url: rel, current="0.1.0") is None
+
+
+def test_token_is_never_forwarded_on_redirect():
+    req = updater._request("https://api.github.com/x", "application/octet-stream", "tok123")
+    assert req.unredirected_hdrs.get("Authorization") == "Bearer tok123"
+    assert "Authorization" not in req.headers
+    assert not updater._request("https://api.github.com/x", "a", None).has_header("Authorization")
 
 
 def test_prune_keeps_newest(tmp_path):
