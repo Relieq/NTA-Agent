@@ -75,8 +75,10 @@ class AgentSupervisor:
                 return {**self._status(),
                         "error": "Chưa hoàn tất Thiết lập — mở tab Thiết lập."}
             reset(self.cfg.control_path)
+            # No console window: the packaged dashboard itself runs windowless.
+            flags = 0x08000000 if sys.platform == "win32" else 0  # CREATE_NO_WINDOW
             self._proc = subprocess.Popen([sys.executable, "-m", "nta_agent"],
-                                          cwd=str(paths.app_dir()))
+                                          cwd=str(paths.app_dir()), creationflags=flags)
             self._pid = self._proc.pid
             self._started_at = time.time()
             self._user_stopped = False

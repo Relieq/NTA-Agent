@@ -119,6 +119,11 @@ def apply(zip_path: Path, root: Path, backups: Path, kind: str) -> Path:
             if Path(m).is_absolute() or ".." in Path(m).parts:
                 raise ValueError(f"unsafe path in update zip: {m}")
         z.extractall(stage)
+    if not (stage / "VERSION").is_file() and (stage / "NTA-Agent" / "VERSION").is_file():
+        inner = stage / "NTA-Agent"            # the "full" zip wraps a top folder
+        for item in list(inner.iterdir()):
+            shutil.move(str(item), str(stage / item.name))
+        inner.rmdir()
     if not (stage / "app").is_dir() or not (stage / "VERSION").is_file():
         shutil.rmtree(stage)
         raise ValueError("update zip lacks app/ or VERSION")
