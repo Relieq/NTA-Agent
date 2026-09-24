@@ -19,6 +19,7 @@ from pathlib import Path
 
 RES_BASE = "assets/assets/resources"
 ENGINE_ENTRY = "assets/assets/app/index.jsc"   # verified on v4.4.4 (== tools/re/decrypted/index.js)
+MSG_ENTRY = "assets/src/assets/app/proto/msg.jsc"  # protobuf.js static module -> schema.json
 
 # ---------------------------------------------------------------- XXTEA ---- #
 DELTA = 0x9E3779B9
@@ -122,6 +123,22 @@ def decrypt_engine(apk: Path, out_js: Path, key: bytes) -> int:
     tmp.write_bytes(js)
     tmp.replace(out_js)
     return len(js)
+
+
+def build_schema(apk: Path, out_json: Path, key: bytes) -> int:
+    """Decrypt msg.jsc and write the protobuf schema the API client needs; returns
+    the message count."""
+    from nta_agent.io.api.schema_parse import parse_schema
+    with zipfile.ZipFile(apk) as z:
+        src = decrypt_bytes(z.read(MSG_ENTRY), key).decode("utf-8", "ignore")
+    schema, _unknown = parse_schema(src)
+    if len(schema) < 50:
+        raise ValueError("msg.jsc decrypt produced no schema — wrong XXTEA key?")
+    out_json.parent.mkdir(parents=True, exist_ok=True)
+    tmp = out_json.with_suffix(".tmp")
+    tmp.write_text(json.dumps(schema, ensure_ascii=False, indent=0), encoding="utf-8")
+    tmp.replace(out_json)
+    return len(schema)
 
 
 # -------------------------------------------------------- config tables ---- #

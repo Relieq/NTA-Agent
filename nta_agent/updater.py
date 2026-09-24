@@ -22,6 +22,7 @@ import subprocess
 import sys
 import tempfile
 import time
+import urllib.error
 import urllib.parse
 import urllib.request
 import zipfile
@@ -338,6 +339,9 @@ def cached_check(max_age_s: float = 6 * 3600, force: bool = False, fetch=None) -
            "has_backup": latest_backup(paths.backups_dir()) is not None}
     try:
         out["update"] = check(fetch=fetch, current=cur)
+    except urllib.error.HTTPError as e:
+        if e.code != 404:  # 404 = the repo has no release yet: nothing to update to
+            out["error"] = f"không kiểm tra được: HTTP {e.code}"
     except (OSError, ValueError) as e:
         out["error"] = f"không kiểm tra được: {e}"
     cache.parent.mkdir(parents=True, exist_ok=True)

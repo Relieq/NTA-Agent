@@ -19,7 +19,9 @@ import struct
 from pathlib import Path
 from typing import Any
 
-_SCHEMA_PATH = Path(__file__).with_name("schema.json")
+from nta_agent import paths
+
+_SCHEMA_PATH = paths.schema_path()  # dev location; packaged -> data dir
 
 # proto type -> wire type
 _WIRE = {
@@ -111,7 +113,7 @@ class Codec:
 
     @classmethod
     def load(cls, path: Path | str | None = None) -> Codec:
-        p = Path(path) if path else _SCHEMA_PATH
+        p = Path(path) if path else paths.schema_path()
         if not p.exists():
             raise FileNotFoundError(
                 "schema.json not found at %s — regenerate via tools/re/parse_schema.py" % p

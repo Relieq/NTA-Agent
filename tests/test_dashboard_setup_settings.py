@@ -7,10 +7,10 @@ from nta_agent.dashboard import server
 
 
 def test_settings_view_masks_and_update():
-    r = server.update_settings({"openai_api_key": "sk-abcdefgh1234"})
+    r = server.update_settings({"openai_api_key": "sk-abcdefgh-0123456789-1234"})
     assert r["ok"] is True
     assert server.read_settings()["openai_api_key"]["value"] == "sk-…1234"
-    assert "sk-abcdefgh1234" not in json.dumps(r)
+    assert "sk-abcdefgh-0123456789-1234" not in json.dumps(r)
     assert server.update_settings({"nope": 1})["ok"] is False
     assert server.update_settings({})["ok"] is False
 

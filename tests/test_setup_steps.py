@@ -79,3 +79,9 @@ def test_status_ready_only_when_all_ok(monkeypatch):
 def test_dev_checkout_is_never_gated():
     assert paths.is_packaged() is False
     assert steps.ready() is True
+
+
+def test_gamedata_requires_xxtea_key_when_packaged(monkeypatch):
+    monkeypatch.setattr(paths, "is_packaged", lambda root=None: True)
+    r = steps.run_step("gamedata", dm_factory=FakeDM)
+    assert r["ok"] is False and "XXTEA" in r["detail"]

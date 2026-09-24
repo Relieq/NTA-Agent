@@ -60,6 +60,13 @@ def engine_js() -> Path:
     return _APP / "tools" / "re" / "decrypted" / "index.js"
 
 
+def schema_path() -> Path:
+    """Protobuf schema (from the game's msg.jsc) — game data, never shipped."""
+    if is_packaged():
+        return gamedata_dir() / "schema.json"
+    return _APP / "nta_agent" / "io" / "api" / "schema.json"
+
+
 def settings_path() -> Path:
     return data_dir() / "settings.json"
 

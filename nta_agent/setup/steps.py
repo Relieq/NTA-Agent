@@ -73,43 +73,53 @@ def _meta_path() -> Path:
 
 
 def _gamedata(get_dm) -> dict:
-    cfg_ok = (paths.config_dir() / "buildBase.json").is_file()
+    """Config tables + protobuf schema (both REQUIRED — the API client can't talk to
+    the server without the schema) + battle engine (optional, enables the sim)."""
+    have = ((paths.config_dir() / "buildBase.json").is_file()
+            and paths.schema_path().is_file())
     if not paths.is_packaged():  # dev: managed by tools/re, never overwritten here
-        return {"ok": cfg_ok, "detail": f"dev: {paths.config_dir()}"}
+        return {"ok": have, "detail": f"dev: {paths.config_dir()}"}
+    key = settings.get("xxtea_key")
+    if not key:
+        return {"ok": False, "detail": "chưa nhập XXTEA key (tab Cài đặt)"}
     dm = get_dm()
     ver = _installed_version(dm)
-    key = settings.get("xxtea_key")
     try:
         meta = json.loads(_meta_path().read_text(encoding="utf-8"))
     except (OSError, ValueError):
         meta = {}
     engine_ok = paths.engine_js().is_file()
-    if cfg_ok and meta.get("game_version") == ver and (engine_ok or not key):
+    if have and engine_ok and meta.get("game_version") == ver:
         return {"ok": True, "detail": _gamedata_detail(ver, engine_ok)}
     remote = dm.shell(f"pm path {PACKAGE}").strip().splitlines()[0].replace("package:", "")
     apk = paths.data_dir() / "tmp_base.apk"
     apk.parent.mkdir(parents=True, exist_ok=True)
     try:
         dm.pull(remote.strip(), str(apk), timeout=300)
+        try:
+            msgs = gamedata.build_schema(apk, paths.schema_path(), key.encode())
+        except (ValueError, KeyError) as e:
+            return {"ok": False, "detail": f"giải mã giao thức thất bại ({e}) — kiểm tra XXTEA key"}
         n, _fail = gamedata.extract_config_tables(apk, paths.config_dir())
         if n == 0:
             return {"ok": False, "detail": "không trích được bảng config nào từ APK"}
         engine_ok, engine_err = False, ""
-        if key:
-            try:
-                gamedata.decrypt_engine(apk, paths.engine_js(), key.encode())
-                engine_ok = True
-            except (ValueError, FileNotFoundError) as e:
-                engine_err = f" — engine lỗi: {e}"
+        try:
+            gamedata.decrypt_engine(apk, paths.engine_js(), key.encode())
+            engine_ok = True
+        except (ValueError, FileNotFoundError) as e:
+            engine_err = f" — engine lỗi: {e}"
     finally:
         apk.unlink(missing_ok=True)
-    _meta_path().write_text(json.dumps({"game_version": ver, "tables": n, "engine": engine_ok,
-                                        "extracted_at": int(time.time())}), encoding="utf-8")
-    return {"ok": True, "detail": _gamedata_detail(ver, engine_ok) + f", {n} bảng" + engine_err}
+    _meta_path().write_text(json.dumps({"game_version": ver, "tables": n, "messages": msgs,
+                                        "engine": engine_ok, "extracted_at": int(time.time())}),
+                            encoding="utf-8")
+    return {"ok": True,
+            "detail": _gamedata_detail(ver, engine_ok) + f", {n} bảng, {msgs} message" + engine_err}
 
 
 def _gamedata_detail(ver, engine_ok: bool) -> str:
-    sim = "mô phỏng trận BẬT" if engine_ok else "mô phỏng trận TẮT (chưa có XXTEA key)"
+    sim = "mô phỏng trận BẬT" if engine_ok else "mô phỏng trận TẮT"
     return f"dữ liệu game {ver}; {sim}"
 
 
@@ -150,7 +160,7 @@ _HINTS = {
              "buoc-3-root"),
     "game": (("Cài đúng bản game mà app hỗ trợ; bản khác có thể lệch giao thức. "
               "Có thể bỏ qua nếu chấp nhận rủi ro."), "buoc-4-game"),
-    "gamedata": ("Cần bước 2–4 đạt trước. Mô phỏng trận cần XXTEA key (Cài đặt).",
+    "gamedata": ("Nhập XXTEA key ở tab Cài đặt (bắt buộc), cần bước 2–4 đạt trước.",
                  "buoc-5-du-lieu-game"),
     "distinct_id": ("Mở game ít nhất một lần cho tới màn hình chính.", "buoc-6-distinct-id"),
     "token": ("Đăng nhập game (Google/Facebook) trong giả lập rồi THOÁT game, chạy lại bước này.",

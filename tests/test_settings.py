@@ -20,9 +20,9 @@ def test_env_wins_over_file(store, monkeypatch):
 
 
 def test_secret_is_encrypted_on_disk_and_masked_in_view(store):
-    settings.set_values({"openai_api_key": "sk-test-1234567890abcd"})
-    assert "sk-test-1234567890abcd" not in store.read_text(encoding="utf-8")
-    assert settings.get("openai_api_key") == "sk-test-1234567890abcd"
+    settings.set_values({"openai_api_key": "sk-test-1234567890-xyzabcd"})
+    assert "sk-test-1234567890-xyzabcd" not in store.read_text(encoding="utf-8")
+    assert settings.get("openai_api_key") == "sk-test-1234567890-xyzabcd"
     v = settings.view()
     assert v["openai_api_key"] == {"set": True, "value": "sk-…abcd"}
     assert v["openai_model"] == {"set": False, "value": ""}
@@ -45,3 +45,8 @@ def test_corrupt_file_is_empty(store):
 def test_undecryptable_secret_reads_as_missing(store):
     store.write_text('{"openai_api_key": {"dpapi": "AAAA"}}', encoding="utf-8")
     assert settings.get("openai_api_key") is None
+
+
+def test_short_secret_mask_reveals_little():
+    assert settings.mask("0123456789abcdef") == "…ef"
+    assert settings.mask("sk-proj-0123456789abcdefghij") == "sk-…ghij"

@@ -104,7 +104,9 @@ def set_values(values: dict) -> None:
 
 
 def mask(v: str) -> str:
-    return f"{v[:3]}…{v[-4:]}" if len(v) > 8 else "…"
+    if len(v) >= 24:          # long API keys: prefix + last 4 identify which key it is
+        return f"{v[:3]}…{v[-4:]}"
+    return "…" + v[-2:] if len(v) > 8 else "…"
 
 
 def view() -> dict:
