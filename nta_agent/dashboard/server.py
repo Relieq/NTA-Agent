@@ -93,7 +93,7 @@ def handle_chat(cfg, message, *, history=None, propose=None):
 
     from nta_agent.brain import llm as _llm
     from nta_agent.brain.digest import digest
-    from nta_agent.brain.guard import sanitize_edits, sanitize_renames
+    from nta_agent.brain.guard import rename_ambiguity, sanitize_edits, sanitize_renames
     from nta_agent.brain.llm import BrainUnavailable
     from nta_agent.execution.profile import apply_edits, load_profile, save_profile
     propose = propose or _llm.propose
@@ -124,8 +124,20 @@ def handle_chat(cfg, message, *, history=None, propose=None):
         append_command(cfg.commands_path, {"action": "profile_edit", "edits": clean})
     # Renames: the LLM PICKS the armies (by uid); we validate but DO NOT execute —
     # the player confirms first (confirm_renames queues the commands).
-    renames = sanitize_renames(edits, valid, _dominant_by_uid(armies))
+    dominant = _dominant_by_uid(armies)
+    renames = sanitize_renames(edits, valid, dominant)
     by_uid = {str(a.get("uid")): a for a in armies}
+    question = str((edits or {}).get("question", "")).strip()
+    # Deterministic guard after the LLM: a positional or shared-pawn-type reference
+    # to an army the player didn't NAME is ambiguous -> ask instead of proposing.
+    info = [{"uid": str(a.get("uid")), "name": a.get("name", ""),
+             "dominant": dominant.get(str(a.get("uid"))),
+             "troops": _troops_label(dict(Counter(str(p.get("id"))
+                                                  for p in (a.get("pawns") or []))), names)}
+            for a in armies]
+    guard_q = rename_ambiguity(message, renames, info)
+    if guard_q:
+        renames, question = [], guard_q
     proposal = []
     for r in renames:
         a = by_uid.get(r["uid"], {})
@@ -133,7 +145,6 @@ def handle_chat(cfg, message, *, history=None, propose=None):
         proposal.append({"uid": r["uid"], "name": r["name"],
                          "current_name": a.get("name", ""),
                          "troops": _troops_label(dict(comp), names)})
-    question = str((edits or {}).get("question", "")).strip()
     return {"ok": True, "applied": clean, "rationale": (edits or {}).get("rationale", ""),
             "renames": proposal, "needs_confirm": bool(proposal), "question": question,
             "active": profile.army.get("active", ""),

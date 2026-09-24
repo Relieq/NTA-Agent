@@ -108,3 +108,45 @@ def test_leveling_sanitized():
     out = sanitize_edits({"leveling": {"enabled": "yes", "target_lv": "8",
                                        "max_leveling": "2", "bogus": 1}}, _prof(), set())
     assert out["leveling"] == {"enabled": True, "target_lv": 8, "max_leveling": 2}
+
+
+# ---- rename ambiguity guards (post-LLM, deterministic) --------------------------
+def _armies():
+    return [{"uid": "t1", "name": "Team 1", "dominant": "3206", "troops": "9× Lính Rìu Khiên"},
+            {"uid": "t2", "name": "Team 2", "dominant": "3305", "troops": "9× Lính Cường Nỏ"},
+            {"uid": "t3", "name": "Team 3", "dominant": "3305", "troops": "9× Lính Cường Nỏ"},
+            {"uid": "cu", "name": "Cứu Hộ", "dominant": "3201", "troops": "2× Lính Đao Khiên"}]
+
+
+def test_guard_asks_when_type_matches_several_armies():
+    from nta_agent.brain.guard import rename_ambiguity
+    q = rename_ambiguity("đổi tên đội cường nỏ thành IMP", [{"uid": "t2", "name": "IMP"}], _armies())
+    assert q and "Team 2" in q and "Team 3" in q            # lists both candidates
+
+
+def test_guard_passes_unique_type_named_army_and_whole_group():
+    from nta_agent.brain.guard import rename_ambiguity
+    A = _armies()
+    assert rename_ambiguity("đổi tên đội rìu khiên thành Tank", [{"uid": "t1", "name": "Tank"}], A) is None
+    # the army is named explicitly -> other crossbow armies don't matter
+    assert rename_ambiguity("đổi tên Team 3 thành IMP B", [{"uid": "t3", "name": "IMP B"}], A) is None
+    assert rename_ambiguity("doi ten team3 thanh IMP B", [{"uid": "t3", "name": "IMP B"}], A) is None
+    # both crossbow armies renamed together -> no leftover peer -> fine
+    assert rename_ambiguity("đổi tên 2 đội nỏ thành A, B",
+                            [{"uid": "t2", "name": "A"}, {"uid": "t3", "name": "B"}], A) is None
+
+
+def test_guard_asks_on_positional_reference():
+    from nta_agent.brain.guard import rename_ambiguity
+    A = _armies()
+    q = rename_ambiguity("đổi tên đội nỏ đầu tiên thành IMP 1", [{"uid": "t2", "name": "IMP 1"}], A)
+    assert q and "vị trí" in q
+    assert rename_ambiguity("doi ten doi tank thu hai thanh X", [{"uid": "t1", "name": "X"}], A)
+    # a positional word is irrelevant when the army is named explicitly
+    assert rename_ambiguity("đổi tên Team 2 (đội đầu tiên) thành A", [{"uid": "t2", "name": "A"}],
+                            A) is None
+
+
+def test_guard_no_renames_no_question():
+    from nta_agent.brain.guard import rename_ambiguity
+    assert rename_ambiguity("đổi tên đội cường nỏ thành IMP", [], _armies()) is None

@@ -102,3 +102,21 @@ def test_handle_chat_returns_question_without_acting(tmp_path):
     if cmds.exists():
         assert not any(json.loads(c).get("action") == "rename_army"
                        for c in cmds.read_text(encoding="utf-8").splitlines())
+
+
+def test_handle_chat_guard_turns_ambiguous_rename_into_question(tmp_path):
+    """The LLM picked ONE crossbow army for 'đội cường nỏ' but two exist -> the
+    deterministic guard drops the proposal and asks, listing both candidates."""
+    cfg = _cfg(tmp_path)
+    Path(cfg.profile_path).parent.mkdir(parents=True, exist_ok=True)
+    Path(cfg.armies_path).write_text(json.dumps([
+        {"uid": "A", "name": "Team 2", "index": 1, "pawns": [{"id": 3305}] * 9},
+        {"uid": "B", "name": "Team 3", "index": 1, "pawns": [{"id": 3305}] * 9},
+    ], ensure_ascii=False), encoding="utf-8")
+
+    def fake_propose(digest, profile, instruction=None, history=None):
+        return {"army_renames": [{"uid": "A", "name": "IMP", "pawn": 3305}]}
+
+    out = handle_chat(cfg, "đổi tên đội cường nỏ thành IMP", history=[], propose=fake_propose)
+    assert out["ok"] is True and out["renames"] == [] and out["needs_confirm"] is False
+    assert "Team 2" in out["question"] and "Team 3" in out["question"]
