@@ -234,6 +234,7 @@ def _runtime_versions(root: Path) -> dict:
 
 
 def run_update(root: Path, data: Path, manifest_url: str, port: int) -> int:
+    root, data = Path(root).resolve(), Path(data).resolve()
     backups = data / "backups"
     try:
         if not _safe_url(manifest_url):
@@ -269,6 +270,7 @@ def run_update(root: Path, data: Path, manifest_url: str, port: int) -> int:
 
 
 def run_rollback(root: Path, data: Path) -> int:
+    root, data = Path(root).resolve(), Path(data).resolve()
     b = latest_backup(data / "backups")
     if b is None:
         _log(data, "rollback: no backup")
