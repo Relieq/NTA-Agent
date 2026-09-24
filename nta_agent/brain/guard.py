@@ -274,6 +274,10 @@ _POSITIONAL = re.compile(
     r"|tren cung|duoi cung|dau danh sach|cuoi danh sach|ben trai|ben phai)\b")
 
 
+# "thuần X" / "toàn X" / "pure" = the player wants a PURE-X army ("toàn bộ" = all, not purity)
+_PURE = re.compile(r"\b(thuan|pure)\b|\btoan (?!bo\b)")
+
+
 def _fold(s: str) -> str:
     """Lowercase, strip Vietnamese diacritics (đ -> d)."""
     s = unicodedata.normalize("NFD", str(s or "").lower().replace("đ", "d"))
@@ -289,32 +293,68 @@ def rename_ambiguity(instruction, renames, armies) -> str | None:
     """A clarification question if the proposed renames are unsafe, else None.
 
     ``renames``: [{uid, name}] (already sanitized). ``armies``: [{uid, name,
-    dominant, troops}]. An army the player NAMED explicitly is always trusted.
-    Otherwise ask when (1) the player pointed by position, or (2) another army with
-    the same dominant pawn type exists and isn't renamed in the same batch."""
+    dominant, troops}]. Ask when (3) several armies get the SAME new name. For an army
+    the player didn't NAME explicitly, also ask when (1) they pointed by position, or
+    (2) another army with the same dominant pawn type exists outside the batch, or
+    (4) the army is mixed (the type is < 2/3 of it, or a PURE army was asked for),
+    or (5) the player listed more new names than armies were proposed.
+    Optional ``share`` per army = dominant pawn count / army size (default 1)."""
     if not renames:
         return None
-    folded = _fold(instruction)
-    compact = re.sub(r"[^a-z0-9]", "", folded)
     by_uid = {str(a.get("uid")): a for a in armies}
+
+    def cand(a):
+        return f"• {a.get('name', '?')} — {a.get('troops', '')}"
+
+    # (3) several armies given the SAME new name: almost never intended — the LLM
+    # typically answered a singular request by renaming every army of that type.
+    seen: dict = {}   # folded name -> (display name, [uids])
+    for r in renames:
+        shown = str(r.get("name", "")).strip()
+        seen.setdefault(shown.lower(), (shown, []))[1].append(str(r.get("uid")))
+    dup = next((v for k, v in seen.items() if k and len(set(v[1])) >= 2), None)
+    if dup:
+        pool = [by_uid[u] for u in dict.fromkeys(dup[1]) if u in by_uid]
+        return (f"Bạn muốn đặt CÙNG tên \"{dup[0]}\" cho {len(pool)} đội, hay chỉ một đội? "
+                "Nếu một đội thì là đội nào (gọi theo tên đội)?\n"
+                + "\n".join(cand(a) for a in pool))
+    folded = _fold(instruction)
+    # (5) the player listed N new names ("thành A và B", "to A, B") but fewer armies
+    # were proposed -> a partial rename (the LLM dropped one) -> ask.
+    tail = re.split(r"\bthanh\b|\bto\b", folded)
+    if len(tail) >= 2:
+        items = [x for x in re.split(r",|;|\bva\b|\bvoi\b|\band\b", tail[-1]) if x.strip()]
+        n_armies = len({str(r.get("uid")) for r in renames})
+        if len(items) >= 2 and n_armies < len(items):
+            pool = [by_uid[u] for u in dict.fromkeys(str(r.get("uid")) for r in renames)
+                    if u in by_uid]
+            return (f"Bạn nêu {len(items)} tên mới nhưng tôi mới xác định được {n_armies} đội. "
+                    "Bạn muốn đổi tên những đội nào (gọi theo tên đội)?\n"
+                    + "\n".join(cand(a) for a in pool))
+    compact = re.sub(r"[^a-z0-9]", "", folded)
     batch = {str(r.get("uid")) for r in renames}
     unnamed = [by_uid[u] for u in batch
                if u in by_uid and not _names_army(compact, by_uid[u].get("name", ""))]
     if not unnamed:
         return None
-
-    def cand(a):
-        return f"• {a.get('name', '?')} — {a.get('troops', '')}"
-
     if _POSITIONAL.search(folded):
         doms = {str(a.get("dominant")) for a in unnamed}
         pool = [a for a in armies if str(a.get("dominant")) in doms]
         return ("Bạn chỉ đội theo vị trí, nhưng thứ tự đội trong game không cố định nên "
                 "tôi không chắc là đội nào. Bạn muốn đổi tên đội nào (gọi theo tên đội)?\n"
                 + "\n".join(cand(a) for a in pool))
+    pure_req = bool(_PURE.search(folded))
+    for a in unnamed:
+        share = float(a.get("share", 1.0) or 0.0)
+        # (4) referenced by TYPE but the army is mixed: that type is < 2/3 of it, or
+        # the player asked for a PURE army and this one isn't.
+        if share < 2 / 3 - 1e-9 or (pure_req and share < 1.0 - 1e-9):
+            return ("Đội này là đội LAI, không thuần loại lính bạn nói — tôi không chắc đúng "
+                    "đội bạn muốn. Bạn muốn đổi tên đội nào (gọi theo tên đội)?\n" + cand(a))
     for a in unnamed:
         peers = [b for b in armies if str(b.get("dominant")) == str(a.get("dominant"))
-                 and str(b.get("uid")) not in batch]
+                 and str(b.get("uid")) not in batch
+                 and (not pure_req or float(b.get("share", 1.0) or 0.0) >= 1.0 - 1e-9)]
         if peers:
             pool = [a, *peers]
             return ("Có nhiều đội cùng loại lính khớp mô tả của bạn, tôi không chắc đội nào. "

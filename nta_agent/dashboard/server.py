@@ -130,11 +130,14 @@ def handle_chat(cfg, message, *, history=None, propose=None):
     question = str((edits or {}).get("question", "")).strip()
     # Deterministic guard after the LLM: a positional or shared-pawn-type reference
     # to an army the player didn't NAME is ambiguous -> ask instead of proposing.
-    info = [{"uid": str(a.get("uid")), "name": a.get("name", ""),
-             "dominant": dominant.get(str(a.get("uid"))),
-             "troops": _troops_label(dict(Counter(str(p.get("id"))
-                                                  for p in (a.get("pawns") or []))), names)}
-            for a in armies]
+    info = []
+    for a in armies:
+        comp = Counter(str(p.get("id")) for p in (a.get("pawns") or []))
+        total = sum(comp.values())
+        info.append({"uid": str(a.get("uid")), "name": a.get("name", ""),
+                     "dominant": dominant.get(str(a.get("uid"))),
+                     "share": (max(comp.values()) / total) if total else 1.0,
+                     "troops": _troops_label(dict(comp), names)})
     guard_q = rename_ambiguity(message, renames, info)
     if guard_q:
         renames, question = [], guard_q

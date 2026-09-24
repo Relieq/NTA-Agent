@@ -150,3 +150,60 @@ def test_guard_asks_on_positional_reference():
 def test_guard_no_renames_no_question():
     from nta_agent.brain.guard import rename_ambiguity
     assert rename_ambiguity("đổi tên đội cường nỏ thành IMP", [], _armies()) is None
+
+
+def test_guard_asks_when_several_armies_get_the_same_new_name():
+    """Evidence: the LLM answered a SINGULAR request ('đổi tên đội cường nỏ thành IMP')
+    by giving every crossbow army the same name — 5/9 of its remaining wrong renames."""
+    from nta_agent.brain.guard import rename_ambiguity
+    A = _armies()
+    q = rename_ambiguity("đổi tên đội cường nỏ thành IMP",
+                         [{"uid": "t2", "name": "IMP"}, {"uid": "t3", "name": "IMP"}], A)
+    assert q and "IMP" in q and "Team 2" in q and "Team 3" in q
+    # distinct names for the same armies are fine
+    assert rename_ambiguity("đổi tên 2 đội nỏ thành IMP 1, IMP 2",
+                            [{"uid": "t2", "name": "IMP 1"}, {"uid": "t3", "name": "IMP 2"}], A) is None
+
+
+def _mixed():
+    return [{"uid": "m1", "name": "Đội 1", "dominant": "3206", "share": 5 / 9,
+             "troops": "5× Lính Rìu Khiên, 4× Lính Cường Nỏ"},
+            {"uid": "m2", "name": "Đội 2", "dominant": "3305", "share": 7 / 9,
+             "troops": "7× Lính Cường Nỏ, 2× Lính Rìu Khiên"},
+            {"uid": "h2", "name": "Nỏ A", "dominant": "3305", "share": 1.0,
+             "troops": "9× Lính Cường Nỏ"}]
+
+
+def test_guard_asks_when_type_barely_dominates_a_mixed_army():
+    """'A team of X' must be (mostly) X — the prompt says so but the LLM ignores it."""
+    from nta_agent.brain.guard import rename_ambiguity
+    A = [a for a in _mixed() if a["uid"] != "h2"]
+    q = rename_ambiguity("đổi tên đội rìu khiên thành Tank", [{"uid": "m1", "name": "Tank"}], A)
+    assert q and "Đội 1" in q
+    # 7/9 dominant is a fair "crossbow team" -> fine, unless the player said PURE
+    assert rename_ambiguity("đổi tên đội cường nỏ thành IMP", [{"uid": "m2", "name": "IMP"}], A) is None
+    assert rename_ambiguity("đổi tên đội toàn cường nỏ thành IMP", [{"uid": "m2", "name": "IMP"}], A)
+
+
+def test_guard_pure_request_ignores_mixed_peers():
+    from nta_agent.brain.guard import rename_ambiguity
+    A = _mixed()   # m2 (7/9 crossbow) + h2 (pure crossbow)
+    assert rename_ambiguity("đổi tên đội nỏ thuần thành IMP", [{"uid": "h2", "name": "IMP"}], A) is None
+    assert rename_ambiguity("đổi tên đội nỏ thành IMP", [{"uid": "h2", "name": "IMP"}], A)  # still ambiguous
+    # 'toàn bộ' (= all) is not a purity request
+    assert rename_ambiguity("đổi tên toàn bộ đội nỏ thành IMP", [{"uid": "h2", "name": "IMP"}], A)
+
+
+def test_guard_asks_when_fewer_armies_than_new_names():
+    """Evidence (fresh HOLD2): 'đổi tên đội tank với đội farm thành A và B' -> the LLM
+    renamed only one army. More new names than armies proposed = partial -> ask."""
+    from nta_agent.brain.guard import rename_ambiguity
+    A = _armies()
+    assert rename_ambiguity("đổi tên đội rìu khiên với Cứu Hộ thành A và B",
+                            [{"uid": "t1", "name": "A"}], A)
+    assert rename_ambiguity("đổi tên cả 3 đội thành Một, Hai, Ba",
+                            [{"uid": "t1", "name": "Một"}], A)
+    # as many armies as names -> fine; a single new name -> not this guard
+    assert rename_ambiguity("đổi tên Team 2 và Team 3 thành A và B",
+                            [{"uid": "t2", "name": "A"}, {"uid": "t3", "name": "B"}], A) is None
+    assert rename_ambiguity("rename Team 1 to Tank", [{"uid": "t1", "name": "Tank"}], A) is None
