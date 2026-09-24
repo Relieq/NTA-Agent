@@ -81,10 +81,46 @@ def test_dev_checkout_is_never_gated():
     assert steps.ready() is True
 
 
-def test_gamedata_requires_xxtea_key_when_packaged(monkeypatch):
+class ApkDM(FakeDM):
+    def shell(self, cmd, timeout=30):
+        if "pm path" in cmd:
+            return "package:/data/app/x/base.apk\n"
+        return super().shell(cmd, timeout)
+
+    def pull(self, remote, local, timeout=60):
+        with open(local, "wb") as f:
+            f.write(b"apk")
+        return local
+
+
+def _stub_gamedata(monkeypatch, found):
+    used = {}
     monkeypatch.setattr(paths, "is_packaged", lambda root=None: True)
-    r = steps.run_step("gamedata", dm_factory=FakeDM)
-    assert r["ok"] is False and "XXTEA" in r["detail"]
+    monkeypatch.setattr(steps.gamedata, "find_xxtea_key", lambda apk: found)
+
+    def schema(apk, out, key):
+        used["key"] = key
+        return 891
+    monkeypatch.setattr(steps.gamedata, "build_schema", schema)
+    monkeypatch.setattr(steps.gamedata, "extract_config_tables", lambda apk, out: (88, []))
+    monkeypatch.setattr(steps.gamedata, "decrypt_engine", lambda apk, out, key: 1)
+    return used
+
+
+def test_gamedata_discovers_key_from_apk_without_user_input(monkeypatch):
+    used = _stub_gamedata(monkeypatch, "found-key-123456")
+    r = steps.run_step("gamedata", dm_factory=ApkDM)
+    assert r["ok"] is True and "891 message" in r["detail"]
+    assert used["key"] == b"found-key-123456"
+    assert settings.get("xxtea_key") is None          # nothing stored
+
+
+def test_gamedata_user_key_overrides_and_missing_key_fails(monkeypatch):
+    used = _stub_gamedata(monkeypatch, None)
+    assert steps.run_step("gamedata", dm_factory=ApkDM)["ok"] is False
+    settings.set_values({"xxtea_key": "typed-key-000000"})
+    assert steps.run_step("gamedata", dm_factory=ApkDM)["ok"] is True
+    assert used["key"] == b"typed-key-000000"
 
 
 def test_readme_has_every_setup_anchor():

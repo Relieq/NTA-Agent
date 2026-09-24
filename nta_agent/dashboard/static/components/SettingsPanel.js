@@ -7,10 +7,10 @@ const FIELDS=[
   help:"Tuỳ chọn — bật \"bộ não\" (chiến lược + chat). Tính phí theo tài khoản OpenAI của bạn."},
  {key:"openai_model", label:"Model", placeholder:"gpt-4o-mini"},
  {key:"brain_max_calls", label:"Giới hạn lượt gọi bộ não / phiên", placeholder:"50"},
- {key:"xxtea_key", label:"XXTEA key", secret:true,
-  help:"BẮT BUỘC — dùng để giải mã giao thức + dữ liệu game từ APK trong máy bạn (xin từ người chia sẻ app). Nhập xong chạy bước \"Dữ liệu game\"."},
+ {key:"xxtea_key", label:"XXTEA key (tuỳ chọn)", secret:true,
+  help:"Để trống — app tự tìm khoá trong chính bản game của bạn. Chỉ nhập nếu tự dò thất bại."},
  {key:"update_token", label:"GitHub token (cập nhật)", secret:true,
-  help:"Repo riêng tư: cần token chỉ-đọc (fine-grained, Contents: Read) do người chia sẻ app cấp để tự cập nhật."},
+  help:"Để trống. Chỉ cần nếu kho phát hành chuyển sang riêng tư (token chỉ-đọc)."},
  {key:"adb_path", label:"Đường dẫn adb.exe", placeholder:"tự dò (LDPlayer)"},
  {key:"adb_serial", label:"Thiết bị ADB", placeholder:"emulator-5554"},
 ];

@@ -50,8 +50,9 @@ API-migration break the vision path for a feature.
 - Screen: the game **hard-locks portrait 900x1600** on LDPlayer (ADB/autorotate can't force it).
   The old bot's 1600x900 combat/coordinate math is therefore outdated — the project is API-first,
   so pixel math is being retired; don't assume 1600x900.
-- Protocol is **MQTT over TLS 1.2** to `nine-hk.twomiles.cn:3653` (payload is app-layer protobuf,
-  XXTEA key `2d5e8a49-a7f8-43`), not plain HTTPS. Intercepting needs Frida (TLS + pin bypass);
+- Protocol is **MQTT over TLS 1.2** to `nine-hk.twomiles.cn:3653` (payload is app-layer protobuf),
+  not plain HTTPS. The XXTEA key is NEVER committed: it lives in gitignored `tools/re/KEY.txt`, and
+  `nta_agent.gamedata.find_xxtea_key(apk)` recovers it from the game's own `libcocos2djs.so`. Intercepting needs Frida (TLS + pin bypass);
   the RE lab (frida-server, tcpdump) is already set up — see `nta-agent-lab-setup` / `nta-agent-re-findings`.
 - **The agent connects to the game API directly (MQTT), not through ADB** — so which emulator is up
   doesn't affect the agent loop; ADB is only for the vision fallback + manual inspection (screenshots).

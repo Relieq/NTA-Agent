@@ -74,14 +74,14 @@ def _meta_path() -> Path:
 
 def _gamedata(get_dm) -> dict:
     """Config tables + protobuf schema (both REQUIRED — the API client can't talk to
-    the server without the schema) + battle engine (optional, enables the sim)."""
+    the server without the schema) + battle engine (optional, enables the sim).
+
+    The XXTEA key is recovered from the APK itself (``gamedata.find_xxtea_key``); a
+    key typed in Settings only overrides that."""
     have = ((paths.config_dir() / "buildBase.json").is_file()
             and paths.schema_path().is_file())
     if not paths.is_packaged():  # dev: managed by tools/re, never overwritten here
         return {"ok": have, "detail": f"dev: {paths.config_dir()}"}
-    key = settings.get("xxtea_key")
-    if not key:
-        return {"ok": False, "detail": "chưa nhập XXTEA key (tab Cài đặt)"}
     dm = get_dm()
     ver = _installed_version(dm)
     try:
@@ -96,10 +96,13 @@ def _gamedata(get_dm) -> dict:
     apk.parent.mkdir(parents=True, exist_ok=True)
     try:
         dm.pull(remote.strip(), str(apk), timeout=300)
+        key = settings.get("xxtea_key") or gamedata.find_xxtea_key(apk)
+        if not key:
+            return {"ok": False, "detail": "không tìm được khoá giải mã trong APK"}
         try:
             msgs = gamedata.build_schema(apk, paths.schema_path(), key.encode())
         except (ValueError, KeyError) as e:
-            return {"ok": False, "detail": f"giải mã giao thức thất bại ({e}) — kiểm tra XXTEA key"}
+            return {"ok": False, "detail": f"giải mã giao thức thất bại ({e})"}
         n, _fail = gamedata.extract_config_tables(apk, paths.config_dir())
         if n == 0:
             return {"ok": False, "detail": "không trích được bảng config nào từ APK"}
@@ -111,6 +114,7 @@ def _gamedata(get_dm) -> dict:
             engine_err = f" — engine lỗi: {e}"
     finally:
         apk.unlink(missing_ok=True)
+    _meta_path().parent.mkdir(parents=True, exist_ok=True)
     _meta_path().write_text(json.dumps({"game_version": ver, "tables": n, "messages": msgs,
                                         "engine": engine_ok, "extracted_at": int(time.time())}),
                             encoding="utf-8")
@@ -160,7 +164,7 @@ _HINTS = {
              "buoc-3-root"),
     "game": (("Cài đúng bản game mà app hỗ trợ; bản khác có thể lệch giao thức. "
               "Có thể bỏ qua nếu chấp nhận rủi ro."), "buoc-4-game"),
-    "gamedata": ("Nhập XXTEA key ở tab Cài đặt (bắt buộc), cần bước 2–4 đạt trước.",
+    "gamedata": ("Cần bước 2–4 đạt trước. Dừng agent rồi chạy lại.",
                  "buoc-5-du-lieu-game"),
     "distinct_id": ("Mở game ít nhất một lần cho tới màn hình chính.", "buoc-6-distinct-id"),
     "token": ("Đăng nhập game (Google/Facebook) trong giả lập rồi THOÁT game, chạy lại bước này.",

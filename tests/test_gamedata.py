@@ -56,3 +56,22 @@ def test_extract_config_tables_atomic_swap(tmp_path):
     assert json.loads((out / "buildBase.json").read_text(encoding="utf-8")) == [{"id": 1}]
     assert not (out / "stale.json").exists()
     assert not out.with_name("config.new").exists()
+
+
+def test_find_xxtea_key_from_native_lib(tmp_path):
+    probe = b"(function r(e, n, t) {\nfunction i(u, f) {}\n})" * 4
+    lib = (b"\x00junk\x00" + b"not-the-key-at-all-0000\x00" + b"ABCDEFGHIJKLMNOPqrst\x00"
+           + b"\x7fELF\x00" + KEY + b"-tail\x00more")   # C strings are NUL-separated
+    apk = tmp_path / "base.apk"
+    with zipfile.ZipFile(apk, "w") as z:
+        z.writestr(gamedata.PROBE_ENTRY, gamedata.xxtea_encrypt(probe, KEY))
+        z.writestr("lib/x86_64/libcocos2djs.so", lib)
+    assert gamedata.find_xxtea_key(apk) == KEY.decode()
+
+
+def test_find_xxtea_key_none_when_absent(tmp_path):
+    apk = tmp_path / "base.apk"
+    with zipfile.ZipFile(apk, "w") as z:
+        z.writestr(gamedata.PROBE_ENTRY, gamedata.xxtea_encrypt(b"function x(){}" * 8, KEY))
+        z.writestr("lib/x86_64/libcocos2djs.so", b"\x00nothing-useful-here-at-all\x00")
+    assert gamedata.find_xxtea_key(apk) is None

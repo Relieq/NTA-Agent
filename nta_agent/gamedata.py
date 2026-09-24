@@ -11,6 +11,7 @@ plaintext. Config tables live under ``resources/common/json/<name>`` as JsonAsse
 from __future__ import annotations
 
 import json
+import re
 import shutil
 import struct
 import zipfile
@@ -139,6 +140,50 @@ def build_schema(apk: Path, out_json: Path, key: bytes) -> int:
     tmp.write_text(json.dumps(schema, ensure_ascii=False, indent=0), encoding="utf-8")
     tmp.replace(out_json)
     return len(schema)
+
+
+# ---------------------------------------------------------- key discovery -- #
+# The game needs the key to decrypt its own scripts, so it ships it in plain text
+# inside libcocos2djs.so (verified on v4.4.4, all four ABIs). Rather than ever
+# distributing the key, recover it from the user's own APK: take printable strings
+# from the native lib and keep the one that decrypts a tiny known script to JS.
+PROBE_ENTRY = "assets/assets/internal/index.jsc"   # 320 bytes -> "(function r(e, n, t) {..."
+_STR_RE = re.compile(rb"[\x21-\x7e]{16,64}")
+_KEYISH = re.compile(rb"^[0-9A-Za-z-]{16}$")
+
+
+def _looks_like_js(b: bytes) -> bool:
+    head = b[:64]
+    if len(head) < 16 or any(c < 9 or (13 < c < 32) or c > 126 for c in head):
+        return False
+    return any(t in b[:4096] for t in (b"function", b"window", b"require", b"var "))
+
+
+def _key_candidates(lib: bytes) -> list[bytes]:
+    seen, keyish, rest = set(), [], []
+    for m in _STR_RE.finditer(lib):
+        cand = m.group()[:16]          # XXTEA uses the first 16 bytes of the key string
+        if cand in seen:
+            continue
+        seen.add(cand)
+        (keyish if _KEYISH.match(cand) else rest).append(cand)
+    return keyish + rest               # uuid/hex-looking strings first: usually instant
+
+
+def find_xxtea_key(apk: Path) -> str | None:
+    """Recover the XXTEA key from the APK's own native library, or None."""
+    with zipfile.ZipFile(apk) as z:
+        names = z.namelist()
+        probe = z.read(PROBE_ENTRY) if PROBE_ENTRY in names else None
+        libs = sorted((n for n in names if n.endswith("/libcocos2djs.so")),
+                      key=lambda n: "x86_64" not in n)
+        if probe is None or not libs:
+            return None
+        lib = z.read(libs[0])
+    for cand in _key_candidates(lib):
+        if _looks_like_js(decrypt_bytes(probe, cand)):
+            return cand.decode("ascii")
+    return None
 
 
 # -------------------------------------------------------- config tables ---- #
