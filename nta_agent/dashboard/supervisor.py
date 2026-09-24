@@ -70,6 +70,10 @@ class AgentSupervisor:
             self._reap_if_exited()
             if self._alive():
                 return self._status()
+            from nta_agent.setup import steps
+            if not steps.ready():
+                return {**self._status(),
+                        "error": "Chưa hoàn tất Thiết lập — mở tab Thiết lập."}
             reset(self.cfg.control_path)
             self._proc = subprocess.Popen([sys.executable, "-m", "nta_agent"],
                                           cwd=str(paths.app_dir()))

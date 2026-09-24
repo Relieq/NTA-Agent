@@ -277,6 +277,48 @@ def read_health(cfg) -> dict:
                 "degraded": False}
 
 
+def read_settings() -> dict:
+    from nta_agent import settings
+    return settings.view()
+
+
+def update_settings(body: dict) -> dict:
+    from nta_agent import settings
+    if not isinstance(body, dict) or not body:
+        return {"ok": False, "error": "không có gì để lưu"}
+    try:
+        settings.set_values(body)
+    except KeyError as e:
+        return {"ok": False, "error": f"khoá không hợp lệ: {e.args[0]}"}
+    return {"ok": True, "settings": settings.view()}
+
+
+def test_openai_key(opener=None) -> dict:
+    """Probe the stored key with GET /v1/models (free). Never echoes the key."""
+    import urllib.error
+    import urllib.request
+
+    from nta_agent import settings
+    key = settings.get("openai_api_key")
+    if not key:
+        return {"ok": False, "error": "chưa nhập OpenAI API key"}
+    req = urllib.request.Request("https://api.openai.com/v1/models",
+                                 headers={"Authorization": "Bearer " + key})
+    try:
+        with (opener or urllib.request.urlopen)(req, timeout=8) as r:
+            return {"ok": 200 <= r.status < 300}
+    except urllib.error.HTTPError as e:
+        return {"ok": False, "error": "key bị từ chối (401)" if e.code == 401 else f"HTTP {e.code}"}
+    except (urllib.error.URLError, OSError) as e:
+        return {"ok": False, "error": f"không kết nối được: {e}"}
+
+
+def read_app_info() -> dict:
+    from nta_agent import paths
+    return {"version": paths.app_version(), "packaged": paths.is_packaged(),
+            "data_dir": str(paths.data_dir())}
+
+
 def read_forge_view(cfg) -> dict:
     """Recast panel: agent-written forge.json rows, with targets re-read FRESH from
     forge_targets.json so an edit shows immediately (not on the next agent tick)."""
@@ -451,6 +493,18 @@ class Handler(BaseHTTPRequestHandler):
         self._send(code, json.dumps(obj, ensure_ascii=False).encode("utf-8"),
                    "application/json; charset=utf-8")
 
+    def _body(self):
+        """Parsed JSON object body, or None (after replying 400) when malformed."""
+        try:
+            length = int(self.headers.get("Content-Length", "0"))
+            body = json.loads(self.rfile.read(length) or b"{}")
+        except (ValueError, TypeError):
+            body = None
+        if not isinstance(body, dict):
+            self._json(400, {"ok": False, "error": "bad json"})
+            return None
+        return body
+
     def do_GET(self):
         parsed = urlparse(self.path)
         cfg = self.server.cfg
@@ -498,6 +552,13 @@ class Handler(BaseHTTPRequestHandler):
             self._json(200, read_forge_view(cfg))
         elif parsed.path == "/api/agent/status":
             self._json(200, self.server.supervisor.status())
+        elif parsed.path == "/api/setup":
+            from nta_agent.setup import steps
+            self._json(200, steps.status())
+        elif parsed.path == "/api/settings":
+            self._json(200, read_settings())
+        elif parsed.path == "/api/app":
+            self._json(200, read_app_info())
         elif parsed.path.startswith("/static/"):
             code, ctype, body = serve_static(parsed.path[len("/static/"):])
             self._send(code, body, ctype)
@@ -522,6 +583,39 @@ class Handler(BaseHTTPRequestHandler):
                 self._json(404, {"ok": False, "error": "unknown agent action"})
                 return
             self._json(200, fn())
+            return
+        if parsed.path in ("/api/setup/run", "/api/setup/override"):
+            body = self._body()
+            if body is None:
+                return
+            from nta_agent.setup import steps
+            name = str(body.get("step", ""))
+            if name not in steps.STEPS:
+                self._json(400, {"ok": False, "error": "bước không hợp lệ"})
+                return
+            if parsed.path.endswith("override"):
+                if name not in steps.OVERRIDABLE:
+                    self._json(400, {"ok": False, "error": "bước này không bỏ qua được"})
+                    return
+                self._json(200, steps.override(name))
+                return
+            if name in steps.NEEDS_STOPPED and self.server.supervisor.status().get("pid"):
+                # would swap config tables / the token file under a running agent
+                self._json(409, {"ok": False, "error": "Dừng agent trước khi chạy bước này."})
+                return
+            self._json(200, steps.run_step(name))
+            return
+        if parsed.path == "/api/settings":
+            body = self._body()
+            if body is None:
+                return
+            r = update_settings(body)
+            self._json(200 if r["ok"] else 400, r)
+            return
+        if parsed.path == "/api/settings/test-key":
+            if self._body() is None:
+                return
+            self._json(200, test_openai_key())
             return
         if parsed.path in ("/api/lessons/retire", "/api/lessons/pin"):
             try:

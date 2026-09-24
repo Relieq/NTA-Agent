@@ -157,6 +157,7 @@ _HINTS = {
               "buoc-7-token"),
 }
 OVERRIDABLE = {"game"}
+NEEDS_STOPPED = {"gamedata", "token"}
 
 
 # ------------------------------------------------------------------- API -- #

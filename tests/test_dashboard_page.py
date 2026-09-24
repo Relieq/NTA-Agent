@@ -32,3 +32,13 @@ def test_status_header_component_present():
     hdr = _read("components/StatusHeader.js")
     assert "/api/state" in hdr
     assert "NTA Agent" in hdr
+
+
+def test_setup_and_settings_panels_wired():
+    app = _read("components/App.js")
+    assert "SetupPanel" in app and "SettingsPanel" in app and 'id:"setup"' in app
+    setup = _read("components/SetupPanel.js")
+    assert "/api/setup/run" in setup and "/api/setup/override" in setup
+    st = _read("components/SettingsPanel.js")
+    assert "/api/settings" in st and "/api/settings/test-key" in st
+    assert 'type="password"' not in st or "secret" in st  # secrets never pre-filled
