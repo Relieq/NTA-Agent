@@ -85,3 +85,10 @@ def test_gamedata_requires_xxtea_key_when_packaged(monkeypatch):
     monkeypatch.setattr(paths, "is_packaged", lambda root=None: True)
     r = steps.run_step("gamedata", dm_factory=FakeDM)
     assert r["ok"] is False and "XXTEA" in r["detail"]
+
+
+def test_readme_has_every_setup_anchor():
+    from pathlib import Path
+    readme = Path("README.md").read_text(encoding="utf-8")
+    for _hint, anchor in steps._HINTS.values():
+        assert f'<a id="{anchor}"></a>' in readme, anchor
