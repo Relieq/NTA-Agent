@@ -109,6 +109,18 @@ def sanitize_edits(edits: dict, profile, valid_army_uids, valid_build_ids=None) 
             lv["target_lv"] = int(_num(lv_in["target_lv"], 0, 1000, 0))
         if "max_leveling" in lv_in:
             lv["max_leveling"] = int(_num(lv_in["max_leveling"], 1, 50, 1))
+        if isinstance(lv_in.get("groups"), list):
+            groups = []
+            for g in lv_in["groups"][:4]:
+                if not isinstance(g, dict):
+                    continue
+                uids = [str(u) for u in (g.get("armies") or []) if str(u) in valid_army_uids]
+                if not uids:
+                    continue
+                groups.append({"armies": uids[:10],
+                               "mode": "buffer" if g.get("mode") == "buffer" else "direct",
+                               "target_lv": int(_num(g.get("target_lv", 0), 0, 1000, 0))})
+            lv["groups"] = groups
         if lv:
             out["leveling"] = lv
 

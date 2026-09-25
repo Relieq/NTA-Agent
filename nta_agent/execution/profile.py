@@ -33,7 +33,10 @@ DEFAULT_PROFILE = {
     # leveling: exp-book cycle over the FARM GROUP (army.group) + an agent-created
     # leveling army. max_leveling = how many pawns to buffer at once. Disabled
     # until configured. See memory nta-agent-forge-leveling.
-    "leveling": {"enabled": False, "target_lv": 0, "max_leveling": 1},
+    # groups = [{armies:[uid], mode:"direct"|"buffer", target_lv}] — leveling per
+    # group (buffer mode: docs/superpowers/specs/2026-09-25-buffer-leveling-design.md);
+    # empty = legacy: one direct group = the active formation.
+    "leveling": {"enabled": False, "target_lv": 0, "max_leveling": 1, "groups": []},
     # logistics: consolidate under-strength field armies + bring them home to recruit.
     # redeploy = {armyUid: targetIndex} the brain fills to send topped-up armies out.
     # See docs/superpowers/specs/2026-09-19-army-logistics-design.md.
@@ -66,7 +69,7 @@ class Profile:
     build: dict
     revive: dict = field(default_factory=lambda: {"enabled": True})
     leveling: dict = field(default_factory=lambda: {"enabled": False, "target_lv": 0,
-                                                    "max_leveling": 1})
+                                                    "max_leveling": 1, "groups": []})
     logistics: dict = field(default_factory=lambda: copy.deepcopy(
         DEFAULT_PROFILE["logistics"]))
     forge: dict = field(default_factory=lambda: {"enabled": True})
@@ -146,6 +149,20 @@ def active_formation(profile: Profile) -> dict:
     src = preset if preset else profile.army
     return {"group": src.get("group", []), "roles": src.get("roles", {}),
             "onetile": src.get("onetile", True), "composition": src.get("composition", {})}
+
+
+def leveling_groups(profile) -> list[dict]:
+    """The leveling groups; legacy profiles (no groups) = one DIRECT group made of
+    the active formation at ``leveling.target_lv`` (the previous behaviour)."""
+    lv = getattr(profile, "leveling", None) or {}
+    groups = [g for g in (lv.get("groups") or []) if isinstance(g, dict) and g.get("armies")]
+    if groups:
+        return [{"armies": [str(u) for u in g["armies"]],
+                 "mode": "buffer" if g.get("mode") == "buffer" else "direct",
+                 "target_lv": int(g.get("target_lv", lv.get("target_lv", 0)) or 0)}
+                for g in groups]
+    grp = [str(u) for u in (active_formation(profile).get("group") or [])]
+    return [{"armies": grp, "mode": "direct", "target_lv": int(lv.get("target_lv", 0) or 0)}]         if grp else []
 
 
 def apply_edits(profile: Profile, clean: dict) -> bool:
