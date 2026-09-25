@@ -37,7 +37,7 @@ def _lesson_digest(lesson) -> dict:
 
 
 def digest(state, profile, armies=None, territory=None, decisions=None,
-           failures=None, res_pressure=None, lessons=None) -> dict:
+           failures=None, res_pressure=None, lessons=None, leveling=None) -> dict:
     r = state.resources
     res = {k: getattr(r, k, 0) for k in
            ("cereal", "timber", "stone", "iron", "gold", "stamina",
@@ -100,4 +100,7 @@ def digest(state, profile, armies=None, territory=None, decisions=None,
         out["res_pressure"] = dict(res_pressure)
     if lessons:  # grounded lessons distilled from past failures (Inc 2)
         out["lessons"] = [_lesson_digest(le) for le in lessons]
+    if leveling:  # buffer leveling: the proposal (books/time/merges) + its approval
+        out["leveling"] = {"proposal": leveling.get("proposal"),
+                           "approved": bool(leveling.get("approved"))}
     return out

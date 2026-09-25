@@ -40,6 +40,10 @@ Tracks food, wood, stone, iron, gold… and upgrades buildings following **your 
 - Occupies cells around your territory using **a simulation run on the game's own battle
   engine**: it attacks only when the predicted loss is within your limit.
 - Recruits, revives, tops up armies, and levels pawns with EXP books.
+- **Leveling through buffer armies:** pick a group and a mode. The agent proposes buffer armies
+  (reusing spare armies, merging, recruiting, books/time needed); you confirm. A buffer levels at the
+  city, then meets the main army on an **adjacent cell** and **swaps same-type pawns** — the main group
+  keeps farming/digging (one army short, it attacks only if still lossless).
 - Pick **farm armies** for the agent to manage on its own.
 
 ### 🧠 Chat with the "brain" (optional, needs an OpenAI key)

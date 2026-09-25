@@ -180,3 +180,32 @@ def test_leveling_pawn_uids_reads_the_live_list_shape():
         {"uid": "q1", "index": 71372, "auid": "1790258465519001",
          "puid": "1790312511107001", "id": 3202, "lv": 3}]}})
     assert leveling_pawn_uids(st) == {"1790312511107001"}
+
+
+# --- a member away swapping with a buffer (buffer leveling) ---
+
+def test_member_away_swapping_the_rest_attack_when_clean():
+    r = _rule(group=GROUP)
+    r.away_source = lambda: {"g3"}
+    here = {"g1": CELL - 1, "g2": CELL - 1}
+    armies = [_army("g1", CELL - 1), _army("g2", CELL - 1), _army("g3", 42)]
+
+    def plans_for(i):  # the two present members together
+        return [Plan(armies=[{"uid": "g1", "index": CELL - 1}, {"uid": "g2", "index": CELL - 1}],
+                     target=i, label="two", prediction=None)]
+    clean = lambda p: SimpleNamespace(win=True, loss_percent=0.0)
+    plan = r._dig_select(CANDS, plans_for, clean, CELL, all_armies=armies)
+    assert plan is not None and {a["uid"] for a in plan.armies} == set(here)
+
+
+def test_member_away_and_the_rest_would_lose_pawns_waits_without_hard():
+    r = _rule(group=GROUP)
+    r.away_source = lambda: {"g3"}
+    armies = [_army("g1", CELL - 1), _army("g2", CELL - 1), _army("g3", 42)]
+
+    def plans_for(i):
+        return [Plan(armies=[{"uid": "g1", "index": CELL - 1}, {"uid": "g2", "index": CELL - 1}],
+                     target=i, label="two", prediction=None)]
+    lossy = lambda p: SimpleNamespace(win=True, loss_percent=4.0)
+    assert r._dig_select(CANDS, plans_for, lossy, CELL, all_armies=armies) is None
+    assert r.hard == []

@@ -299,6 +299,8 @@ class OccupyCell:
     dig_source: object = None      # callable -> the dig's next cell or None (DigService)
     dig_hard_sink: object = None   # callable(cell): the dig group can't win it now
     dig_live_source: object = None  # callable -> bool: a dig is on (reserve its group)
+    away_source: object = None      # callable -> uids stepping over to swap with a buffer
+    buffer_source: object = None    # callable -> buffer army uids (never sent to occupy)
     contest_range: int = 1     # a winnable candidate within this of an enemy is contested
     _pending: object = None    # (armies_list, target_index)
     _rally: object = None       # (armies_to_move, city, for_target) — consolidate then attack
@@ -472,6 +474,14 @@ class OccupyCell:
                 best = plan
         return best
 
+    def _away_uids(self) -> set[str]:
+        if self.away_source is None:
+            return set()
+        try:
+            return {str(u) for u in (self.away_source() or ())}
+        except Exception:
+            return set()
+
     def _dig_reserved(self) -> set[str]:
         """The dig group while a confirmed dig is on (active OR waiting) — farming
         and expansion must leave it alone so it stays together for the dig."""
@@ -509,8 +519,11 @@ class OccupyCell:
         if cand is None:
             return None
         grp = self._dig_group()
+        away_now = self._away_uids()  # stepping over to swap with a buffer
         members = [a for a in (all_armies or [])
-                   if str(a.get("uid")) in grp and (a.get("pawns") or [])]
+                   if str(a.get("uid")) in grp and (a.get("pawns") or [])
+                   and str(a.get("uid")) not in away_now]
+        someone_away = bool(grp & away_now)
         busy_pawns = {str(u) for u in (busy_pawns or ())}
 
         def busy(a) -> bool:  # marching/fighting, recruiting, reviving or leveling
@@ -541,6 +554,8 @@ class OccupyCell:
             return None  # the assembled group isn't selectable for this cell yet
         max_loss = float(self.profile.occupy.get("max_loss", 0) or 0) if self.profile else 0.0
         plan = best_plan([cand], lambda _i: plans, predict, distance=self._plan_dist)
+        if someone_away and (plan is None or plan.prediction.loss_percent > max_loss):
+            return None  # the rest can't take it cleanly: wait for the swapper (no 'hard')
         if plan is None or plan.prediction.loss_percent > max_loss:
             # Wounded now but clean at full hp -> it's a heal case: HealRouting sends
             # the group to the nearest fort/city and the dig resumes after. Only a
@@ -659,6 +674,12 @@ class OccupyCell:
 
         cand_by_index = {c.index: c for c in cands}
         reserved: set[str] = set()  # filled after the dig step: only the dig uses its group
+        off_limits = self._away_uids()  # buffers + armies away swapping: never occupy with them
+        if self.buffer_source is not None:
+            try:
+                off_limits |= {str(u) for u in (self.buffer_source() or ())}
+            except Exception:
+                pass
 
         def plans_for(i):
             # Candidate selection-orders from the active formation group (or all reachable).
@@ -676,7 +697,7 @@ class OccupyCell:
                 except Exception:
                     locked = set()
             avail = [a for a in self._select_idle(actions, i, locked)
-                     if str(a.get("uid")) not in reserved]
+                     if str(a.get("uid")) not in reserved and str(a.get("uid")) not in off_limits]
             grp = []
             if self.profile is not None:
                 from nta_agent.execution.profile import active_formation
@@ -1483,14 +1504,17 @@ class Leveling:
         if self._cooldown > 0:
             self._cooldown -= 1
             return False
-        target = int(cfg.get("target_lv", 0) or 0)
+        from nta_agent.execution.leveling import find_leveling_army, next_level_action
+        from nta_agent.execution.profile import leveling_groups
+        # only DIRECT groups (in-place leveling); buffer groups belong to BufferLeveling.
+        # Legacy profiles (no groups) = one direct group = the active formation.
+        direct = next((g for g in leveling_groups(self.profile) if g["mode"] == "direct"), None)
+        if direct is None:
+            return False  # no direct group designated
+        target = int(direct.get("target_lv") or cfg.get("target_lv", 0) or 0)
         if not target:
             return False
-        from nta_agent.execution.leveling import find_leveling_army, next_level_action
-        from nta_agent.execution.profile import active_formation
-        group = {str(u) for u in (active_formation(self.profile).get("group") or [])}
-        if not group:
-            return False  # no fixed farm group designated
+        group = {str(u) for u in direct["armies"]}
         armies = actions.get_player_armys()
         self._cooldown = self.check_every
         farm_armies = [a for a in armies if str(a.get("uid")) in group]
@@ -1570,6 +1594,339 @@ class Leveling:
                 self.on_event("leveling_error", {
                     "kind": a.kind, "ecode": ecode, "msg": str(e)[:80]})
             raise
+
+
+@dataclass
+class BufferLeveling:
+    """Leveling via buffer armies (groups in mode ``buffer``).
+
+    Proposal (``buffer_plan.propose``) -> the player approves on the dashboard ->
+    setup (merge/rename/recruit/dismiss exactly as approved, one action a tick) ->
+    continuous leveling of the buffers at the main city (queue kept at 6). Spec:
+    docs/superpowers/specs/2026-09-25-buffer-leveling-design.md.
+    """
+    name: str = "buffer_leveling"
+    profile: object = None
+    state_path: object = None      # buffers.json (runner sets cfg.buffers_path)
+    rows: object = None            # pawnAttr table (tests inject; else GameConfig)
+    on_event: object = None
+    check_every: int = 2
+    fail_cooldown: int = 12
+    queue_cap: int = 6             # engine isPawnLvingQueueFull
+    # books out, marching, drill ground, already queued, queue full, cell in battle, cell full
+    QUIET_ECODES = ("500012", "500020", "500080", "500079", "500101", "500036", "500037")
+    territory_source: object = None  # callable -> (owned cells, centers) (runner)
+    _cooldown: int = 0
+    _pending: object = None        # (label, callable)
+    _away: set = field(default_factory=set)
+    _buffers: set = field(default_factory=set)
+
+    # ---- helpers --------------------------------------------------------------
+    def _rows(self):
+        if self.rows is None:
+            try:
+                from nta_agent.data.config import GameConfig
+                self.rows = GameConfig.load().table("pawnAttr")
+            except Exception:
+                self.rows = {}
+        return self.rows
+
+    @staticmethod
+    def _barracks_lv(state) -> int:
+        return max((int(b.lv) for b in (state.builds or []) if int(b.id) == 2004), default=0)
+
+    def _group(self):
+        if self.profile is None:
+            return None
+        from nta_agent.execution.profile import leveling_groups
+        return next((g for g in leveling_groups(self.profile) if g["mode"] == "buffer"), None)
+
+    def _emit(self, kind, detail):
+        if self.on_event:
+            self.on_event(kind, detail)
+
+    @staticmethod
+    def _setup_steps(proposal) -> list[tuple]:
+        steps: list[tuple] = [("dismiss", uid) for uid in (proposal.get("dismiss") or [])]
+        for b in proposal.get("buffers") or []:
+            for m in b.get("merge") or []:
+                steps.append(("merge", b["base_uid"], m["from_uid"], m["pawn_uid"],
+                              m.get("swap_out")))
+            if b.get("base_uid"):
+                steps.append(("rename", b["base_uid"], b["name"]))
+            for ptype, n in (b.get("recruit") or {}).items():
+                steps += [("recruit", b["name"], int(ptype), k) for k in range(int(n))]
+        return steps
+
+    # ---- rule -----------------------------------------------------------------
+    def applies(self, state: GameState, actions: Actions) -> bool:
+        if self._cooldown > 0:
+            self._cooldown -= 1
+            return False
+        grp = self._group()
+        if grp is None or self.state_path is None or not state.main_city_index:
+            return False
+        self._cooldown = self.check_every
+        from nta_agent.execution import buffer_plan as bp
+        from nta_agent.runtime import buffers as bstate
+        armies = actions.get_player_armys()
+        main = int(state.main_city_index)
+        st = bstate.load(self.state_path)
+        members = {str(u) for u in grp["armies"]}
+        group_armies = [a for a in armies if str(a.get("uid")) in members]
+
+        if not st["approved"]:
+            spares = [a for a in armies if str(a.get("uid")) not in members
+                      and not str(a.get("name", "")).startswith("Nâng Cấp")]
+            prop = bp.propose(group_armies, spares, grp["target_lv"], rows=self._rows(),
+                              barracks_lv=self._barracks_lv(state),
+                              exp_book=int(state.resources.exp_book or 0),
+                              army_count=len(armies), army_cap=len(armies))
+            old = st.get("proposal") or {}
+            if ({k: v for k, v in prop.items() if k != "books_have"}
+                    != {k: v for k, v in old.items() if k != "books_have"}):
+                bstate.set_proposal(self.state_path, prop)
+            return False  # nothing happens before the player approves
+        proposal = st.get("proposal") or {}
+        by_uid = {str(a.get("uid")): a for a in armies}
+        if not st["setup_done"]:
+            done = set(st.get("done") or [])
+            for step in self._setup_steps(proposal):
+                sid = ":".join(str(x) for x in step)
+                if sid not in done:
+                    return self._plan_setup(step, sid, by_uid, main, actions, st)
+            st["setup_done"] = True
+            bstate.save(self.state_path, st)
+            self._emit("buffer_setup", {"done": True})
+        if self._plan_travel(state, proposal, armies, group_armies, main, grp["target_lv"],
+                             actions, st):
+            return True
+        return self._plan_level(state, proposal, armies, group_armies, main,
+                                grp["target_lv"], actions)
+
+    def away_uids(self) -> set[str]:
+        """Main armies currently stepping over to / swapping with a buffer."""
+        return set(self._away)
+
+    def buffer_uids(self) -> set[str]:
+        return set(self._buffers)
+
+    def _plan_travel(self, state, proposal, armies, group_armies, main, target, actions, st):
+        """Per buffer: leveling -> travel (to an owned cell next to its target main
+        army, re-aimed whenever that army moves) -> swap (the main army steps over;
+        one same-type exchange a tick) -> home (back to the city) -> leveling."""
+        from nta_agent.execution import buffer_plan as bp
+        from nta_agent.execution.army_health import is_idle, leveling_pawn_uids
+        from nta_agent.runtime import buffers as bstate
+        weak_types = set(bp.demand(group_armies, target))
+        names = {b["name"]: weak_types | {int(t) for t in (b.get("types") or {})}
+                 for b in proposal.get("buffers") or []}
+        by_uid = {str(a.get("uid")): a for a in armies}
+        bufs = [a for a in armies if str(a.get("name", "")) in names]
+        members = {str(a.get("uid")) for a in group_armies}
+        spares_home = [a for a in armies
+                       if str(a.get("uid")) not in members and str(a.get("name", "")) not in names
+                       and int(a.get("index", 0) or 0) == main and is_idle(a)]
+        weakest = max(group_armies, default=None,
+                      key=lambda a: sum(1 for p in a.get("pawns") or []
+                                        if int(p.get("lv", 0) or 0) < target))
+        self._buffers = {str(a["uid"]) for a in bufs}
+        recs = st.setdefault("buffers", {})
+        queued = leveling_pawn_uids(state)
+        owned = set()
+        if self.territory_source is not None:
+            try:
+                owned = set(self.territory_source()[0])
+            except Exception:
+                owned = set()
+        occupancy: dict[int, int] = {}
+        for a in armies:
+            occupancy[int(a.get("index", 0) or 0)] = occupancy.get(int(a.get("index", 0) or 0), 0) + 1
+        books = int(state.resources.exp_book or 0)
+        barracks = self._barracks_lv(state)
+        planned = None
+        for buf in bufs:
+            uid = str(buf["uid"])
+            rec = recs.setdefault(uid, {"name": buf.get("name"), "phase": "leveling",
+                                        "target": None, "cell": None})
+            bidx = int(buf.get("index", 0) or 0)
+            if rec["phase"] == "leveling":
+                if bidx != main or not is_idle(buf) or any(
+                        str(p["uid"]) in queued for p in buf.get("pawns") or []):
+                    continue
+                trades = (bp.reshape(buf, weakest, spares_home, target)
+                          if weakest is not None and spares_home else [])
+                if trades and planned is None:  # fit the buffer's types first (P2)
+                    out_uid, spare_uid, in_uid = trades[0]
+
+                    def trade(o=out_uid, s=spare_uid, i=in_uid, b=uid):
+                        actions.exchange_pawn_army(main, b, o, i, army_uid2=s)
+                        self._emit("buffer_reshape", {"buffer": b, "out": o, "spare": s, "in": i})
+                    planned = ("reshape", trade)
+                    continue
+                todo = [p for p in buf.get("pawns") or []
+                        if int(p["id"]) in names[buf["name"]] and int(p.get("lv", 0) or 0) < target
+                        and (bp.level_step(self._rows(), int(p["id"]), int(p.get("lv", 0) or 0))
+                             or {"books": 1e9})["books"] <= books
+                        and (bp.level_step(self._rows(), int(p["id"]), int(p.get("lv", 0) or 0))
+                             or {"barracks_lv": 1e9})["barracks_lv"] <= barracks]
+                tgt = None if todo else bp.pick_target(group_armies, buf, target)
+                if tgt is None:
+                    continue
+                rec.update(phase="travel", target=tgt, cell=None)
+                self._emit("buffer_travel", {"buffer": uid, "target": tgt})
+            mainarmy = by_uid.get(str(rec.get("target")))
+            if mainarmy is None and rec["phase"] in ("travel", "swap"):
+                rec.update(phase="home", target=None, cell=None)
+            if rec["phase"] == "travel":
+                midx = int(mainarmy.get("index", 0) or 0)
+                if bidx == midx:
+                    rec.update(phase="swap", cell=midx)
+                else:
+                    cell = midx if midx == main else bp.meeting_cell(midx, owned, occupancy)
+                    rec["cell"] = cell
+                    if cell is None:
+                        continue
+                    if bidx != cell:
+                        if is_idle(buf) and planned is None:
+                            moves = [{"uid": uid, "index": bidx}]
+                            planned = ("move", lambda m=moves, c=cell: actions.move_cell_army(m, c))
+                        continue
+                    if is_idle(mainarmy) and planned is None:
+                        rec["phase"] = "swap"
+                        moves = [{"uid": str(mainarmy["uid"]), "index": midx}]
+                        planned = ("move", lambda m=moves, c=cell: actions.move_cell_army(m, c))
+                    continue
+            if rec["phase"] == "swap":
+                cell = rec.get("cell")
+                midx = int(mainarmy.get("index", 0) or 0)
+                if midx != cell:
+                    if is_idle(mainarmy) and planned is None:  # (re)send it over
+                        moves = [{"uid": str(mainarmy["uid"]), "index": midx}]
+                        planned = ("move", lambda m=moves, c=cell: actions.move_cell_army(m, c))
+                    continue
+                if not (is_idle(mainarmy) and is_idle(buf)):
+                    continue
+                pairs = bp.swap_pairs(mainarmy, buf, target)
+                if pairs and planned is None:
+                    weak, ready = pairs[0]
+                    m_uid = str(mainarmy["uid"])
+
+                    def run(c=cell, m=m_uid, w=weak, r=ready, b=uid):
+                        actions.exchange_pawn_army(c, m, w, r, army_uid2=b)
+                        self._emit("buffer_swap", {"cell": c, "main": m, "weak": w, "ready": r})
+                    planned = ("swap", run)
+                    continue
+                if not pairs:
+                    rec.update(phase="home", target=None, cell=None)
+            if rec["phase"] == "home":
+                if bidx == main:
+                    rec.update(phase="leveling")
+                elif is_idle(buf) and planned is None:
+                    moves = [{"uid": uid, "index": bidx}]
+                    planned = ("move", lambda m=moves: actions.move_cell_army(m, main))
+        self._away = {str(r["target"]) for r in recs.values()
+                      if r.get("phase") == "swap" and r.get("target")}
+        bstate.save(self.state_path, st)
+        if planned is not None:
+            self._pending = planned
+            return True
+        return False
+
+    def _plan_setup(self, step, sid, by_uid, main, actions, st) -> bool:
+        from nta_agent.execution.army_health import is_idle
+        from nta_agent.runtime import buffers as bstate
+        kind = step[0]
+        need = {"dismiss": [step[1]], "merge": [step[2], step[1]],
+                "rename": [step[1]]}.get(kind, [])
+        present = [by_uid[u] for u in need if u in by_uid]
+        if len(present) < len(need):  # an army vanished: skip the step, say so
+            self._emit("buffer_error", {"stage": kind, "step": sid, "msg": "army not found"})
+            st.setdefault("done", []).append(sid)
+            bstate.save(self.state_path, st)
+            return False
+        if any(not is_idle(a) for a in present):
+            return False  # busy: wait
+        away = [a for a in present if int(a.get("index", 0) or 0) != main]
+        if away:
+            moves = [{"uid": str(a["uid"]), "index": int(a["index"])} for a in away]
+            self._pending = ("move", lambda: actions.move_cell_army(moves, main))
+            return True
+
+        def run():
+            if kind == "dismiss":
+                actions.dismiss_army(main, step[1], 0)
+            elif kind == "merge":
+                _, base, src, pawn, swap_out = step
+                if swap_out:
+                    actions.exchange_pawn_army(main, src, pawn, swap_out, army_uid2=base)
+                else:
+                    actions.change_pawn_army(main, src, pawn, base)
+            elif kind == "rename":
+                actions.rename_army(main, step[1], step[2])
+            elif kind == "recruit":
+                _, name, ptype, _k = step
+                buf = next((a for a in by_uid.values() if a.get("name") == name), None)
+                actions.drill_pawn(actions.building_uid(2004), ptype,
+                                   army_uid=str(buf["uid"]) if buf else "",
+                                   army_name="" if buf else name)
+            st.setdefault("done", []).append(sid)
+            bstate.save(self.state_path, st)
+            self._emit("buffer_setup", {"step": sid})
+        self._pending = (kind, run)
+        return True
+
+    def _plan_level(self, state, proposal, armies, group_armies, main, target, actions) -> bool:
+        from nta_agent.execution.army_health import leveling_pawn_uids
+        from nta_agent.execution.buffer_plan import demand, level_step
+        queue = [q for q in (((state.raw or {}).get("player") or {})
+                             .get("pawnLevelingQueues") or [])
+                 if isinstance(q, dict) and int(q.get("index", 0) or 0) == main]
+        if len(queue) >= self.queue_cap:
+            return False
+        queued = leveling_pawn_uids(state)
+        books = int(state.resources.exp_book or 0)
+        barracks = self._barracks_lv(state)
+        weak_types = set(demand(group_armies, target))
+        types = {b["name"]: weak_types | {int(t) for t in (b.get("types") or {})}
+                 for b in proposal.get("buffers") or []}
+        cands = []
+        for a in armies:
+            name = str(a.get("name", ""))
+            if (name not in types or int(a.get("index", 0) or 0) != main
+                    or int(a.get("state", 0) or 0) == 1):  # 1 = marching
+                continue
+            for p in a.get("pawns") or []:
+                lv = int(p.get("lv", 0) or 0)
+                if int(p["id"]) not in types[name] or lv >= target or str(p["uid"]) in queued:
+                    continue
+                step = level_step(self._rows(), int(p["id"]), lv)
+                if step is None or step["barracks_lv"] > barracks or step["books"] > books:
+                    continue
+                cands.append((lv, str(p["uid"]), str(a["uid"])))
+        if not cands:
+            return False
+        _lv, pawn, army = min(cands)
+
+        def run():
+            actions.pawn_lving(main, army, pawn)
+            self._emit("buffer_level", {"army": army, "pawn": pawn})
+        self._pending = ("level", run)
+        return True
+
+    def act(self, actions: Actions) -> None:
+        pend, self._pending = self._pending, None
+        if pend is None:
+            return
+        label, fn = pend
+        try:
+            fn()
+        except Exception as e:
+            ecode = str(e).split("ecode.")[-1][:6] if "ecode." in str(e) else ""
+            self._cooldown = self.fail_cooldown
+            self._emit("buffer_error", {"stage": label, "ecode": ecode, "msg": str(e)[:120]})
+            if ecode not in self.QUIET_ECODES:
+                raise
 
 
 @dataclass
@@ -2091,5 +2448,6 @@ class RuleEngine:
                           HealRouting(),
                           OccupyCell(use_sim=True, profile=profile, radius=4),
                           ClaimTreasures(), ReviveInjured(profile=profile),
-                          Leveling(profile=profile), Forge(profile=profile),
+                          Leveling(profile=profile), BufferLeveling(profile=profile),
+                          Forge(profile=profile),
                           Logistics(profile=profile), ClaimTasks()])

@@ -38,6 +38,9 @@ sắp xếp** (kéo-thả, có thể bỏ qua công trình không muốn).
 - Chiếm ô quanh lãnh thổ bằng **mô phỏng trận đánh chính engine của game**: chỉ đánh khi
   dự đoán thắng trong giới hạn tổn thất bạn đặt.
 - Tự chiêu mộ, hồi sinh, dồn lính cho đủ đội, nâng cấp lính bằng sách EXP.
+- **Nâng lính bằng đội dư:** chọn nhóm đội + chế độ. Agent đề xuất đội dư (dùng lại đội lẻ, dồn lính,
+  chiêu mộ, số sách/thời gian cần); bạn xác nhận. Đội dư nâng ở thành rồi ra **ô kề** đội chính **tráo
+  lính cùng loại** — đội chính vẫn farm/dig (thiếu 1 đội thì chỉ đánh khi vẫn không mất lính).
 - Chọn **đội farm** để agent quản lý riêng.
 
 ### 🧠 Chat với "bộ não" (tuỳ chọn, cần OpenAI key)

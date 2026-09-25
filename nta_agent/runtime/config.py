@@ -126,6 +126,10 @@ class RuntimeConfig:
         return self.log_dir / "dig.json"              # agent -> dashboard (preview/active/...)
 
     @property
+    def buffers_path(self) -> Path:
+        return self.log_dir / "buffers.json"          # buffer-leveling proposal + phases
+
+    @property
     def fort_decisions_path(self) -> Path:
         return self.log_dir / "fort_decisions.json"
 

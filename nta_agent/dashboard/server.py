@@ -432,6 +432,26 @@ def dig_command(cfg, op: str, body: dict) -> dict:
     return {"ok": True, **read_dig(cfg)}
 
 
+def read_leveling(cfg) -> dict:
+    """Buffer leveling: the proposal (agent-written), its approval, each buffer's
+    phase, and the configured leveling groups."""
+    from nta_agent.execution.profile import load_profile
+    from nta_agent.runtime import buffers
+    st = buffers.load(cfg.buffers_path)
+    groups = (load_profile(cfg.profile_path).leveling or {}).get("groups") or []
+    return {**st, "groups": groups}
+
+
+def confirm_leveling(cfg) -> dict:
+    """The player approves the current proposal; the agent then runs its setup."""
+    from nta_agent.runtime import buffers
+    st = buffers.load(cfg.buffers_path)
+    if not st.get("proposal"):
+        return {"ok": False, "error": "chưa có đề xuất (agent phải đang chạy)"}
+    buffers.approve(cfg.buffers_path)
+    return {"ok": True, **read_leveling(cfg)}
+
+
 def _read_pending_forts(cfg) -> list:
     """Fort cells queued to build (waiting on resources), as [{index, x, y}]."""
     from nta_agent.runtime import fort_queue
@@ -782,6 +802,8 @@ class Handler(BaseHTTPRequestHandler):
             self._json(200, read_forts_view(cfg))
         elif parsed.path == "/api/dig":
             self._json(200, read_dig(cfg))
+        elif parsed.path == "/api/leveling":
+            self._json(200, read_leveling(cfg))
         elif parsed.path == "/api/intel":
             self._json(200, read_intel(cfg))
         elif parsed.path == "/api/errors":
@@ -932,6 +954,16 @@ class Handler(BaseHTTPRequestHandler):
                 self._json(400, {"ok": False, "error": "bad json"})
                 return
             r = set_forge_target(cfg, body if isinstance(body, dict) else {})
+            self._json(200 if r["ok"] else 400, r)
+            return
+        if parsed.path == "/api/leveling/confirm":
+            try:  # drain an optional body
+                length = int(self.headers.get("Content-Length", "0"))
+                if length:
+                    self.rfile.read(length)
+            except (ValueError, TypeError):
+                pass
+            r = confirm_leveling(cfg)
             self._json(200 if r["ok"] else 400, r)
             return
         if parsed.path.startswith("/api/dig/"):

@@ -52,6 +52,14 @@ class BrainService:
         from nta_agent.brain.lessons import LessonStore
         return LessonStore(path, cap=getattr(self.cfg, "lessons_cap", 50))
 
+    def _leveling(self):
+        path = getattr(self.cfg, "buffers_path", None)
+        if path is None:
+            return None
+        from nta_agent.runtime import buffers
+        st = buffers.load(path)
+        return st if st.get("proposal") else None
+
     def _territory(self, state):
         """Compact owned/enemy/frontier summary from forts.json for the brain."""
         try:
@@ -194,7 +202,8 @@ class BrainService:
                         failures=led.recent(8) if led else None,
                         res_pressure=(led.aggregate_res(
                             getattr(self.cfg, "res_pressure_window_s", 3600)) if led else None),
-                        lessons=store.active() if store else None)
+                        lessons=store.active() if store else None,
+                        leveling=self._leveling())
             edits = self._propose(dg, self.profile)
             # build.order/skip and army.group are the human's plan (set via the
             # dashboard). The LLM echoes them from the digest; the valid-id/uid

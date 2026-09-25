@@ -154,3 +154,10 @@ def test_territory_map_dig_controls():
     assert "Tìm đường khác" in terr and '"replan"' in terr
     assert "path" in terr and "🎯" in terr and "hard" in terr      # path overlay
     assert "nta.digBuffer" in terr                                  # enemy buffer input
+
+
+def test_leveling_panel_buffer_mode():
+    lv = _c("LevelingConfigPanel.js")
+    assert "/api/leveling" in lv and "/api/leveling/confirm" in lv
+    assert "Nâng bằng đội dư" in lv and "Nâng trực tiếp" in lv and "Xác nhận" in lv
+    assert "books_needed" in lv and "dismiss" in lv
