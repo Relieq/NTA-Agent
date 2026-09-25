@@ -19,16 +19,8 @@ function pawnAttackSpeed(id) {
   return (base && base.attack_speed) || 0;
 }
 
-// Entry direction from attacker cell to target cell (pure index geometry).
-// 0=right 1=left 2=down 3=up, clamped to available passPoints.
-function entryDir(fromIndex, targetIndex, mapWidth, nPassPoints) {
-  const dx = (targetIndex % mapWidth) - (fromIndex % mapWidth);
-  const dy = Math.floor(targetIndex / mapWidth) - Math.floor(fromIndex / mapWidth);
-  let dir;
-  if (Math.abs(dx) >= Math.abs(dy)) dir = dx >= 0 ? 0 : 1;
-  else dir = dy >= 0 ? 2 : 3;
-  return nPassPoints > 0 ? dir % nPassPoints : 0;
-}
+// Entry direction: the engine's getAddArmyDir (see entry-dir.js).
+const { entryDir } = require("./entry-dir");
 
 // Build { initial:{firstArmy,fighters,randSeed,fps,attackIndexAcc}, waves:[...], target }.
 // armies are in SELECTION order; armies[0] is the frame-0 wave.
@@ -48,7 +40,7 @@ function buildFrames(input, requireByName) {
 
   let attackIndexAcc = 0;
   const stripArmy = (army) => {
-    const dir = entryDir(army.index, target, mapWidth, passPoints.length);
+    const dir = entryDir(army.index, target, mapWidth, passPoints.length, input.mainCityIndex);
     const entry = passPoints[dir] || passPoints[0] || { x: 0, y: 0 };
     const pawns = (army.pawns || []).slice()
       .sort((a, b) => pawnAttackSpeed(b.id) - pawnAttackSpeed(a.id))

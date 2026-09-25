@@ -99,6 +99,8 @@ def build_forecast_input(
         "targetCellIndex": int(target_index),
         "landId": int(land_id),
         "selfToCellDistance": int(distance),
+        # 2x2 main city: the engine enters from the city cell nearest the target
+        "mainCityIndex": int(getattr(state, "main_city_index", -1) or -1),
         "areaSize": area_size,
         "armies": [_army(a, equips_by_pid) for a in armies],
         "enemyArmyConf": enemy_army_conf,
