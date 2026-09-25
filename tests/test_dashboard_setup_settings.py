@@ -42,3 +42,22 @@ def test_start_blocked_until_setup_ready(monkeypatch, tmp_path):
 def test_app_info():
     info = server.read_app_info()
     assert info["version"] == "dev" and info["packaged"] is False
+
+
+def test_model_list_filters_to_chat_models():
+    assert server.list_openai_models()["ok"] is False           # no key yet
+    settings.set_values({"openai_api_key": "sk-secret-model-list-000000"})
+    ids = ["gpt-4o-mini", "gpt-4o-mini-2024-07-18", "gpt-4o-audio-preview", "o3-mini",
+           "text-embedding-3-small", "whisper-1", "gpt-4o-realtime-preview", "dall-e-3",
+           "gpt-4.1", "gpt-image-1", "omni-moderation-latest", "gpt-3.5-turbo-instruct"]
+
+    class Resp(io.BytesIO):
+        status = 200
+    body = json.dumps({"data": [{"id": i} for i in ids]}).encode()
+    r = server.list_openai_models(opener=lambda req, timeout: Resp(body))
+    assert r == {"ok": True, "models": ["gpt-4.1", "gpt-4o-mini", "o3-mini"]}
+
+    def denied(req, timeout):
+        raise urllib.error.HTTPError(req.full_url, 401, "no", {}, None)
+    r = server.list_openai_models(opener=denied)
+    assert r["ok"] is False and "401" in r["error"] and "sk-secret" not in json.dumps(r)
