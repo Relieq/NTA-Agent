@@ -53,7 +53,8 @@ def test_handle_chat_proposes_renames_without_executing(tmp_path):
         return {"army_renames": [{"uid": "A", "name": "Đội 1", "pawn": 3206},
                                  {"uid": "B", "name": "Đội 2", "pawn": 3305}]}
 
-    out = handle_chat(cfg, "đổi tên", history=[], propose=fake_propose)
+    out = handle_chat(cfg, "đổi tên cu1 thành Đội 1 và cu2 thành Đội 2", history=[],
+                      propose=fake_propose)
     assert out["ok"] is True and out["needs_confirm"] is True
     # proposal carries current name + readable troops for the confirm UI
     assert {r["uid"] for r in out["renames"]} == {"A", "B"}

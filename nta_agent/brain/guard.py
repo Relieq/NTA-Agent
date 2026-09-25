@@ -287,7 +287,10 @@ def _names_army(instruction_compact: str, name: str) -> bool:
     return len(key) >= 2 and key in instruction_compact
 
 
-def rename_ambiguity(instruction, renames, armies) -> str | None:
+_TYPE_STOPWORDS = {"linh", "x"}
+
+
+def rename_ambiguity(instruction, renames, armies, aliases=()) -> str | None:
     """A clarification question if the proposed renames are unsafe, else None.
 
     ``renames``: [{uid, name}] (already sanitized). ``armies``: [{uid, name,
@@ -295,7 +298,9 @@ def rename_ambiguity(instruction, renames, armies) -> str | None:
     the player didn't NAME explicitly, also ask when (1) they pointed by position, or
     (2) another army with the same dominant pawn type exists outside the batch, or
     (4) the army is mixed (the type is < 2/3 of it, or a PURE army was asked for),
-    or (5) the player listed more new names than armies were proposed.
+    or (5) the player listed more new names than armies were proposed, or (6) the
+    target part (before 'thành') names no army and no pawn type of their armies
+    (``aliases``: the player's nicknames for types, e.g. IMP).
     Optional ``share`` per army = dominant pawn count / army size (default 1)."""
     if not renames:
         return None
@@ -335,6 +340,15 @@ def rename_ambiguity(instruction, renames, armies) -> str | None:
                if u in by_uid and not _names_army(compact, by_uid[u].get("name", ""))]
     if not unnamed:
         return None
+    # (6) nothing in the target part identifies an army: no army name (checked above)
+    # and no pawn-type word of the player's armies — the LLM picked one anyway.
+    target_words = set(re.findall(r"[a-z0-9]+", re.split(r"\bthanh\b|\bto\b", folded)[0]))
+    vocab = {w for a in armies for w in re.findall(r"[a-z]+", _fold(a.get("troops", "")))
+             if w not in _TYPE_STOPWORDS}
+    vocab |= {_fold(x) for x in aliases or ()}
+    if not target_words & vocab:
+        return ("Tôi chưa rõ bạn muốn đổi tên đội nào. Bạn gọi theo tên đội hoặc loại lính "
+                "nhé:\n" + "\n".join(cand(a) for a in armies))
     if _POSITIONAL.search(folded):
         doms = {str(a.get("dominant")) for a in unnamed}
         pool = [a for a in armies if str(a.get("dominant")) in doms]
