@@ -399,14 +399,17 @@ def read_dig(cfg) -> dict:
     out = {"state": "idle", **d, "pending": pending}
     if pending:
         out["pending_op"] = req.get("op")
+        if req.get("op") == "cancel":  # show it at once: the agent stops digging on read
+            out["state"] = "cancelled"
+            out["cancel_pending"] = True
     return out
 
 
 def dig_command(cfg, op: str, body: dict) -> dict:
-    """request {index, buffer} | confirm | cancel -> dig_request.json (a fresh seq),
+    """request {index, buffer} | confirm | replan | cancel -> dig_request.json (a fresh seq),
     which the agent's DigService answers in dig.json."""
     import time as _time
-    if op not in ("request", "confirm", "cancel"):
+    if op not in ("request", "confirm", "cancel", "replan"):
         return {"ok": False, "error": "thao tác không hợp lệ"}
     req = {"seq": _time.time_ns(), "op": op}
     if op == "request":

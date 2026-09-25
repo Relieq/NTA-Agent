@@ -43,3 +43,13 @@ def test_confirm_and_cancel_are_plain_ops(tmp_path):
     for op in ("confirm", "cancel"):
         assert dig_command(cfg, op, {})["ok"] is True
         assert json.loads(cfg.dig_request_path.read_text(encoding="utf-8"))["op"] == op
+
+
+def test_cancel_shows_at_once_and_replan_is_an_op(tmp_path):
+    cfg = _cfg(tmp_path)
+    cfg.dig_state_path.write_text(json.dumps({"seq": 1, "state": "active"}), encoding="utf-8")
+    dig_command(cfg, "cancel", {})
+    v = read_dig(cfg)
+    assert v["state"] == "cancelled" and v["cancel_pending"] is True
+    assert dig_command(cfg, "replan", {})["ok"] is True
+    assert json.loads(cfg.dig_request_path.read_text(encoding="utf-8"))["op"] == "replan"

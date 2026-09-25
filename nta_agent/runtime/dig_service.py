@@ -31,6 +31,10 @@ W = dp.W
 LIVE = ("active", "waiting")
 
 
+class _Superseded(Exception):
+    """A newer dashboard op (cancel / new target / replan) arrived mid-plan."""
+
+
 def _xy(i: int) -> list[int]:
     return [i % W, i // W]
 
@@ -92,14 +96,15 @@ class DigService:
         self._last_plan = None
         self._last_land = None
         self._dirty = self.dig.get("state") in LIVE
+        self.abort_check_every = 10   # cost() calls between request-file checks mid-plan
         if self.dig.get("state") == "previewing":  # died mid-preview: take the request again
             self.dig["seq"] = None
 
     # ---- inputs from the other side -------------------------------------------------
     def next_target(self) -> int | None:
         """The cell OccupyCell should dig now (None unless a dig is active)."""
-        if self.dig.get("state") != "active":
-            return None
+        if self.dig.get("state") != "active" or self._pending_op() == "cancel":
+            return None  # a cancel the agent hasn't handled yet already stops the dig
         n = self.dig.get("next")
         return int(n) if n is not None else None
 
@@ -111,6 +116,13 @@ class DigService:
         self._on_event("dig_hard", {"cell": int(idx), "xy": _xy(int(idx))})
 
     # ---- helpers ---------------------------------------------------------------------
+    def _pending_op(self) -> str | None:
+        """The dashboard op waiting for us (a newer seq than the one handled), if any."""
+        req = _read(self.cfg.dig_request_path)
+        if req.get("seq") is None or req.get("seq") == self.dig.get("seq"):
+            return None
+        return req.get("op")
+
     def world(self):
         if self._world is None:
             from nta_agent import paths
@@ -138,7 +150,12 @@ class DigService:
     # ---- the tick --------------------------------------------------------------------
     def tick(self, state) -> None:
         try:
-            self._handle_request(state)
+            for _ in range(5):  # a plan cut short by a newer op -> handle that op now
+                try:
+                    self._handle_request(state)
+                    break
+                except _Superseded:
+                    continue
             st = self.dig.get("state")
             if st not in LIVE:
                 return
@@ -149,7 +166,11 @@ class DigService:
             if (self._dirty or self._last_plan is None or now - self._last_plan >= every
                     or (land is not None and land != self._last_land)):
                 self._last_land = land
-                self._replan(state)
+                try:
+                    self._replan(state)
+                except _Superseded:
+                    self._dirty = True
+                    self._handle_request(state)
         except Exception as e:  # never kill the loop
             sys.stderr.write(f"[dig] tick failed: {e}\n")
 
@@ -182,6 +203,19 @@ class DigService:
                             cells=len(self.dig.get("path") or []),
                             total_s=self.dig.get("total_s"))
             self._save()
+        elif op == "replan":
+            # "Tìm đường khác": plan again from scratch — fresh scan, fresh sims (the
+            # generated defenders' gear is re-rolled), no stale hard marks
+            self.dig["seq"] = seq
+            if cur in ("preview", "active", "waiting", "failed"):
+                self._cost = None
+                self._hard.clear()
+                self._event("dig_replan", target=self.dig.get("target"))
+                if cur == "failed":
+                    self.dig["state"] = "previewing"
+                self._plan(state, preview=cur in ("preview", "failed"))
+            else:
+                self._save()
         elif op == "cancel":
             self.dig["seq"] = seq
             if cur in LIVE or cur in ("preview", "previewing"):
@@ -249,7 +283,12 @@ class DigService:
         now = self._clock()
         hard = {c for c, t in self._hard.items() if now - t < self.hard_ttl_s}
 
+        calls = {"n": 0}
+
         def step(i: int):
+            calls["n"] += 1
+            if calls["n"] % self.abort_check_every == 0 and self._pending_op() not in (None, "confirm"):
+                raise _Superseded()
             return None if i in hard else cost.cost(i)
 
         plan = dp.plan_path(owned, target, step, passable=world.passable, others=others,

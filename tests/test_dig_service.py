@@ -230,3 +230,48 @@ def test_preview_tells_the_loss_needed_to_dig_now(tmp_path):
     svc.tick(_state())
     assert svc.dig["reason"] == "blocked_by_hard"
     assert svc.dig["need_loss"] == 3.0 and svc.dig["max_loss"] == 0.0
+
+
+def test_replan_recomputes_from_scratch_and_keeps_the_state(tmp_path):
+    scan = {"owned": _owned_block()}
+    svc, _ = _svc(tmp_path, scan)
+    _req(tmp_path, 1, "request", index=I(16, 10))
+    svc.tick(_state())
+    _req(tmp_path, 2, "confirm")
+    svc.tick(_state())
+    svc.report_hard(I(13, 10))
+    old_cost = svc._cost
+    _req(tmp_path, 3, "replan")
+    svc.tick(_state())
+    assert svc.dig["state"] == "active" and svc.dig["seq"] == 3
+    assert svc._cost is not old_cost and svc._hard == {}   # fresh sims, no stale marks
+    assert I(13, 10) in [y * W + x for x, y in svc.dig["path"]]
+
+
+def test_cancel_during_a_long_plan_aborts_it(tmp_path):
+    scan = {"owned": _owned_block()}
+    svc, _ = _svc(tmp_path, scan)
+    calls = {"n": 0}
+
+    def slow_pred(*a):  # the player cancels while the preview is being costed
+        calls["n"] += 1
+        if calls["n"] == 2:
+            _req(tmp_path, 2, "cancel")
+        return _pred()
+    svc._predict_factory = lambda st: (slow_pred, 60)
+    svc.abort_check_every = 1
+    _req(tmp_path, 1, "request", index=I(40, 10))
+    svc.tick(_state())
+    assert svc.dig["state"] == "cancelled" and svc.dig["seq"] == 2
+
+
+def test_pending_cancel_stops_digging_before_the_agent_handles_it(tmp_path):
+    scan = {"owned": _owned_block()}
+    svc, _ = _svc(tmp_path, scan)
+    _req(tmp_path, 1, "request", index=I(16, 10))
+    svc.tick(_state())
+    _req(tmp_path, 2, "confirm")
+    svc.tick(_state())
+    assert svc.next_target() is not None
+    _req(tmp_path, 3, "cancel")                 # not ticked yet
+    assert svc.next_target() is None

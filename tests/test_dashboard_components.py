@@ -150,6 +150,7 @@ def test_forge_panel_wired():
 def test_territory_map_dig_controls():
     terr = _c("TerritoryPanel.js")
     assert "/api/dig" in terr and "/api/dig/" in terr
-    assert "Dig tới đây" in terr and "Xác nhận dig" in terr and "Huỷ" in terr
+    assert "Dig tới đây" in terr and "Xác nhận dig" in terr and "Huỷ mục tiêu" in terr
+    assert "Tìm đường khác" in terr and '"replan"' in terr
     assert "path" in terr and "🎯" in terr and "hard" in terr      # path overlay
     assert "nta.digBuffer" in terr                                  # enemy buffer input

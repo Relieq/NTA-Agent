@@ -295,12 +295,13 @@ export default {
    digCmd("request",{index:sel.value.index, buffer:b}); sel.value=null; }
   const digConfirm=()=>digCmd("confirm");
   const digCancel=()=>digCmd("cancel");
+  const digReplan=()=>digCmd("replan");
 
   onMounted(()=>{ const cv=canvas.value; if(cv) cv.addEventListener("wheel", onWheel, {passive:false}); });
   onUnmounted(()=>{ const cv=canvas.value; if(cv) cv.removeEventListener("wheel", onWheel); });
 
   return { canvas, tip, sel, built, onDown, onMove, onUp, onLeave, zoomBtn, recenterBtn, fitBtn, buildFort,
-           dig, digBuffer, digMsg, digHere, digConfirm, digCancel, fmtDur, DIG_STATE, DIG_REASON };
+           dig, digBuffer, digMsg, digHere, digConfirm, digCancel, digReplan, fmtDur, DIG_STATE, DIG_REASON };
  },
  template:`<div class="card full"><h2>Lãnh thổ</h2>
   <div style="display:flex;gap:6px;align-items:center;margin-bottom:6px;flex-wrap:wrap">
@@ -321,11 +322,13 @@ export default {
    <span v-if="dig.reason==='blocked_by_hard' && dig.need_loss!=null" style="color:#e3b341">
     · nếu cho phép tổn thất ≥ {{ Math.ceil(dig.need_loss) }}% (hiện {{ dig.max_loss||0 }}%) thì dig được ngay</span>
    <span v-if="dig.rough" class="muted">(ước lượng thô — mô phỏng không sẵn sàng)</span>
-   <span v-if="dig.pending" class="muted">⏳ chờ agent xử lý (agent phải đang chạy)</span>
+   <span v-if="dig.pending && !dig.cancel_pending" class="muted">⏳ chờ agent xử lý (agent phải đang chạy)</span>
    <span class="muted" v-if="['preview','active'].includes(dig.state)">chưa tính thời gian chờ thể lực/hồi máu</span>
    <button v-if="dig.state==='preview' && ['ok','blocked_by_hard'].includes(dig.reason) && !dig.pending"
      @click="digConfirm">✔ Xác nhận dig</button>
-   <button v-if="['preview','previewing','active','waiting'].includes(dig.state)" @click="digCancel">✖ Huỷ</button>
+   <button v-if="['preview','active','waiting','failed'].includes(dig.state)" :disabled="dig.pending"
+     title="Tính lại từ đầu với dữ liệu bản đồ + mô phỏng mới" @click="digReplan">🔄 Tìm đường khác</button>
+   <button v-if="['preview','previewing','active','waiting'].includes(dig.state)" @click="digCancel">✖ Huỷ mục tiêu</button>
    <span v-if="digMsg" style="color:#da3633">{{ digMsg }}</span>
   </div>
   <div style="position:relative">
