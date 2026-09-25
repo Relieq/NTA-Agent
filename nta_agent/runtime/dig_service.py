@@ -323,15 +323,17 @@ class DigService:
 
     def _cell_cost(self, state, main: int) -> CellCost:
         if self._cost is None:
-            predict, speed = (None, 0)
+            predict, speed, verify = (None, 0, None)
             if self._predict_factory is not None:
-                predict, speed = self._predict_factory(state)
+                got = self._predict_factory(state)
+                predict, speed = got[0], got[1]
+                verify = got[2] if len(got) > 2 else None
             if predict is None:
                 def predict(*_a):
                     raise RuntimeError("no battle predictor")
             self._cost = CellCost(predict, self.world(),
                                   dist_fn=lambda i: dist_to_block(i, main),
-                                  max_loss=self._max_loss(), speed=speed)
+                                  max_loss=self._max_loss(), speed=speed, verify=verify)
         return self._cost
 
 
@@ -379,5 +381,22 @@ def make_predict_factory(actions, profile):
         def predict(idx, land_id, dist):
             return sim.predict_armies(state, same_cell, target_index=idx,
                                       land_id=land_id, distance=dist)
-        return predict, speed
+
+        uid = str(getattr(getattr(state, "user", None), "uid", "") or "")
+
+        def verify(idx):
+            # the cell's REAL defenders (read-only get_area) — the generated ones
+            # carry random gear, so a borderline verdict must be settled on these
+            from nta_agent.execution.occupy_planner import _hostile_pawns
+            area = (actions.get_area(int(idx)) or {}).get("data", {}) or {}
+            pawns = _hostile_pawns(area, uid)
+            if not pawns:
+                return None
+            hp = area.get("hp") or [0, 0]
+            conf = {"armys": [{"index": int(idx), "uid": "npc", "owner": "", "state": 2,
+                               "pawns": pawns}], "hp": [hp[0], hp[-1]]}
+            return sim.predict_armies(state, same_cell, target_index=int(idx), land_id=0,
+                                      distance=dist_to_block(int(idx), main),
+                                      enemy_army_conf=conf)
+        return predict, speed, verify
     return factory

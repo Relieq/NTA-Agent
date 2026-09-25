@@ -34,27 +34,50 @@ def attr_lv(dist: int, land_lv: int) -> int:
 class CellCost:
     """``cost(idx)`` -> seconds for the dig group to take ``idx``, or ``None`` (hard).
 
-    ``predict(idx, land_id, dist) -> BattlePrediction`` runs the sim (raises when
-    it can't); ``dist_fn(idx)`` = Manhattan distance to the main-city block.
+    ``predict(idx, land_id, dist) -> BattlePrediction`` runs the sim on the
+    engine-GENERATED defenders (raises when it can't); ``dist_fn(idx)`` =
+    Manhattan distance to the main-city block. The generator gives monsters
+    RANDOM gear (``Math.random`` in getAreaPawnConfInfo), so a (landId, attrLv)
+    verdict is only a screen: a cell it calls hard is re-checked with
+    ``verify(idx)`` (the cell's REAL defenders from get_area -> BattlePrediction,
+    or None when unknown), memoised per cell.
     """
 
     def __init__(self, predict: Callable, world, *, dist_fn: Callable[[int], int],
-                 max_loss: float, speed: float):
+                 max_loss: float, speed: float, verify: Callable | None = None):
         self.predict = predict
+        self.verify = verify
         self.world = world
         self.dist_fn = dist_fn
         self.max_loss = float(max_loss or 0)
         self.step_march_s = march_ms(1, speed) / 1000
         self.memo: dict[tuple[int, int], float | None] = {}
         self.loss: dict[tuple[int, int], float | None] = {}  # hard: predicted loss%, None = a defeat
+        self.cell: dict[int, float | None] = {}       # per-cell verdict (real defenders)
+        self.cell_loss: dict[int, float | None] = {}
         self.rough = False   # some cell was estimated without the sim
         self.sims = 0
+        self.verified = 0
+
+    def _key(self, idx: int) -> tuple[int, int]:
+        return (self.world.land_id(idx), attr_lv(self.dist_fn(idx), self.world.lv(idx)))
+
+    def _judge(self, pred, lv: int) -> tuple[float | None, float | None]:
+        """(battle seconds or None if hard, loss% of a hard win / None)."""
+        if not pred.win or pred.loss_percent > self.max_loss:
+            return None, (float(pred.loss_percent) if pred.win else None)
+        if pred.duration_s is None:
+            self.rough = True
+            return ROUGH_BATTLE_S.get(lv, 60.0), None
+        return float(pred.duration_s), None
 
     def battle_s(self, idx: int) -> float | None:
+        if idx in self.cell:
+            return self.cell[idx]
         land_id = self.world.land_id(idx)
         lv = self.world.lv(idx)
         dist = self.dist_fn(idx)
-        key = (land_id, attr_lv(dist, lv))
+        key = self._key(idx)
         if key not in self.memo:
             try:
                 self.sims += 1
@@ -64,20 +87,27 @@ class CellCost:
                 self.rough = True
                 self.memo[key] = ROUGH_BATTLE_S.get(lv, 60.0)
             else:
-                if not pred.win or pred.loss_percent > self.max_loss:
-                    self.memo[key] = None
-                    self.loss[key] = float(pred.loss_percent) if pred.win else None
-                elif pred.duration_s is None:
-                    self.rough = True
-                    self.memo[key] = ROUGH_BATTLE_S.get(lv, 60.0)
-                else:
-                    self.memo[key] = float(pred.duration_s)
-        return self.memo[key]
+                self.memo[key], self.loss[key] = self._judge(pred, lv)
+        if self.memo[key] is not None or self.verify is None:
+            return self.memo[key]
+        # screened hard: settle it on this cell's real defenders
+        try:
+            real = self.verify(idx)
+        except Exception as e:  # a probe failure keeps the screen's verdict
+            log.debug("dig cost verify failed for %s: %s", idx, e)
+            real = None
+        if real is None:
+            self.cell[idx], self.cell_loss[idx] = None, self.loss.get(key)
+        else:
+            self.verified += 1
+            self.cell[idx], self.cell_loss[idx] = self._judge(real, lv)
+        return self.cell[idx]
 
     def hard_loss(self, idx: int) -> float | None:
         """For a hard cell: the loss % the win would cost (None = the group loses)."""
-        lv = self.world.lv(idx)
-        return self.loss.get((self.world.land_id(idx), attr_lv(self.dist_fn(idx), lv)))
+        if idx in self.cell_loss:
+            return self.cell_loss[idx]
+        return self.loss.get(self._key(idx))
 
     def cost(self, idx: int) -> float | None:
         b = self.battle_s(idx)
