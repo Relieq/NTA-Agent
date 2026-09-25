@@ -1008,7 +1008,10 @@ class Recruit:
             except Exception:
                 locked = set()
             if locked:
-                armys = [a for a in armys if str(a.get("uid")) not in locked]
+                # A strike group is still being assembled: its recruits need the cereal
+                # and the drill queue — don't compete (live: 6x ecode 500018 while this
+                # rule filled other armies).
+                return False
         # profile-driven: fill the biggest composition gap into its own army.
         if self.profile is not None:
             from nta_agent.execution.profile import active_formation, composition_target
@@ -1031,7 +1034,13 @@ class Recruit:
             self._pending = (bu, pawn, str(room["uid"]), "", len(room.get("pawns", [])))
         elif len(armys) < self.max_armies and not (
                 self._max_army_count and len(armys) >= self._max_army_count):
-            self._pending = (bu, pawn, "", _unused_army_name(armys), 0)
+            # Name against ALL the player's armies — the city list misses those out on
+            # the map (live: 4 armies ended up named 'D1').
+            try:
+                everyone = actions.get_player_armys() or armys
+            except Exception:
+                everyone = armys
+            self._pending = (bu, pawn, "", _unused_army_name(everyone), 0)
             self._new_army_at = len(armys)  # to learn the cap if the server rejects
         else:
             return False
@@ -1682,6 +1691,8 @@ class ArmyComposer:
     locked_uids: set = field(default_factory=set)     # armies occupy/logistics must skip
     _plan: object = None
     _blocked_notified: bool = False
+    rename_retry_ticks: int = 12      # after a failed rename (e.g. 500036 in battle)
+    _rename_wait: dict = field(default_factory=dict)  # uid -> applies() calls to skip
 
     def _target(self):
         if self.profile is None:
@@ -1700,6 +1711,10 @@ class ArmyComposer:
         return {str(u) for u in (active_formation(self.profile).get("group") or [])}
 
     def applies(self, state: GameState, actions: Actions) -> bool:
+        for u in list(self._rename_wait):
+            self._rename_wait[u] -= 1
+            if self._rename_wait[u] <= 0:
+                del self._rename_wait[u]
         target = self._target()
         if not target:  # no goal -> release any lock and stand down — even mid-cooldown
             self.locked_uids = set()   # (a cleared blocked goal kept 5 armies locked ~5 min)
@@ -1737,6 +1752,9 @@ class ArmyComposer:
             if u and have < a["size"]:
                 incomplete.add(u)
         self.locked_uids = incomplete
+        complete = {str(a["uid"]) for a in plan["assign"] if a["uid"] and a["uid"] not in incomplete}
+        if complete and not plan["done"]:
+            self._name_group(actions, target, plan["assign"], by_uid, only=complete)
         issues = list(plan["report"].issues)
         if plan["blocked"]:
             self._status({"active": True, "blocked": True, "done": False,
@@ -1769,24 +1787,41 @@ class ArmyComposer:
                       "issues": issues, "strike": self._strike_uids})
         return bool(plan["actions"])
 
-    def _name_group(self, actions, target, assign, by_uid) -> None:
-        """Give the assembled armies the names the player chose. ``assign`` follows
-        the target entries in order (one row per army), so names[i] of each entry
-        goes to that entry's i-th army. Best-effort: a failed rename never blocks."""
-        wanted = []
+    def _name_group(self, actions, target, assign, by_uid, only=None) -> None:
+        """Give strike armies the names the player chose. Names are matched per pawn
+        type in target order: the i-th army assigned to a type gets that type's i-th
+        name (``assign`` keeps entry order; unassigned rows are dropped from its END
+        of each entry, so per-type order stays aligned). ``only``: rename just these
+        uids (the COMPLETE ones while the group is still assembling — the player
+        should see 'Đội 2..5' as soon as those armies are ready). Best-effort."""
+        names_by_pid: dict = {}
         for t in target:
             names = list(t.get("names") or [])
-            wanted += [names[i] if i < len(names) else None for i in range(int(t["armies"]))]
+            names_by_pid.setdefault(int(t["pawn_id"]), []).extend(
+                names[i] if i < len(names) else None for i in range(int(t["armies"])))
+        seen_by_pid: dict = {}
+        wanted = []
+        for row in assign:
+            pid = int(row.get("pawn_id", 0) or 0)
+            k = seen_by_pid.get(pid, 0)
+            seen_by_pid[pid] = k + 1
+            pool = names_by_pid.get(pid, [])
+            wanted.append((row, pool[k] if k < len(pool) else None))
         done, failed = [], []
-        for row, name in zip(assign, wanted, strict=False):
+        for row, name in wanted:
             army = by_uid.get(str(row.get("uid"))) if row.get("uid") else None
             if not name or army is None or army.get("name") == name:
                 continue
+            if only is not None and str(army.get("uid")) not in only:
+                continue
+            if self._rename_wait.get(str(army.get("uid")), 0) > 0:
+                continue  # a recent attempt failed — don't hammer the server
             try:
                 actions.rename_army(int(army.get("index", 0) or 0), str(army["uid"]), name)
                 done.append({"uid": str(army["uid"]), "name": name})
             except Exception as e:
                 failed.append({"uid": str(army["uid"]), "name": name, "err": str(e)[:80]})
+                self._rename_wait[str(army["uid"])] = self.rename_retry_ticks
         if (done or failed) and self.on_event:
             self.on_event("composition_named", {"renamed": done, "failed": failed})
 
