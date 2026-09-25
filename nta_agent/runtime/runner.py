@@ -194,6 +194,14 @@ def run(cfg: RuntimeConfig, *, ticks: int = 0, session=None, engine=None) -> Non
                 rule.owned_source = lambda: _territory_from_forts()[0]
         elif getattr(rule, "name", "") == "army_composer":
             rule.on_event = log.append
+            # restore the strike armies of an unfinished goal (they were in memory only,
+            # so a restart re-picked — wrongly — among idle armies)
+            try:
+                prev = json.loads(cfg.composition_status_path.read_text(encoding="utf-8"))
+                if isinstance(prev, dict) and prev.get("active"):
+                    rule.restore_strike(prev.get("strike") or [])
+            except (OSError, ValueError):
+                pass
             rule.status_sink = _make_comp_status_sink()
             rule.target_sink = _clear_strike_target  # one-shot goal: persist the clear
         elif getattr(rule, "name", "") == "fort_build":

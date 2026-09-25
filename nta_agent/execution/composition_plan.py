@@ -43,20 +43,21 @@ def _assign(target: list[dict], armies: list[dict], reserved: set,
             strike_uids: list) -> list[dict]:
     """Map strike armies to (pawn_id, size) slots by type affinity (stable).
 
-    If ``strike_uids`` is given, only those armies are candidates (persisted choice);
-    otherwise pick from idle, non-reserved armies. A slot with no available army gets
-    ``uid=None`` (the executor must recruit a fresh army for it).
+    Candidates are ALL non-reserved armies, busy or not (live 2026-09-25: after a
+    restart only idle ones were considered, the finished group was out farming, and a
+    mixed army got picked). Persisted ``strike_uids`` keep priority for their slots;
+    any slot they can't fill goes to the best remaining army by type affinity. A slot
+    with no available army gets ``uid=None`` (the executor recruits a fresh army).
     """
-    by_uid = {a["uid"]: a for a in armies}
-    if strike_uids:
-        pool = [by_uid[u] for u in strike_uids if u in by_uid]
-    else:
-        pool = [a for a in armies if a["uid"] not in reserved and a.get("state", 0) == 0]
+    persisted = set(strike_uids or [])
+    pool = [a for a in armies if a["uid"] not in reserved or a["uid"] in persisted]
     used: set = set()
     assign: list[dict] = []
     for pid, sz in _slots(target):
         cands = sorted((a for a in pool if a["uid"] not in used),
-                       key=lambda a: (-_count(a, pid), str(a["uid"])))
+                       key=lambda a, pid=pid: (
+                           not (a["uid"] in persisted and _count(a, pid) > 0),
+                           -_count(a, pid), str(a["uid"])))
         if cands:
             a = cands[0]
             used.add(a["uid"])
@@ -79,6 +80,11 @@ def plan_composition_step(target, armies, city_index, strike_uids, reserved_uids
                 "done": False, "blocked": True, "report": report}
 
     by_uid = {a["uid"]: a for a in armies}
+    # Already complete (every slot has an army holding >= size of its type): done,
+    # wherever those armies are — don't rally a finished group back from the map.
+    if all(a["uid"] and _count(by_uid[a["uid"]], a["pawn_id"]) >= a["size"] for a in assign):
+        return {"assign": assign, "actions": [], "done": True, "blocked": False,
+                "report": report}
     strike_set = {a["uid"] for a in assign if a["uid"]}
     # donors = the pool: not a strike army, not reserved, has pawns.
     donors = [a for a in armies

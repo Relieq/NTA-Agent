@@ -1694,6 +1694,12 @@ class ArmyComposer:
     rename_retry_ticks: int = 12      # after a failed rename (e.g. 500036 in battle)
     _rename_wait: dict = field(default_factory=dict)  # uid -> applies() calls to skip
 
+    def restore_strike(self, uids) -> None:
+        """Reload the strike armies chosen before a restart (composition_status.json);
+        only when nothing is assigned yet — a live assignment always wins."""
+        if not self._strike_uids and uids:
+            self._strike_uids = [str(u) for u in uids]
+
     def _target(self):
         if self.profile is None:
             return None

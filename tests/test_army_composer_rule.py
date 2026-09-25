@@ -330,3 +330,11 @@ def test_rally_skips_armies_in_battle_and_the_batch_continues():
     r.act(acts)
     assert not any(c[0] == "rally" for c in acts.calls)
     assert any(c[0] == "move" for c in acts.calls)
+
+
+def test_strike_armies_are_restored_after_a_restart():
+    r = ArmyComposer(profile=_profile(TARGET))
+    r.restore_strike(["tank", "imp1"])
+    assert r._strike_uids == ["tank", "imp1"]
+    r.restore_strike(["other"])            # only once: a live assignment wins
+    assert r._strike_uids == ["tank", "imp1"]

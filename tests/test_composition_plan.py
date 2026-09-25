@@ -51,7 +51,7 @@ def test_rally_when_a_strike_or_donor_army_is_scattered():
     # a donor holding target pawns sits at another cell -> must rally to city first.
     armies = [_army("tank", [3206, 3206, 3206]),
               _army("imp1", [3305, 3305, 3305]),
-              _army("imp2", [3305, 3305, 3305]),
+              _army("imp2", [3305, 3305]),                     # short -> donor needed
               _army("donor", [3305, 3305, 3305], index=250)]   # far
     r = plan_composition_step(TARGET, armies, CITY, strike_uids=["tank", "imp1", "imp2"],
                               reserved_uids=set(), unlocked_ids={3206, 3305}, army_cap=9)
@@ -166,3 +166,33 @@ def test_pulls_from_mixed_donors_before_pure_ones():
                               reserved_uids=set(), unlocked_ids={3206, 3305}, army_cap=9)
     froms = [m["from"] for m in r["actions"] if m["op"] == "move_pawn" and m["to"] == "imp1"]
     assert froms == ["mixed", "mixed"]
+
+
+def _full_group_away():
+    return [_army("tank", [3206] * 3, index=500, state=1),
+            _army("imp1", [3305] * 3, index=501, state=2),
+            _army("imp2", [3305] * 3, index=502, state=1),
+            _army("idle_mixed", [3305, 3201, 3201, 3201])]      # the only idle army
+
+
+def test_restart_picks_the_real_group_even_while_it_is_out():
+    """2026-09-25: after a restart the composer forgot its armies and chose among
+    IDLE ones only — the finished group was out farming, so it grabbed a mixed army."""
+    r = plan_composition_step(TARGET, _full_group_away(), CITY, strike_uids=[],
+                              reserved_uids=set(), unlocked_ids={3206, 3305}, army_cap=9)
+    assert {a["uid"] for a in r["assign"]} == {"tank", "imp1", "imp2"}
+
+
+def test_a_complete_group_is_done_wherever_it_is():
+    """No rallying a finished group back from the map just to call it done."""
+    r = plan_composition_step(TARGET, _full_group_away(), CITY,
+                              strike_uids=["tank", "imp1", "imp2"], reserved_uids=set(),
+                              unlocked_ids={3206, 3305}, army_cap=9)
+    assert r["done"] is True and r["actions"] == []
+
+
+def test_persisted_armies_keep_their_slots_and_gaps_fill_from_all_armies():
+    armies = _full_group_away()
+    r = plan_composition_step(TARGET, armies, CITY, strike_uids=["imp2"],
+                              reserved_uids=set(), unlocked_ids={3206, 3305}, army_cap=9)
+    assert {a["uid"] for a in r["assign"]} == {"tank", "imp1", "imp2"}
