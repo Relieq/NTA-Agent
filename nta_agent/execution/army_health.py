@@ -34,6 +34,19 @@ def is_idle(army: dict) -> bool:
     return int((army or {}).get("state", 0) or 0) == 0
 
 
+def leveling_pawn_uids(state) -> set[str]:
+    """Pawn uids being leveled (``player.pawnLvingQueues``). Their army sits in the
+    drill ground: its ``state`` stays 0 but it can't move (ecode.500080)."""
+    q = ((getattr(state, "raw", None) or {}).get("player") or {}).get("pawnLvingQueues")
+    if not isinstance(q, dict):
+        return set()
+    uids = {str(u) for u in (q.get("pawnUIDMap") or {})}
+    for item in (q.get("map") or {}).values():
+        if isinstance(item, dict) and item.get("puid"):
+            uids.add(str(item["puid"]))
+    return uids
+
+
 def army_is_wounded(army: dict) -> bool:
     for p in army.get("pawns") or []:
         cur, mx = _hp(p)
