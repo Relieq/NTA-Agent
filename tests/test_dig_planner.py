@@ -128,3 +128,18 @@ def test_place_forts_every_seven_prefers_low_level_land():
     assert all(7 <= b - a <= 9 for a, b in pairwise(xs))
     # a short dig inside reach needs none
     assert place_forts([I(2, 0), I(3, 0)], main, lambda i: 1) == []
+
+
+def test_forts_count_from_the_protection_zone_edge():
+    # the radius-6 zone around the 2x2 city is already sped up: treat its EDGE as
+    # the first node, so the first fort lands ~7..9 cells beyond the zone
+    main = I(0, 0)                                    # block (0..1, 0..1)
+    path = [I(x, 0) for x in range(2, 40)]            # straight east
+    forts = place_forts(path, [], lambda i: 2, every=7, main=main, main_radius=6)
+    xs = [f % W for f in forts]
+    # dist_to_block(x) = x-1; beyond-zone distance = x-1-6 -> first fort at 7..9 of it
+    assert 7 <= xs[0] - 1 - 6 <= 9
+    assert all(7 <= b - a <= 9 for a, b in pairwise(xs))
+    # a dig that stays within zone + 7 needs no fort
+    assert place_forts([I(x, 0) for x in range(2, 15)], [], lambda i: 1,
+                       main=main, main_radius=6) == []

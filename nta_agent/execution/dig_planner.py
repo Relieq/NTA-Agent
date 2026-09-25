@@ -225,16 +225,26 @@ def place_forts(
     lv_of: Callable[[int], int],
     *,
     every: int = 7,
+    main: int | None = None,
+    main_radius: int = 6,
 ) -> list[int]:
     """Where to build Cứ Điểm along ``path``: once the dig runs more than
-    ``every`` cells past the nearest node (main-city cells / forts), pick a cell
-    ``every..every+2`` out — the lowest land level (lv1 wastes least), then the
-    nearest — and treat it as a new node."""
+    ``every`` cells past the nearest node, pick a cell ``every..every+2`` out —
+    the lowest land level (lv1 wastes least), then the nearest — and treat it as
+    a new node. Nodes are the forts (``nodes``) and, when ``main`` is given, the
+    EDGE of the main city's protection zone (radius ``main_radius`` around the
+    2x2 block — already sped up, so it acts as one big fort)."""
     node_xy = [xy(n) for n in nodes]
+    if main is not None:
+        mx, my = xy(main)
 
     def d(c: int) -> int:
         cx, cy = xy(c)
-        return min((abs(cx - nx) + abs(cy - ny) for nx, ny in node_xy), default=10**9)
+        best = min((abs(cx - nx) + abs(cy - ny) for nx, ny in node_xy), default=10**9)
+        if main is not None:
+            to_block = max(mx - cx, 0, cx - (mx + 1)) + max(my - cy, 0, cy - (my + 1))
+            best = min(best, max(0, to_block - main_radius))
+        return best
 
     forts: list[int] = []
     start = 0
