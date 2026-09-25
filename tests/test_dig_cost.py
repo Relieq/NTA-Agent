@@ -71,3 +71,29 @@ def test_sim_failure_falls_back_to_a_rough_estimate():
     # a prediction without a duration (old sidecar) is rough too, but keeps win/loss
     cc2 = CellCost(lambda *a: _pred(dur=None), _world(), dist_fn=lambda i: 3, max_loss=0, speed=60)
     assert cc2.cost(1) == 60.0 + ROUGH_BATTLE_S[1]
+
+
+def test_hard_verdicts_are_rechecked_per_cell_with_the_real_defenders():
+    # the generated defenders get RANDOM gear (engine Math.random), so a borderline
+    # 1-death verdict is noise: re-check a 'hard' cell against get_area's real ones
+    w = _world()
+    checked = []
+
+    def verify(idx):
+        checked.append(idx)
+        return _pred(loss=0.0, dur=25.0) if idx == 1 else _pred(loss=4.0)
+
+    cc = CellCost(lambda *a: _pred(loss=2.2), w, dist_fn=lambda i: 3, max_loss=0, speed=60,
+                  verify=verify)
+    assert cc.cost(1) == 60.0 + 25.0          # real defenders: clean -> diggable
+    assert cc.cost(2) is None                 # same key, but this cell really is lossy
+    assert cc.hard_loss(2) == 4.0
+    assert checked == [1, 2]
+    cc.cost(1)
+    assert checked == [1, 2]                  # per-cell memo
+
+
+def test_unverifiable_cell_stays_hard():
+    cc = CellCost(lambda *a: _pred(loss=2.2), _world(), dist_fn=lambda i: 3, max_loss=0,
+                  speed=60, verify=lambda i: None)
+    assert cc.cost(1) is None and cc.hard_loss(1) == 2.2
