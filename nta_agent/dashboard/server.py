@@ -526,6 +526,16 @@ def set_forge_target(cfg, body: dict) -> dict:
     if budget < 0:
         return {"ok": False, "error": "ngân sách ≥ 0"}
     if "mins" in body:
+        # The rollable range of each effect number (from the agent's forge view): a
+        # minimum above the best roll can never be met — the agent would burn the whole
+        # iron budget — and one below the worst roll means nothing. Unknown -> unchecked.
+        equip = next((e for e in read_forge_view(cfg)["equips"]
+                      if str(e.get("uid")) == uid), None)
+        bounds = {}
+        for p in (equip or {}).get("possible") or []:
+            for part in ("value", "odds"):
+                bounds[f"{p.get('type')}.{part}"] = (list(p.get(f"{part}_range") or []),
+                                                     p.get("label") or "")
         mins = {}
         for k, v in (body.get("mins") or {}).items():
             if v in ("", None):
@@ -538,6 +548,16 @@ def set_forge_target(cfg, body: dict) -> dict:
                 return {"ok": False, "error": f"mức tối thiểu không hợp lệ: {k}"}
             if fv < 0:
                 return {"ok": False, "error": "mức tối thiểu ≥ 0"}
+            if str(k) in bounds:
+                rng, label = bounds[str(k)]
+                what = ("tỉ lệ" if str(k).endswith(".odds") else "giá trị") + f" của «{label}»"
+                if len(rng) < 2:
+                    return {"ok": False, "error": f"{what} không có số để đặt mức"}
+                lo, hi = float(rng[0]), float(rng[1])
+                if not lo <= fv <= hi:
+                    return {"ok": False,
+                            "error": f"{what} chỉ roll được {rng[0]}–{rng[1]}; "
+                                     f"mức {v} nằm ngoài khoảng"}
             mins[str(k)] = fv
         if not mins:
             return {"ok": False, "error": "đặt ít nhất một mức tối thiểu"}

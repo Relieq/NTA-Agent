@@ -21,8 +21,16 @@ export default {
    }
    return edit.value[e.uid];
   }
+  // outside the rollable range [lo,hi] of that number (blank = don't care)
+  const outOf=(v,rng)=> v!=="" && v!=null && rng && rng.length===2 && (Number(v)<rng[0] || Number(v)>rng[1]);
+  const bad=(e)=> (e.possible||[]).filter(p=>{
+   const m=draft(e).mins;
+   return outOf(m[p.type+".value"],p.value_range) || (p.odds_range.length && outOf(m[p.type+".odds"],p.odds_range));
+  }).map(p=>p.label);
   async function save(e){
    const d=draft(e);
+   const b=bad(e);
+   if(b.length){ msg.value="Mức nằm ngoài khoảng roll được: "+b.join(", "); setTimeout(()=>{msg.value="";},5000); return; }
    const r=await postJSON("/api/forge/target",{uid:e.uid,budget:Number(d.budget),mins:d.mins});
    msg.value=(r&&r.ok)? "Đã lưu tiêu chí cho "+e.name : ((r&&r.error)||"Lỗi");
    setTimeout(()=>{msg.value="";},3500);
@@ -38,7 +46,7 @@ export default {
    if(!e.next_free && e.target.budget < e.iron_cost) return {t:"⛔ hết ngân sách sắt", c:"#da3633"};
    return {t:"🔁 đang rèn lại"+(e.next_free?" · lần tới miễn phí":""), c:"#58a6ff"};
   };
-  return { v, draft, save, remove, status, missed, msg };
+  return { v, draft, save, remove, status, missed, msg, outOf, bad };
  },
  template:`<div class="card full"><h2>Rèn lại trang bị</h2>
   <div class="muted" style="font-size:12px;margin-bottom:6px">
@@ -60,17 +68,24 @@ export default {
      <td style="padding-right:10px">
       <span v-if="p.current">{{ p.current.value }}{{ p.suffix }}<span v-if="p.odds_range.length"> · {{ p.current.odds }}%</span></span>
       <span v-else class="muted">chưa có</span></td>
-     <td style="padding-right:10px">
-      <input type="number" style="width:64px" :placeholder="p.value_range.join('–')" v-model="draft(e).mins[p.type+'.value']">
-      <span v-if="missed(e,p.type+'.value')" style="color:#da3633">✗</span></td>
+     <td style="padding-right:10px"><template v-if="p.value_range.length">
+      <input type="number" style="width:64px" :min="p.value_range[0]" :max="p.value_range[1]"
+       :placeholder="p.value_range.join('–')" v-model="draft(e).mins[p.type+'.value']"
+       :style="outOf(draft(e).mins[p.type+'.value'],p.value_range) ? {borderColor:'#da3633',color:'#da3633'} : {}">
+      <span class="muted" style="font-size:11px"> {{ p.value_range[0] }}–{{ p.value_range[1] }}{{ p.suffix }}</span>
+      <span v-if="missed(e,p.type+'.value')" style="color:#da3633">✗</span></template>
+      <span v-else class="muted">—</span></td>
      <td><template v-if="p.odds_range.length">
-      <input type="number" style="width:56px" :placeholder="p.odds_range.join('–')" v-model="draft(e).mins[p.type+'.odds']">%
+      <input type="number" style="width:56px" :min="p.odds_range[0]" :max="p.odds_range[1]"
+       :placeholder="p.odds_range.join('–')" v-model="draft(e).mins[p.type+'.odds']"
+       :style="outOf(draft(e).mins[p.type+'.odds'],p.odds_range) ? {borderColor:'#da3633',color:'#da3633'} : {}">%
+      <span class="muted" style="font-size:11px"> {{ p.odds_range[0] }}–{{ p.odds_range[1] }}%</span>
       <span v-if="missed(e,p.type+'.odds')" style="color:#da3633">✗</span></template>
       <span v-else class="muted">—</span></td>
     </tr></table>
    <div style="display:flex;gap:8px;align-items:center;margin-top:4px;flex-wrap:wrap;font-size:13px">
     <label>Ngân sách <input type="number" min="0" style="width:70px" v-model="draft(e).budget"> sắt</label>
-    <button @click="save(e)">{{ e.target ? "Cập nhật" : "Rèn lại món này" }}</button>
+    <button @click="save(e)" :disabled="bad(e).length>0" :title="bad(e).length ? 'Có mức nằm ngoài khoảng roll được' : ''">{{ e.target ? "Cập nhật" : "Rèn lại món này" }}</button>
     <button v-if="e.target" @click="remove(e)">Bỏ</button>
     <span v-if="e.target" class="muted">còn {{ e.target.budget }} sắt</span></div>
   </div>
