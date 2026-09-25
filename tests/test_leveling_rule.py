@@ -140,3 +140,25 @@ def test_quiet_backoff_on_low_resources():
     assert rule.applies(_state(), acts) is True
     rule.act(acts)                       # must NOT raise
     assert rule._cooldown == rule.res_cooldown
+
+
+def test_no_new_leveling_on_the_dig_group_while_a_dig_is_on():
+    # live 2026-09-25: in-place leveling kept Đội 1 (the dig tank) in the drill
+    # ground pawn after pawn and the dig waited 30+ min for it
+    acts = FakeActions([_army("F1", [("a", 3), ("b", 12)])])
+    rule = Leveling(profile=_prof())
+    rule.dig_live_source = lambda: True
+    assert rule.applies(_state(), acts) is False
+    rule._cooldown = 0
+    rule.dig_live_source = lambda: False          # dig over -> leveling resumes
+    assert rule.applies(_state(), acts) is True
+
+
+def test_leveling_army_keeps_leveling_during_a_dig():
+    lv = _army("L", [("x", 2)], name=LEVEL_ARMY_NAME)
+    acts = FakeActions([_army("F1", [("a", 3)]), lv])
+    rule = Leveling(profile=_prof())
+    rule.dig_live_source = lambda: True
+    assert rule.applies(_state(), acts) is True
+    rule.act(acts)
+    assert acts.calls == [("level", "L", "x")]    # its own buffer army, not the group

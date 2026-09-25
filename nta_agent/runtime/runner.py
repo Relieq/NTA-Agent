@@ -183,6 +183,8 @@ def run(cfg: RuntimeConfig, *, ticks: int = 0, session=None, engine=None) -> Non
         # F2/brain: rules that back off on insufficient resources report it (res_depletion).
         if getattr(rule, "name", "") in ("leveling", "forge", "army_composer"):
             rule.ledger = ledger
+        if getattr(rule, "name", "") == "leveling":
+            rule.dig_live_source = dig.is_live  # the dig group isn't leveled mid-dig
         if getattr(rule, "name", "") == "occupy_cell":
             rule.on_event = log.append
             rule.threats_source = _enemy_from_forts  # defend contested border cells (P2)
