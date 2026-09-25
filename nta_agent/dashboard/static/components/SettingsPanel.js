@@ -2,6 +2,7 @@ import { getJSON, postJSON } from "../api.js";
 const { ref, onMounted } = window.Vue;
 // User settings. Secrets are write-only: the server returns only a mask
 // (sk-…abcd) and the field stays blank unless the user types a new value.
+const DEFAULT_MODEL="gpt-4o-mini";   // llm.default_chat default
 const FIELDS=[
  {key:"openai_api_key", label:"OpenAI API key", secret:true,
   help:"Tuỳ chọn — bật \"bộ não\" (chiến lược + chat). Tính phí theo tài khoản OpenAI của bạn."},
@@ -26,8 +27,8 @@ export default {
   }
   // current value first if the account list lacks it (custom / older model)
   const modelOptions=()=>{
-   const c=cur.value.openai_model; const cv=c&&c.set?c.value:"";
-   return cv && !models.value.includes(cv) ? [cv, ...models.value] : models.value;
+   const c=cur.value.openai_model; const cv=(c&&c.set&&c.value)||DEFAULT_MODEL;
+   return models.value.includes(cv) ? models.value : [cv, ...models.value];
   };
   function pickModel(v){
    if(v==="__custom__"){ custom.value=true; draft.value.openai_model=""; }
@@ -62,7 +63,7 @@ export default {
   }
   onMounted(load);
   return { FIELDS, cur, draft, msg, ok, app, upd, save, clear, testKey, checkNow, rollback,
-           models, modelsErr, custom, loadModels, modelOptions, pickModel };
+           models, modelsErr, custom, loadModels, modelOptions, pickModel, DEFAULT_MODEL };
  },
  template:`<div class="card full"><h2>Cài đặt</h2>
   <div class="muted" style="font-size:12px;margin-bottom:6px">
@@ -74,9 +75,8 @@ export default {
      <div v-if="f.help" class="muted" style="font-size:11px">{{ f.help }}</div></td>
     <td v-if="f.kind==='model'" style="padding:6px 0">
      <div style="display:flex;gap:6px;align-items:center;flex-wrap:wrap">
-      <select style="max-width:260px" :value="custom ? '__custom__' : (draft.openai_model || (cur.openai_model&&cur.openai_model.value) || '')"
+      <select style="max-width:260px" :value="custom ? '__custom__' : (draft.openai_model || (cur.openai_model&&cur.openai_model.value) || DEFAULT_MODEL)"
        @change="pickModel($event.target.value)">
-       <option value="" disabled>{{ models.length ? 'chọn model…' : 'mặc định (gpt-4o-mini)' }}</option>
        <option v-for="m in modelOptions()" :key="m" :value="m">{{ m }}</option>
        <option value="__custom__">Khác… (tự nhập)</option>
       </select>
