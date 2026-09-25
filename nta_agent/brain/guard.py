@@ -204,16 +204,14 @@ def sanitize_renames(edits, valid_army_uids, dominant_by_uid=None) -> list:
 def _safe_lever_edits(lever, valid_army_uids, valid_build_ids) -> dict:
     """Run a lesson's proposed lever edits through the normal edit guard, then drop
     the human-owned parts (build, max_loss, army.group/roles/...) so a lesson can
-    only auto-apply the SAME safe levers the brain may edit. army.strike_target is
-    kept (the one army field the brain owns)."""
+    only auto-apply the SAME safe levers the brain may edit. army.* (incl.
+    strike_target) is dropped: a strike group needs the player's confirmation."""
     dummy = types.SimpleNamespace(occupy={"max_loss": 0}, army={})
     clean = sanitize_edits(lever, dummy, valid_army_uids, valid_build_ids=valid_build_ids)
     clean.pop("build", None)
     clean.pop("advice", None)
     clean.pop("notes", None)
-    army_e = clean.pop("army", None)
-    if isinstance(army_e, dict) and isinstance(army_e.get("strike_target"), list):
-        clean["army"] = {"strike_target": army_e["strike_target"]}
+    clean.pop("army", None)  # strike_target needs the player's confirmation, never a lesson
     if isinstance(clean.get("occupy"), dict):
         clean["occupy"].pop("max_loss", None)   # the user's hard risk cap — never a lesson
         if not clean["occupy"]:
