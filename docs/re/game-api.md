@@ -56,7 +56,7 @@ Response: envelope `S2C_RESULT{data,error}`; `error` rỗng = OK, ngược lại
 | `HD_LeaveArea` | 🔶 | `{index}` | Rút quân khỏi ô. |
 | `HD_CancelMarch` | ❓ | — | Huỷ hành quân. |
 | `HD_MoveAreaPawns` | ✅ | `{index, armyUid, pawns:[{uid,point{x,y}}]}` | Đặt vị trí pawn trong đội hình (thứ tự tank). `actions.move_area_pawns`. |
-| `HD_ExchangePawnArmy` | ✅ | `{index, armyUid1, uid1, armyUid2, uid2}` | Đổi chỗ 2 pawn (trong/giữa đội). `actions.exchange_pawn_army`. |
+| `HD_ExchangePawnArmy` | ✅ | `{index, armyUid1, uid1, armyUid2, uid2}` | Đổi chỗ 2 pawn (trong/giữa đội). `actions.exchange_pawn_army`. Engine (bản mô phỏng server trong client): 2 đội **cùng ô** (bất kỳ ô của mình), ô **không đang có trận** (500036); lính mới vào đúng vị trí lính cũ. Tráo **ngoài thành** chưa kiểm live (buffer leveling). |
 | `HD_SetArmySpeed` | ❓ | — | Đặt tốc độ hành quân (isSameSpeed). |
 | `HD_ForceRevokeArmy` | ❓ | — | Ép thu hồi đạo quân. |
 | `HD_SendCellEmoji` / `HD_BattlePlayBack` | ❓ | — | Emoji ô / phát lại trận. |
