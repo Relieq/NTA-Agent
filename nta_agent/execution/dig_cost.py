@@ -46,6 +46,7 @@ class CellCost:
         self.max_loss = float(max_loss or 0)
         self.step_march_s = march_ms(1, speed) / 1000
         self.memo: dict[tuple[int, int], float | None] = {}
+        self.loss: dict[tuple[int, int], float | None] = {}  # hard: predicted loss%, None = a defeat
         self.rough = False   # some cell was estimated without the sim
         self.sims = 0
 
@@ -65,12 +66,18 @@ class CellCost:
             else:
                 if not pred.win or pred.loss_percent > self.max_loss:
                     self.memo[key] = None
+                    self.loss[key] = float(pred.loss_percent) if pred.win else None
                 elif pred.duration_s is None:
                     self.rough = True
                     self.memo[key] = ROUGH_BATTLE_S.get(lv, 60.0)
                 else:
                     self.memo[key] = float(pred.duration_s)
         return self.memo[key]
+
+    def hard_loss(self, idx: int) -> float | None:
+        """For a hard cell: the loss % the win would cost (None = the group loses)."""
+        lv = self.world.lv(idx)
+        return self.loss.get((self.world.land_id(idx), attr_lv(self.dist_fn(idx), lv)))
 
     def cost(self, idx: int) -> float | None:
         b = self.battle_s(idx)

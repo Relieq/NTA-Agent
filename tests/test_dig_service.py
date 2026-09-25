@@ -210,3 +210,23 @@ def test_active_dig_resumes_after_restart(tmp_path):
     assert svc2.next_target() == I(12, 10)
     svc2.tick(_state())
     assert svc2.dig["state"] == "active"
+
+
+def test_preview_tells_the_loss_needed_to_dig_now(tmp_path):
+    walls = {I(x, y) for x in range(5, 25) for y in range(5, 20) if y != 10}
+    walls -= _owned_block()
+    scan = {"owned": _owned_block()}
+    clock = Clock()
+
+    def lossy(idx, land_id, dist):   # every cell: a win that costs 3%
+        return BattlePrediction(win=True, my_power=1, enemy_power=1, ratio=1,
+                                loss_percent=3.0, loss_lv=1, duration_s=10.0)
+
+    def scan_fn(actions, main, uid, map_width=600, focus=None):
+        return {"owned": set(scan["owned"]), "enemy_cells": set(), "enemy_cities": {}}
+    svc = DigService(Cfg(tmp_path), Actions(), world=World(walls), scan=scan_fn,
+                     predict_factory=lambda st: (lossy, 60), clock=clock)
+    _req(tmp_path, 1, "request", index=I(14, 10))
+    svc.tick(_state())
+    assert svc.dig["reason"] == "blocked_by_hard"
+    assert svc.dig["need_loss"] == 3.0 and svc.dig["max_loss"] == 0.0

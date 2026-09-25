@@ -264,9 +264,14 @@ class DigService:
         forts = carry + (dp.place_forts(plan.path, nodes, world.lv, every=self.fort_every)
                          if plan.path else [])
         stamina = sum(self._stamina(i) for i in plan.path)
+        # what it would take: the loss % each hard cell costs (None = a defeat), so
+        # the player can decide to raise occupy.max_loss instead of waiting
+        losses = [None if i in hard else cost.hard_loss(i) for i in plan.hard]
+        need_loss = (max(losses) if losses and all(x is not None for x in losses) else None)
         dig.update(path=[_xy(i) for i in plan.path], path_idx=plan.path,
                    total_s=round(plan.total_s, 1), cells=len(plan.path), reason=plan.reason,
                    hard=[_xy(i) for i in plan.hard], forts=[_xy(i) for i in forts],
+                   hard_loss=losses, need_loss=need_loss, max_loss=self._max_loss(),
                    fort_idx=forts, stamina=stamina, rough=bool(cost.rough),
                    sims=cost.sims, map=world.name, planned_at=now,
                    next=plan.path[0] if plan.path else None)

@@ -55,6 +55,8 @@ def test_lost_or_too_costly_battles_are_hard():
     assert lose.cost(1) is None
     lossy = CellCost(lambda *a: _pred(loss=10.0), w, dist_fn=lambda i: 3, max_loss=5, speed=60)
     assert lossy.cost(1) is None
+    assert lossy.hard_loss(1) == 10.0            # what the win would cost
+    assert lose.hard_loss(1) is None             # a defeat
     ok = CellCost(lambda *a: _pred(loss=4.0), w, dist_fn=lambda i: 3, max_loss=5, speed=60)
     assert ok.cost(1) == 90.0
 

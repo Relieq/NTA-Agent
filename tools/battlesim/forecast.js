@@ -111,6 +111,9 @@ function forecast(input) {
         lossPercent: Math.round(lostPct * 10) / 10,
         survivors: { self, enemy },
       };
+      // the frame the battle ENDED on — one update() fast-forwards FPS_MUL frames,
+      // so reading it after the loop rounds up to a multiple of 400
+      result.frames = area.fspModel ? area.fspModel.getCurrentFrameIndex() : 0;
     }
     return origEnd();
   };
@@ -139,9 +142,8 @@ function forecast(input) {
   if (!result) {
     return { isWin: false, lossLv: 5, lossPercent: 100, survivors: null, timedOut: true };
   }
-  result.timeMs = Math.round((fspModel.getBattleTime && fspModel.getBattleTime()) || 0);
-  result.frames = fspModel.getCurrentFrameIndex();
-  result.durationS = result.timeMs / 1000; // engine battle clock (frame * floor(1000/fps) ms)
+  result.timeMs = result.frames * Math.floor(1000 / FPS); // engine battle clock
+  result.durationS = result.timeMs / 1000;
   return result;
 }
 

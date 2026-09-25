@@ -77,6 +77,10 @@ test("oracle: replaying the real 1-tile record reproduces its outcome", (t) => {
   const out = replayRecord(fixture.record, req);
   assert.strictEqual(out.isWin, true, "record says win");
   assert.strictEqual(out.survivors.self.alive, out.survivors.self.total, "record has 0 dead");
+  // battle length: the frame the real battle ended on (= its wall-clock length / 50 ms)
+  const last = fixture.record.frames[fixture.record.frames.length - 1].currentFrameIndex;
+  assert.strictEqual(out.frames, last, "sim ends on the record's last frame");
+  assert.strictEqual(out.durationS, last * 50 / 1000);
 });
 
 test("oracle: replaying a real lossy record matches its win + dead count", (t) => {

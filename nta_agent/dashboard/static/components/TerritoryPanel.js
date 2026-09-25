@@ -318,6 +318,8 @@ export default {
    <span v-if="dig.retargets && dig.retargets.length" style="color:#e3b341">
     đích cũ bị chiếm → đổi sang ô gần nhất</span>
    <span v-if="dig.reason && dig.reason!=='ok' && DIG_REASON[dig.reason]" style="color:#e3b341">{{ DIG_REASON[dig.reason] }}</span>
+   <span v-if="dig.reason==='blocked_by_hard' && dig.need_loss!=null" style="color:#e3b341">
+    · nếu cho phép tổn thất ≥ {{ Math.ceil(dig.need_loss) }}% (hiện {{ dig.max_loss||0 }}%) thì dig được ngay</span>
    <span v-if="dig.rough" class="muted">(ước lượng thô — mô phỏng không sẵn sàng)</span>
    <span v-if="dig.pending" class="muted">⏳ chờ agent xử lý (agent phải đang chạy)</span>
    <span class="muted" v-if="['preview','active'].includes(dig.state)">chưa tính thời gian chờ thể lực/hồi máu</span>

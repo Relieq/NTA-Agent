@@ -73,6 +73,9 @@ function runWithReinforce(frames, req) {
         lossPercent: Math.round(lostPct * 10) / 10,
         survivors: { self, enemy, pawns },
       };
+      // the frame the battle ENDED on — one update() fast-forwards FPS_MUL frames,
+      // so reading it after the loop rounds up to a multiple of 400
+      result.frames = area.fspModel ? area.fspModel.getCurrentFrameIndex() : 0;
     }
     return origEnd();
   };
@@ -116,8 +119,7 @@ function runWithReinforce(frames, req) {
   }
   // engine battle clock (getBattleTime = frame * floor(1000/fps) ms) — how long
   // the real battle occupies the cell
-  result.frames = fsp.getCurrentFrameIndex();
-  result.timeMs = fsp.getBattleTime();
+  result.timeMs = result.frames * Math.floor(1000 / (frames.fps || FPS));
   result.durationS = result.timeMs / 1000;
   return result;
 }
