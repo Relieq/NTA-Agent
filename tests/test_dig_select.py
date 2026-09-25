@@ -61,3 +61,25 @@ def test_cell_not_among_candidates_is_skipped():
 def test_no_group_configured_uses_any_idle_army():
     plan = _rule(group=())._dig_select(CANDS, _plans_for(["x9"]), _predict(), CELL)
     assert plan is not None
+
+
+def test_a_wounded_group_waits_to_heal_instead_of_marking_the_cell_hard():
+    # wounded now -> the win costs pawns; at full hp it's clean: that's a heal
+    # case (HealRouting sends the group home), NOT a hard cell to route around
+    def plans_for(i):
+        return [Plan(armies=[{"uid": "g1", "index": i - 1,
+                              "pawns": [{"id": 3305, "hp": {0: 40, 1: 100}}]}],
+                     target=i, label="g1", prediction=None)]
+
+    def predict(plan):
+        hurt = any(p["hp"][0] < p["hp"][1] if isinstance(p["hp"], list) else
+                   p["hp"].get(0, 0) < p["hp"].get(1, 0)
+                   for a in plan.armies for p in a["pawns"])
+        return SimpleNamespace(win=True, loss_percent=11.0 if hurt else 0.0)
+
+    r = _rule()
+    events = []
+    r.on_event = lambda k, d=None: events.append(k)
+    assert r._dig_select(CANDS, plans_for, predict, CELL) is None
+    assert r.hard == []
+    assert "dig_heal_wait" in events
