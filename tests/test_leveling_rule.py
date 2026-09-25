@@ -162,3 +162,18 @@ def test_leveling_army_keeps_leveling_during_a_dig():
     assert rule.applies(_state(), acts) is True
     rule.act(acts)
     assert acts.calls == [("level", "L", "x")]    # its own buffer army, not the group
+
+
+def test_direct_leveling_is_inert_for_a_buffer_group():
+    prof = _prof()
+    prof.leveling["groups"] = [{"armies": ["F1"], "mode": "buffer", "target_lv": 10}]
+    acts = FakeActions([_army("F1", [("a", 3)])])
+    assert Leveling(profile=prof).applies(_state(), acts) is False
+
+
+def test_direct_group_uses_its_own_armies_and_target():
+    prof = _prof(group=())                       # no active formation group...
+    prof.leveling["groups"] = [{"armies": ["F1"], "mode": "direct", "target_lv": 10}]
+    acts = FakeActions([_army("F1", [("a", 3)])])
+    rule = Leveling(profile=prof)
+    assert rule.applies(_state(), acts) is True  # ...the direct group still levels

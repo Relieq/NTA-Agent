@@ -157,6 +157,7 @@ def run(cfg: RuntimeConfig, *, ticks: int = 0, session=None, engine=None) -> Non
 
     _rules = getattr(agent.engine, "rules", [])
     _composer = next((r for r in _rules if getattr(r, "name", "") == "army_composer"), None)
+    _buffers = next((r for r in _rules if getattr(r, "name", "") == "buffer_leveling"), None)
 
     def _make_comp_status_sink():  # defined out of the loop (no loop-var capture)
         state = {"was": False}
@@ -197,6 +198,9 @@ def run(cfg: RuntimeConfig, *, ticks: int = 0, session=None, engine=None) -> Non
             rule.dig_source = dig.next_target      # dig the planned path (after confirm)
             rule.dig_hard_sink = dig.report_hard
             rule.dig_live_source = dig.is_live     # reserve the group while waiting too
+            if _buffers is not None:  # buffer leveling: never occupy with buffers / swappers
+                rule.away_source = _buffers.away_uids
+                rule.buffer_source = _buffers.buffer_uids
             if _composer is not None:  # skip armies the composer is arranging (it locks them)
                 rule.locked_source = lambda: getattr(_composer, "locked_uids", set())
             if config is not None:  # pace discovery by the cheapest occupy cost

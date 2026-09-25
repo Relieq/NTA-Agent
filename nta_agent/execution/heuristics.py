@@ -299,6 +299,8 @@ class OccupyCell:
     dig_source: object = None      # callable -> the dig's next cell or None (DigService)
     dig_hard_sink: object = None   # callable(cell): the dig group can't win it now
     dig_live_source: object = None  # callable -> bool: a dig is on (reserve its group)
+    away_source: object = None      # callable -> uids stepping over to swap with a buffer
+    buffer_source: object = None    # callable -> buffer army uids (never sent to occupy)
     contest_range: int = 1     # a winnable candidate within this of an enemy is contested
     _pending: object = None    # (armies_list, target_index)
     _rally: object = None       # (armies_to_move, city, for_target) — consolidate then attack
@@ -472,6 +474,14 @@ class OccupyCell:
                 best = plan
         return best
 
+    def _away_uids(self) -> set[str]:
+        if self.away_source is None:
+            return set()
+        try:
+            return {str(u) for u in (self.away_source() or ())}
+        except Exception:
+            return set()
+
     def _dig_reserved(self) -> set[str]:
         """The dig group while a confirmed dig is on (active OR waiting) — farming
         and expansion must leave it alone so it stays together for the dig."""
@@ -509,8 +519,11 @@ class OccupyCell:
         if cand is None:
             return None
         grp = self._dig_group()
+        away_now = self._away_uids()  # stepping over to swap with a buffer
         members = [a for a in (all_armies or [])
-                   if str(a.get("uid")) in grp and (a.get("pawns") or [])]
+                   if str(a.get("uid")) in grp and (a.get("pawns") or [])
+                   and str(a.get("uid")) not in away_now]
+        someone_away = bool(grp & away_now)
         busy_pawns = {str(u) for u in (busy_pawns or ())}
 
         def busy(a) -> bool:  # marching/fighting, recruiting, reviving or leveling
@@ -541,6 +554,8 @@ class OccupyCell:
             return None  # the assembled group isn't selectable for this cell yet
         max_loss = float(self.profile.occupy.get("max_loss", 0) or 0) if self.profile else 0.0
         plan = best_plan([cand], lambda _i: plans, predict, distance=self._plan_dist)
+        if someone_away and (plan is None or plan.prediction.loss_percent > max_loss):
+            return None  # the rest can't take it cleanly: wait for the swapper (no 'hard')
         if plan is None or plan.prediction.loss_percent > max_loss:
             # Wounded now but clean at full hp -> it's a heal case: HealRouting sends
             # the group to the nearest fort/city and the dig resumes after. Only a
@@ -659,6 +674,12 @@ class OccupyCell:
 
         cand_by_index = {c.index: c for c in cands}
         reserved: set[str] = set()  # filled after the dig step: only the dig uses its group
+        off_limits = self._away_uids()  # buffers + armies away swapping: never occupy with them
+        if self.buffer_source is not None:
+            try:
+                off_limits |= {str(u) for u in (self.buffer_source() or ())}
+            except Exception:
+                pass
 
         def plans_for(i):
             # Candidate selection-orders from the active formation group (or all reachable).
@@ -676,7 +697,7 @@ class OccupyCell:
                 except Exception:
                     locked = set()
             avail = [a for a in self._select_idle(actions, i, locked)
-                     if str(a.get("uid")) not in reserved]
+                     if str(a.get("uid")) not in reserved and str(a.get("uid")) not in off_limits]
             grp = []
             if self.profile is not None:
                 from nta_agent.execution.profile import active_formation
@@ -1483,14 +1504,17 @@ class Leveling:
         if self._cooldown > 0:
             self._cooldown -= 1
             return False
-        target = int(cfg.get("target_lv", 0) or 0)
+        from nta_agent.execution.leveling import find_leveling_army, next_level_action
+        from nta_agent.execution.profile import leveling_groups
+        # only DIRECT groups (in-place leveling); buffer groups belong to BufferLeveling.
+        # Legacy profiles (no groups) = one direct group = the active formation.
+        direct = next((g for g in leveling_groups(self.profile) if g["mode"] == "direct"), None)
+        if direct is None:
+            return False  # no direct group designated
+        target = int(direct.get("target_lv") or cfg.get("target_lv", 0) or 0)
         if not target:
             return False
-        from nta_agent.execution.leveling import find_leveling_army, next_level_action
-        from nta_agent.execution.profile import active_formation
-        group = {str(u) for u in (active_formation(self.profile).get("group") or [])}
-        if not group:
-            return False  # no fixed farm group designated
+        group = {str(u) for u in direct["armies"]}
         armies = actions.get_player_armys()
         self._cooldown = self.check_every
         farm_armies = [a for a in armies if str(a.get("uid")) in group]
