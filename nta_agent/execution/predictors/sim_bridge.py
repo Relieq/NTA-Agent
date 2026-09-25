@@ -11,6 +11,7 @@ import os
 import queue
 import subprocess
 import threading
+import time
 from pathlib import Path
 
 from nta_agent import paths
@@ -32,11 +33,13 @@ class SimBridge:
         server_js: str | Path = _DEFAULT_SERVER,
         env: dict | None = None,
         timeout: float = 15.0,
+        failure_log: str | Path | None = None,
     ) -> None:
         self.node = node
         self.server_js = str(server_js)
         self.env = env
         self.timeout = timeout
+        self.failure_log = failure_log  # jsonl of failed calls + their input (diagnosis)
         self._proc: subprocess.Popen | None = None
         self._q: queue.Queue[str] = queue.Queue()
         self._reader: threading.Thread | None = None
@@ -100,11 +103,13 @@ class SimBridge:
                 self.close()
                 raise SimUnavailable(f"sidecar write failed: {e}") from e
         # Read until we see our id (responses are in order, but stay robust).
+        t0 = time.monotonic()
         while True:
             try:
                 line = self._q.get(timeout=self.timeout)
             except queue.Empty as e:
                 self.close()
+                self._log_failure(method, params, "sidecar timed out", [], t0)
                 raise SimUnavailable("sidecar timed out") from e
             try:
                 msg = json.loads(line)
@@ -113,8 +118,37 @@ class SimBridge:
             if msg.get("id") != mid:
                 continue
             if msg.get("error"):
-                raise SimUnavailable(str(msg["error"].get("message", msg["error"])))
+                err = msg["error"]
+                text = str(err.get("message", err)) if isinstance(err, dict) else str(err)
+                stack = (err.get("stack") or []) if isinstance(err, dict) else []
+                self._log_failure(method, params, text, stack, t0)
+                raise SimUnavailable(text)
             return msg.get("result")
+
+    def _log_failure(self, method: str, params: dict, error: str, stack: list,
+                     t0: float) -> None:
+        """Append a failed call (with its input) to ``failure_log`` for diagnosis.
+        Best-effort; the file is reset once it passes ~5 MB."""
+        path = self.failure_log
+        if path is None:
+            return
+        try:
+            path = Path(path)
+            path.parent.mkdir(parents=True, exist_ok=True)
+            if path.exists() and path.stat().st_size > 5_000_000:
+                path.write_text("", encoding="utf-8")
+            if method == "forecast":
+                detail = params
+            else:  # replay/counterfactual carry a whole battle record: keep it small
+                rec = (params or {}).get("record") or {}
+                detail = {"record_uid": rec.get("uid"), "index": rec.get("index"),
+                          "orders": (params or {}).get("orders")}
+            row = {"ts": time.time(), "method": method, "error": error, "stack": stack,
+                   "elapsed_s": round(time.monotonic() - t0, 2), "params": detail}
+            with open(path, "a", encoding="utf-8") as f:
+                f.write(json.dumps(row, ensure_ascii=False) + "\n")
+        except (OSError, TypeError, ValueError):
+            pass
 
     def available(self) -> bool:
         """True if the sidecar spawns and answers a ping."""
@@ -155,7 +189,8 @@ def get_bridge() -> SimBridge:
         # Engine + config tables live outside the app folder once packaged.
         env = {**os.environ, "NTA_ENGINE_JS": str(paths.engine_js()),
                "NTA_CONFIG_DIR": str(paths.config_dir())}
-        _bridge = SimBridge(node=paths.node_exe(), env=env)
+        _bridge = SimBridge(node=paths.node_exe(), env=env,
+                            failure_log=paths.run_dir() / "sim_errors.jsonl")
     return _bridge
 
 

@@ -45,7 +45,11 @@ rl.on("line", (line) => {
   try {
     send(handle(msg));
   } catch (e) {
-    send({ id: msg && msg.id != null ? msg.id : null, error: { message: String(e && e.message || e) } });
+    // Top stack frames travel with the error so a failing forecast can be located
+    // from the agent's sim_errors.jsonl (the sidecar's stderr is discarded).
+    const stack = e && e.stack ? String(e.stack).split("\n").slice(1, 4).map((s) => s.trim()) : [];
+    send({ id: msg && msg.id != null ? msg.id : null,
+           error: { message: String(e && e.message || e), stack } });
   }
 });
 rl.on("close", () => process.exit(0));
