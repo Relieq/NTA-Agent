@@ -55,6 +55,7 @@ class CellCost:
         self.loss: dict[tuple[int, int], float | None] = {}  # hard: predicted loss%, None = a defeat
         self.cell: dict[int, float | None] = {}       # per-cell verdict (real defenders)
         self.cell_loss: dict[int, float | None] = {}
+        self.why: dict[int, str] = {}                 # hard cell -> why (diagnostic)
         self.rough = False   # some cell was estimated without the sim
         self.sims = 0
         self.verified = 0
@@ -94,13 +95,17 @@ class CellCost:
         try:
             real = self.verify(idx)
         except Exception as e:  # a probe failure keeps the screen's verdict
-            log.debug("dig cost verify failed for %s: %s", idx, e)
+            log.warning("dig cost verify failed for %s: %s", idx, e)
+            self.why[idx] = f"verify_failed: {str(e)[:80]}"
             real = None
         if real is None:
             self.cell[idx], self.cell_loss[idx] = None, self.loss.get(key)
+            self.why.setdefault(idx, "no_real_defenders")
         else:
             self.verified += 1
             self.cell[idx], self.cell_loss[idx] = self._judge(real, lv)
+            if self.cell[idx] is None:
+                self.why[idx] = ("real_loss" if real.win else "real_defeat") +                     f" {real.loss_percent:g}%"
         return self.cell[idx]
 
     def hard_loss(self, idx: int) -> float | None:

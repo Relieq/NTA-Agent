@@ -275,6 +275,7 @@ class DigService:
                    total_s=round(plan.total_s, 1), cells=len(plan.path), reason=plan.reason,
                    hard=[_xy(i) for i in plan.hard], forts=[_xy(i) for i in forts],
                    hard_loss=losses, need_loss=need_loss, max_loss=self._max_loss(),
+                   hard_why=[cost.why.get(i, "reported" if i in hard else "") for i in plan.hard],
                    fort_idx=forts, stamina=stamina, rough=bool(cost.rough),
                    sims=cost.sims, map=world.name, planned_at=now,
                    next=plan.path[0] if plan.path else None)
@@ -331,6 +332,7 @@ class DigService:
                 got = self._predict_factory(state)
                 predict, speed = got[0], got[1]
                 verify = got[2] if len(got) > 2 else None
+                self.dig["group"] = got[3] if len(got) > 3 else None
             if predict is None:
                 def predict(*_a):
                     raise RuntimeError("no battle predictor")
@@ -401,5 +403,6 @@ def make_predict_factory(actions, profile):
             return sim.predict_armies(state, same_cell, target_index=int(idx), land_id=0,
                                       distance=dist_to_block(int(idx), main),
                                       enemy_army_conf=conf)
-        return predict, speed, verify
+        desc = [{"name": a.get("name"), "pawns": len(a.get("pawns") or [])} for a in group]
+        return predict, speed, verify, desc
     return factory
