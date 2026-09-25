@@ -541,6 +541,9 @@ class OccupyCell:
         self._cooldown = self.discover_every  # throttle regardless of outcome
         predictor = self._pred()      # stats: fallback verdict
         sim = self._sim_pred()        # engine: authoritative win verdict when available
+        # Per decision, not sticky: a failure from an earlier sweep must not ride along
+        # on every later event (that made 19 real failures look like 497 in the log).
+        self._sim_fail = ""
         from nta_agent.execution.advisor import Plan, best_plan
         from nta_agent.execution.order_strategies import colocated_orders
         from nta_agent.execution.predictors.sim_bridge import SimUnavailable
