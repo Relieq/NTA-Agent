@@ -494,6 +494,19 @@ class OccupyCell:
         max_loss = float(self.profile.occupy.get("max_loss", 0) or 0) if self.profile else 0.0
         plan = best_plan([cand], lambda _i: plans, predict, distance=self._plan_dist)
         if plan is None or plan.prediction.loss_percent > max_loss:
+            # Wounded now but clean at full hp -> it's a heal case: HealRouting sends
+            # the group to the nearest fort/city and the dig resumes after. Only a
+            # cell the group can't take even healed is hard (route around it).
+            from nta_agent.execution.advisor import Plan
+            from nta_agent.execution.occupy_planner import full_hp_pawns
+            healed = [Plan(armies=[{**a, "pawns": full_hp_pawns(a.get("pawns") or [])}
+                                   for a in p.armies],
+                           target=cell, label=p.label, prediction=None) for p in plans]
+            fresh = best_plan([cand], lambda _i: healed, predict, distance=self._plan_dist)
+            if fresh is not None and fresh.prediction.loss_percent <= max_loss:
+                if self.on_event:
+                    self.on_event("dig_heal_wait", {"cell": cell, "xy": [cell % 600, cell // 600]})
+                return None
             if self.dig_hard_sink is not None:
                 self.dig_hard_sink(cell)
             return None
