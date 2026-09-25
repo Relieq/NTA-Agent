@@ -168,6 +168,29 @@ def confirm_strike(cfg, strike) -> dict:
             "notes": notes}
 
 
+def chat_reply_summary(out: dict) -> str:
+    """What the brain answered, in one line, for the next turn's chat history."""
+    if not out.get("ok"):
+        return "(lỗi: " + str(out.get("error", "")) + ")"
+    parts = []
+    if out.get("strike"):
+        parts.append("Đề xuất tạo nhóm (chờ xác nhận): " + out["strike"]["summary"])
+    if out.get("renames"):
+        parts.append("Đề xuất đổi tên: " + ", ".join(
+            f"{r.get('current_name') or r['uid']}→{r['name']}" for r in out["renames"]))
+    if out.get("question"):
+        parts.append("Hỏi lại: " + out["question"])
+    if out.get("applied_text"):
+        parts.append("Đã áp dụng: " + "; ".join(out["applied_text"]))
+    parts += list(out.get("notices") or [])
+    return " | ".join(parts) or (out.get("rationale") or "(không thay đổi)")
+
+
+# Player nicknames for pawn types (names, not unlock assumptions — the type must still
+# be in unlocked_pawns to be used).
+_PAWN_ALIASES = {3305: ["IMP"]}
+
+
 def handle_chat(cfg, message, *, history=None, propose=None):
     """LLM chat turn: apply profile edits immediately, and PROPOSE (not execute) any
     army renames the player asked for — renames need explicit confirmation first
@@ -199,7 +222,8 @@ def handle_chat(cfg, message, *, history=None, propose=None):
     unlocked = _unlocked_pawn_ids(cfg)
     pawn_names = {int(k): v for k, v in names.items() if str(k).isdigit()}
     if unlocked is not None:
-        dg["unlocked_pawns"] = [{"id": i, "name": pawn_names.get(i, str(i))}
+        dg["unlocked_pawns"] = [{"id": i, "name": pawn_names.get(i, str(i)),
+                                 **({"aliases": _PAWN_ALIASES[i]} if i in _PAWN_ALIASES else {})}
                                 for i in sorted(unlocked)]
     try:
         edits = propose(dg, profile, instruction=message, history=history or [])
@@ -210,6 +234,11 @@ def handle_chat(cfg, message, *, history=None, propose=None):
     # A strike-group goal can rally/recruit/dismiss troops: it is PROPOSED for
     # confirmation (like renames), never applied straight from chat. [] (clear) is safe.
     raw_strike = None
+    if isinstance(edits, dict) and "army.strike_target" in edits:
+        # LLMs sometimes flatten the path ({"army.strike_target": [...]}): accept it
+        edits.setdefault("army", {})
+        if isinstance(edits["army"], dict):
+            edits["army"].setdefault("strike_target", edits.pop("army.strike_target"))
     army_in = edits.get("army") if isinstance(edits, dict) else None
     if isinstance(army_in, dict) and army_in.get("strike_target"):
         raw_strike = army_in.pop("strike_target")
@@ -243,7 +272,8 @@ def handle_chat(cfg, message, *, history=None, propose=None):
         # not to whichever existing armies the LLM guessed.
         renames, question = [], ""
     else:
-        guard_q = rename_ambiguity(message, renames, info)
+        guard_q = rename_ambiguity(message, renames, info,
+                                   aliases=[a for v in _PAWN_ALIASES.values() for a in v])
         if guard_q:
             renames, question = [], guard_q
     proposal = []
@@ -871,7 +901,12 @@ class Handler(BaseHTTPRequestHandler):
                 return
             hist = getattr(self.server, "chat_history", [])
             out = handle_chat(cfg, msg, history=hist)
-            self.server.chat_history = (hist + [{"role": "user", "content": msg}])[-6:]
+            # Keep BOTH sides: user-only history showed the LLM the same request again,
+            # unanswered — live 2026-09-25 it then asked back or mapped IMP to the
+            # wrong pawn type 5/5 times.
+            self.server.chat_history = (hist + [{"role": "user", "content": msg},
+                                                {"role": "assistant",
+                                                 "content": chat_reply_summary(out)}])[-8:]
             self._json(200 if out.get("ok") else 503, out)
             return
         if parsed.path == "/api/chat/confirm":

@@ -90,10 +90,12 @@ _CHAT_TOOLS = (
     "PAWN TYPES: GAME STATE.unlocked_pawns lists the pawn types the player has RIGHT NOW "
     "({id, name}); unlocks reset when the main city is re-created, so never assume an id "
     "from memory. Map the player's words to those names ('khiên lớn' = Lính Khiên Lớn, "
-    "'đao khiên' = Lính Đao Khiên, ...); 'IMP' is the player's nickname for Lính Cường Nỏ. "
-    "If the word matches no unlocked type, say so in `question` instead of guessing.\n"
-    "- army.strike_target: [{\"pawn_id\":<id from unlocked_pawns>,\"armies\":n,\"size\":9,"
-    "\"names\":[\"...\"]}] — use it when the player asks to BUILD/CREATE a group of armies "
+    "'đao khiên' = Lính Đao Khiên, ...) or to an entry's `aliases` (the player's "
+    "nicknames, e.g. 'IMP'). If the word matches no unlocked type, say so in `question` "
+    "instead of guessing.\n"
+    "- strike group, as NESTED JSON {\"army\":{\"strike_target\":[{\"pawn_id\":<id from "
+    "unlocked_pawns>,\"armies\":n,\"size\":9,\"names\":[\"...\"]}]}} — use it when the "
+    "player asks to BUILD/CREATE a group of armies "
     "(e.g. '1 đội khiên lớn và 4 đội IMP'). 'armies' armies each of 'size' pawns of that ONE "
     "type; size = 9 (a full army) unless the player states a soldier count. The hands "
     "rally, pull matching pawns, recruit the deficit and dismiss low-level leftovers, then "
@@ -101,13 +103,17 @@ _CHAT_TOOLS = (
     "5'), put those names IN ORDER in each entry's `names` (entry order = the player's "
     "order) — they are applied once the group is assembled; do NOT use army_renames for "
     "armies that don't exist yet. Set [] to cancel the goal. The group is shown to the "
-    "player for CONFIRMATION before anything happens.\n"
+    "player for CONFIRMATION before anything happens. For a BUILD request (strike group) "
+    "do NOT ask which existing armies to use — the hands pick and rearrange them; just "
+    "propose the group. (This is ONLY for building groups: for RENAMES below, keep "
+    "asking whenever the target army is unclear.) Earlier chat turns (if any) show what "
+    "you already answered.\n"
     "- army_renames: [{\"uid\":\"<army uid>\",\"name\":\"<new name>\",\"pawn\":<pawn id>}] "
     "— only to rename EXISTING armies. YOU pick which army each new name goes to by "
     "matching the player's description to each army's `troops` field in GAME STATE (a "
     "readable list of its pawn types), NOT by the army's current name or list position. "
-    "Set `pawn` to the pawn id you matched (verified against the army's real composition; "
-    "a mismatch is dropped). Use the EXACT names the player gives (e.g. \"Đội 1\"..\"Đội "
+    "Set `pawn` to the NUMERIC id (from unlocked_pawns) of the type you matched — verified "
+    "against the army's real composition; a mismatch is dropped. Use the EXACT names the player gives (e.g. \"Đội 1\"..\"Đội "
     "5\") — never invent your own. Name <= 12 chars, no newline.\n"
     "- question: when you are NOT sure which army matches, or MORE armies fit a type than "
     "the player asked for (e.g. they want ONE shield team but several armies are made of "
@@ -143,15 +149,21 @@ def propose(digest: dict, profile, chat=None, instruction=None, history=None) ->
             + "\n\nGAME STATE:\n" + json.dumps(digest))
     messages = [{"role": "system", "content": _SYSTEM},
                 {"role": "user", "content": user}]
-    for h in (history or []):
-        if isinstance(h, dict) and h.get("role") and h.get("content"):
-            messages.append({"role": h["role"], "content": str(h["content"])})
+    # Earlier chat turns go in ONE labelled context block next to the instruction, not
+    # as raw turns: plain-text assistant turns between JSON replies made the model echo
+    # nothing ({"army": {}}) for a repeated request (live 2026-09-25).
+    earlier = [f"- {'Player' if h.get('role') == 'user' else 'You'}: {h['content']}"
+               for h in (history or [])
+               if isinstance(h, dict) and h.get("role") and h.get("content")]
     if instruction:
         # Chat mode (human-in-the-loop): expose action tools the autonomous loop
         # must NOT have. The brain loop calls propose() WITHOUT an instruction, so
         # it never sees these — actions stay human-initiated.
         messages.append({"role": "system", "content": _CHAT_TOOLS})
-        messages.append({"role": "user", "content": "INSTRUCTION: " + str(instruction)})
+        context = ("EARLIER IN THIS CHAT (context only — nothing from it was applied "
+                   "unless it says so; act on the INSTRUCTION below):\n"
+                   + "\n".join(earlier) + "\n\n") if earlier else ""
+        messages.append({"role": "user", "content": context + "INSTRUCTION: " + str(instruction)})
     return _parse_json(chat(messages))
 
 

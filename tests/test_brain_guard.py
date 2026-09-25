@@ -207,3 +207,23 @@ def test_guard_asks_when_fewer_armies_than_new_names():
     assert rename_ambiguity("đổi tên Team 2 và Team 3 thành A và B",
                             [{"uid": "t2", "name": "A"}, {"uid": "t3", "name": "B"}], A) is None
     assert rename_ambiguity("rename Team 1 to Tank", [{"uid": "t1", "name": "Tank"}], A) is None
+
+
+def test_guard_asks_when_the_target_army_is_not_described():
+    """(6) Neither an army name nor any pawn type of the player's armies appears in
+    the target part (before 'thành') -> the LLM guessed -> ask (rename bench 2026-09-25:
+    'đổi tên đội thành Mới', 'team 4', 'đội vừa đánh xong')."""
+    from nta_agent.brain.guard import rename_ambiguity
+    A = _armies()
+    for msg in ("đổi tên đội thành Mới", "đổi tên team 4 thành X",
+                "đổi tên đội vừa đánh xong thành X"):
+        q = rename_ambiguity(msg, [{"uid": "t1", "name": "X"}], A)
+        assert q and "Team 1" in q, msg
+    # the NEW name being a type word ('thành Nỏ') doesn't count as describing a target
+    assert rename_ambiguity("đổi tên đội thành Nỏ", [{"uid": "t2", "name": "Nỏ"}], A)
+    # a type word or a nickname alias does describe it
+    assert rename_ambiguity("đổi tên đội rìu khiên thành Tank",
+                            [{"uid": "t1", "name": "Tank"}], A) is None
+    assert rename_ambiguity("đổi tên đội imp thành Nỏ",
+                            [{"uid": "t2", "name": "Nỏ"}, {"uid": "t3", "name": "Nỏ 2"}],
+                            A, aliases=["IMP"]) is None
