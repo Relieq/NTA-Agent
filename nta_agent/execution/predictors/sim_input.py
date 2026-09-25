@@ -19,8 +19,11 @@ def _hp_list(hp) -> list[int] | None:
     if isinstance(hp, dict):
         cur = hp.get(0, hp.get("0", hp.get("curHp")))
         mx = hp.get(1, hp.get("1", hp.get("maxHp")))
-        if cur is not None and mx is not None:
-            return [int(cur), int(mx)]
+        if cur is not None:
+            # protobuf omits a zero/unchanged entry: an enemy pawn often carries only
+            # {0: cur} — assume it's at full health rather than drop its hp (NaN hp
+            # kept a battle from ever ending)
+            return [int(cur), int(mx if mx is not None else cur)]
         return None
     if isinstance(hp, (list, tuple)) and len(hp) >= 2:
         return [int(hp[0]), int(hp[1])]
@@ -56,7 +59,10 @@ def _pawn(p: dict[str, Any], equips_by_pid: dict[int, dict] | None = None) -> di
         "hp": _hp_list(p.get("hp")),
         "buffs": p.get("buffs") or [],
         "skills": p.get("skills") or [],
-        "treasures": p.get("treasures") or [],
+        # engine fromSvrTreasureInfo does treasure.rewards.map(): protobuf omits an
+        # empty repeated field, so a live {uid, id} treasure crashed the forecast
+        "treasures": [{**t, "rewards": t.get("rewards") or []}
+                      for t in (p.get("treasures") or []) if isinstance(t, dict)],
         "hero": p.get("hero") or None,
     }
     # the pawn's own equip if present, else its type's config loadout
@@ -94,6 +100,22 @@ def build_forecast_input(
     defenders from land config (``getAreaPawnConfInfo``).
     """
     equips_by_pid = _config_equips(state)
+    if enemy_army_conf:
+        # same normalisation as our pawns: hp maps missing the max, treasures without
+        # rewards (both crash or stall the engine)
+        enemy_army_conf = {**enemy_army_conf, "armys": [
+            {**a, "pawns": [{**q,
+                             **({"hp": _hp_list(q["hp"])} if isinstance(q.get("hp"), dict) else {}),
+                             # protobuf omits a 0 coordinate ({x:3} = (3,0)): an undefined
+                             # y/x made distances NaN and the battle never engaged
+                             **({"point": {"x": int(q["point"].get("x", 0) or 0),
+                                           "y": int(q["point"].get("y", 0) or 0)}}
+                                if isinstance(q.get("point"), dict) else {}),
+                             "treasures": [{**t, "rewards": t.get("rewards") or []}
+                                           for t in (q.get("treasures") or [])
+                                           if isinstance(t, dict)]}
+                            for q in (a.get("pawns") or [])]}
+            for a in (enemy_army_conf.get("armys") or [])]}
     return {
         "playerUid": str(state.user.uid),
         "targetCellIndex": int(target_index),
