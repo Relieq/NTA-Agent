@@ -61,3 +61,20 @@ def test_model_list_filters_to_chat_models():
         raise urllib.error.HTTPError(req.full_url, 401, "no", {}, None)
     r = server.list_openai_models(opener=denied)
     assert r["ok"] is False and "401" in r["error"] and "sk-secret" not in json.dumps(r)
+
+
+def test_crash_status_carries_last_run_log_tail(tmp_path):
+    from nta_agent.dashboard.supervisor import AgentSupervisor
+    from nta_agent.runtime.config import RuntimeConfig
+    sup = AgentSupervisor(RuntimeConfig(distinct_id="", log_dir=tmp_path))
+    (tmp_path / "agent.log").write_text(
+        "\n=== agent start 2026-09-25 08:00:00 ===\nold run error\n"
+        "\n=== agent start 2026-09-25 08:54:20 ===\nTraceback (most recent call last):\n"
+        "ConnectionError: login failed\n", encoding="utf-8")
+    sup._last_exit, sup._user_stopped = 1, False
+    st = sup._status()
+    assert st["engine"] == "CRASHED"
+    assert st["log_tail"] == ["Traceback (most recent call last):", "ConnectionError: login failed"]
+    f = sup._open_agent_log()
+    f.close()
+    assert "=== agent start" in (tmp_path / "agent.log").read_text(encoding="utf-8").splitlines()[-1]

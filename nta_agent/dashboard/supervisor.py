@@ -77,8 +77,16 @@ class AgentSupervisor:
             reset(self.cfg.control_path)
             # No console window: the packaged dashboard itself runs windowless.
             flags = 0x08000000 if sys.platform == "win32" else 0  # CREATE_NO_WINDOW
-            self._proc = subprocess.Popen([sys.executable, "-m", "nta_agent"],
-                                          cwd=str(paths.app_dir()), creationflags=flags)
+            # Keep the agent's stdout/stderr: a crash before its first tick (e.g. login
+            # failing) never reaches errors.jsonl, so this log is the only trace.
+            log = self._open_agent_log()
+            try:
+                self._proc = subprocess.Popen([sys.executable, "-m", "nta_agent"],
+                                              cwd=str(paths.app_dir()), creationflags=flags,
+                                              stdin=subprocess.DEVNULL, stdout=log,
+                                              stderr=subprocess.STDOUT)
+            finally:
+                log.close()  # the child holds its own handle
             self._pid = self._proc.pid
             self._started_at = time.time()
             self._user_stopped = False
@@ -129,6 +137,30 @@ class AgentSupervisor:
             return self._status()
 
     # ---- internal status (assumes lock held) ---------------------------- #
+    def _agent_log_path(self) -> Path:
+        return Path(self.cfg.log_dir) / "agent.log"
+
+    def _open_agent_log(self):
+        p = self._agent_log_path()
+        p.parent.mkdir(parents=True, exist_ok=True)
+        try:
+            if p.stat().st_size > 5_000_000:
+                p.replace(p.with_suffix(".log.1"))
+        except OSError:
+            pass
+        f = open(p, "ab")  # noqa: SIM115 — closed by the caller after the spawn
+        f.write(time.strftime("\n=== agent start %Y-%m-%d %H:%M:%S ===\n").encode())
+        f.flush()
+        return f
+
+    def _log_tail(self, n: int = 15) -> list[str]:
+        try:
+            text = self._agent_log_path().read_bytes()[-20000:].decode("utf-8", "replace")
+        except OSError:
+            return []
+        run = text.rsplit("=== agent start", 1)[-1]  # only the last run's output
+        return [ln for ln in run.splitlines()[1:] if ln.strip()][-n:]
+
     def _status(self) -> dict:
         if self._alive():
             engine = "PAUSED" if read_mode(self.cfg.control_path) == "pause" else "RUNNING"
@@ -136,5 +168,5 @@ class AgentSupervisor:
                     "uptime": max(0.0, time.time() - self._started_at)}
         if self._last_exit not in (None, 0) and not self._user_stopped:
             return {"engine": "CRASHED", "pid": None, "uptime": 0.0,
-                    "exit_code": self._last_exit}
+                    "exit_code": self._last_exit, "log_tail": self._log_tail()}
         return {"engine": "STOPPED", "pid": None, "uptime": 0.0}
