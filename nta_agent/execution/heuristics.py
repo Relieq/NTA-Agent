@@ -471,26 +471,57 @@ class OccupyCell:
                 best = plan
         return best
 
-    def _dig_select(self, cands, plans_for, predict, cell):
+    def _dig_group(self) -> set[str]:
+        if self.profile is None:
+            return set()
+        try:
+            from nta_agent.execution.profile import active_formation
+            return {str(x) for x in (active_formation(self.profile).get("group") or [])}
+        except Exception:
+            return set()
+
+    def _dig_select(self, cands, plans_for, predict, cell, all_armies=None):
         """Dig: attack only the planned next cell (DigService), only with the dig
-        group (the active formation = farm group), within ``occupy.max_loss``. An
-        idle group that can't win it is reported (``dig_hard_sink``) so the dig
-        re-plans around the cell; a busy group just means 'not this tick'."""
+        group (the active formation = farm group), within ``occupy.max_loss``.
+
+        The group digs TOGETHER: with ``all_armies`` known, a member that is busy
+        (marching/healing/…) means 'wait', and an idle group scattered over
+        several cells is first gathered on an owned cell next to the target
+        (returns ``"gather"``, the move is in ``self._rally``). Only the whole
+        group, assembled, can call a cell hard (``dig_hard_sink``) — a lone army
+        losing proves nothing (live 2026-09-25: that re-routed the dig every
+        minute)."""
         from nta_agent.execution.advisor import best_plan
+        from nta_agent.execution.army_health import is_idle
         cand = next((c for c in cands if c.index == cell), None)
         if cand is None:
             return None
-        grp: set[str] = set()
-        if self.profile is not None:
-            try:
-                from nta_agent.execution.profile import active_formation
-                grp = {str(x) for x in (active_formation(self.profile).get("group") or [])}
-            except Exception:
-                grp = set()
+        grp = self._dig_group()
+        members = [a for a in (all_armies or [])
+                   if str(a.get("uid")) in grp and (a.get("pawns") or [])]
+        if grp and members:
+            if not all(is_idle(a) for a in members):
+                return None  # part of the group is busy: wait for it
+            spots = {int(a.get("index", 0) or 0) for a in members}
+            if len(spots) > 1:
+                stage = self._dig_stage(cell, members)
+                away = [a for a in members if int(a.get("index", 0) or 0) != stage]
+                self._rally = (away, stage, cell)
+                self._pending = None
+                if self.on_event:
+                    self.on_event("dig_gather", {
+                        "to": stage, "to_xy": [stage % 600, stage // 600], "cell": cell,
+                        "armies": [a.get("name") or a.get("uid") for a in away]})
+                return "gather"
         plans = [p for p in plans_for(cell)
                  if not grp or all(str(a.get("uid")) in grp for a in p.armies)]
         if not plans:
             return None
+        whole = bool(grp and members) and any(
+            {str(a.get("uid")) for a in p.armies} >= {str(a.get("uid")) for a in members}
+            for p in plans)
+        if grp and members and not whole:
+            return None  # the assembled group isn't selectable for this cell yet
         max_loss = float(self.profile.occupy.get("max_loss", 0) or 0) if self.profile else 0.0
         plan = best_plan([cand], lambda _i: plans, predict, distance=self._plan_dist)
         if plan is None or plan.prediction.loss_percent > max_loss:
@@ -511,6 +542,24 @@ class OccupyCell:
                 self.dig_hard_sink(cell)
             return None
         return plan
+
+    def _dig_stage(self, cell: int, members) -> int:
+        """Where to gather the dig group: the owned 4-neighbour of ``cell`` nearest
+        the members (they attack from there), else where most of them stand."""
+        owned = set()
+        if self.territory_source is not None:
+            try:
+                owned = set(self.territory_source()[0])
+            except Exception:
+                owned = set()
+        x, y = cell % 600, cell // 600
+        nbrs = [ny * 600 + nx for nx, ny in ((x + 1, y), (x - 1, y), (x, y + 1), (x, y - 1))
+                if 0 <= nx < 600 and 0 <= ny < 600 and ny * 600 + nx in owned]
+        idxs = [int(a.get("index", 0) or 0) for a in members]
+        if nbrs:
+            return min(nbrs, key=lambda n: (sum(self._dist(i, n) for i in idxs), n))
+        from collections import Counter
+        return Counter(idxs).most_common(1)[0][0]
 
     def _heal_diversion(self, cands, predict, idle_grp, state):
         """Route a wounded army to heal when its wounds tip its nearest target from
@@ -592,6 +641,7 @@ class OccupyCell:
         from nta_agent.execution.predictors.sim_bridge import SimUnavailable
 
         cand_by_index = {c.index: c for c in cands}
+        reserved: set[str] = set()  # the dig group while a dig is on (only dig uses it)
 
         def plans_for(i):
             # Candidate selection-orders from the active formation group (or all reachable).
@@ -608,7 +658,8 @@ class OccupyCell:
                     locked = {str(u) for u in (self.locked_source() or ())}
                 except Exception:
                     locked = set()
-            avail = self._select_idle(actions, i, locked)
+            avail = [a for a in self._select_idle(actions, i, locked)
+                     if str(a.get("uid")) not in reserved]
             grp = []
             if self.profile is not None:
                 from nta_agent.execution.profile import active_formation
@@ -673,7 +724,16 @@ class OccupyCell:
             except Exception:
                 dig_cell = None
             if dig_cell is not None:
-                plan = self._dig_select(cands, plans_for, predict, int(dig_cell))
+                try:
+                    all_armies = actions.get_player_armys()
+                except Exception:
+                    all_armies = None
+                plan = self._dig_select(cands, plans_for, predict, int(dig_cell),
+                                        all_armies=all_armies)
+                if plan == "gather":  # the group is being assembled next to the cell
+                    return True
+                # the other armies keep farming; the dig group waits for its cell
+                reserved.update(self._dig_group())
         if plan is not None:
             kind = "dig_step" if dig_cell is not None else "defend_border"
         elif mode in _exp.MODES:
@@ -705,7 +765,8 @@ class OccupyCell:
             idle_grp = [a for a in allarmies
                         if is_idle(a) and (a.get("pawns"))
                         and not a.get("drillPawns") and not a.get("curingPawns")
-                        and (not grp or str(a.get("uid")) in grp)]
+                        and (not grp or str(a.get("uid")) in grp)
+                        and str(a.get("uid")) not in reserved]
             max_loss = float(self.profile.occupy.get("max_loss", 0) or 0) if self.profile else 0.0
 
             # HEAL first: a wounded army that would clean-win its nearest target at
