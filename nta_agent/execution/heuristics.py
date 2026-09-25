@@ -1799,14 +1799,25 @@ class ArmyComposer:
             names = list(t.get("names") or [])
             names_by_pid.setdefault(int(t["pawn_id"]), []).extend(
                 names[i] if i < len(names) else None for i in range(int(t["armies"])))
-        seen_by_pid: dict = {}
+        # Stable: an army already carrying one of its type's group names keeps it; the
+        # still-free names go, in order, to the armies without one (live 11:53: the
+        # planner's order changed and 'Đội 4' became 'Đội 5', others hit ecode 500061).
         wanted = []
+        free_by_pid = {pid: [n for n in pool if n] for pid, pool in names_by_pid.items()}
+        keep = set()
+        for row in assign:
+            army = by_uid.get(str(row.get("uid"))) if row.get("uid") else None
+            pid = int(row.get("pawn_id", 0) or 0)
+            cur = (army or {}).get("name")
+            if cur and cur in free_by_pid.get(pid, []):
+                free_by_pid[pid].remove(cur)
+                keep.add(str(row.get("uid")))
         for row in assign:
             pid = int(row.get("pawn_id", 0) or 0)
-            k = seen_by_pid.get(pid, 0)
-            seen_by_pid[pid] = k + 1
-            pool = names_by_pid.get(pid, [])
-            wanted.append((row, pool[k] if k < len(pool) else None))
+            if str(row.get("uid")) in keep:
+                continue
+            pool = free_by_pid.get(pid, [])
+            wanted.append((row, pool.pop(0) if pool else None))
         done, failed = [], []
         for row, name in wanted:
             army = by_uid.get(str(row.get("uid"))) if row.get("uid") else None
@@ -1846,8 +1857,11 @@ class ArmyComposer:
             op = a["op"]
             try:
                 if op == "rally":
+                    # Only idle armies can move: one still fighting answers 500036, which
+                    # used to abort the whole batch every minute (26x in an hour).
+                    from nta_agent.execution.army_health import is_idle
                     mv = [{"uid": u, "index": int(armies.get(u, {}).get("index", city) or city)}
-                          for u in a["uids"] if u in armies]
+                          for u in a["uids"] if u in armies and is_idle(armies[u])]
                     if mv:
                         actions.move_cell_army(mv, a["to"])
                 elif op == "move_pawn":
@@ -1877,7 +1891,7 @@ class ArmyComposer:
                 # Other expected mid-reorg conditions — skip THIS action, continue the
                 # batch (a benign failure must not abort the tick / block the recruit):
                 # army full/busy/not-found, army-cap, duplicate-march (500080/81).
-                if ecode in ("500019", "500020", "500011", "500017", "500054",
+                if ecode in ("500019", "500020", "500011", "500017", "500036", "500054",
                              "500080", "500081"):
                     continue
                 # unexpected -> surface once and stop this tick's batch, back off.

@@ -154,3 +154,15 @@ def test_reserved_armies_are_never_strike_or_donor():
     assert all(a["uid"] != "farm" for a in r["assign"])
     moves = [a for a in r["actions"] if a["op"] == "move_pawn"]
     assert all(m["from"] != "farm" for m in moves)   # never pull from a reserved army
+
+
+def test_pulls_from_mixed_donors_before_pure_ones():
+    """User rule (2026-09-25): take IMP out of MIXED armies (IMP + Đao Khiên) to fill a
+    short strike army; don't break up a pure IMP army (it moved 8 of a full 9-IMP one)."""
+    armies = [_army("tank", [3206] * 3), _army("imp1", [3305]), _army("imp2", [3305] * 3),
+              _army("mixed", [3305, 3305, 3201, 3201, 3201]),    # mixed donor (listed FIRST:
+              _army("pure", [3305, 3305, 3305])]                 # list order must not decide)
+    r = plan_composition_step(TARGET, armies, CITY, strike_uids=["tank", "imp1", "imp2"],
+                              reserved_uids=set(), unlocked_ids={3206, 3305}, army_cap=9)
+    froms = [m["from"] for m in r["actions"] if m["op"] == "move_pawn" and m["to"] == "imp1"]
+    assert froms == ["mixed", "mixed"]
