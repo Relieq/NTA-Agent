@@ -81,3 +81,27 @@ def test_set_forge_target_per_stat_mins(tmp_path):
     assert set_forge_target(cfg, {"uid": "6101_1", "budget": 1, "mins": {"x.y": 1}})["ok"] is False
     assert set_forge_target(cfg, {"uid": "6101_1", "budget": 1, "mins": {"3.value": -1}})["ok"] is False
     assert set_forge_target(cfg, {"uid": "6101_1", "budget": 1, "mins": {}})["ok"] is False
+
+
+def test_forge_mins_must_lie_within_the_rollable_range(tmp_path):
+    """A minimum above the best possible roll can never be met (the agent would burn
+    the whole iron budget); below the worst roll it means nothing. Bound both."""
+    from nta_agent.dashboard.server import set_forge_target
+    cfg = RuntimeConfig(distinct_id="x", log_dir=tmp_path)
+    Path(cfg.forge_view_path).write_text(json.dumps({"equips": [
+        {"uid": "6005_1", "name": "Đao Bạo Kích", "possible": [
+            {"type": 3, "label": "ST Bạo", "suffix": "%",
+             "value_range": [150, 180], "odds_range": [20, 40]}]},
+        {"uid": "6019_3", "name": "Rìu Chiến Vàng", "possible": [
+            {"type": 19, "label": "Khiên", "suffix": "", "value_range": [], "odds_range": [50, 80]}]},
+    ]}), encoding="utf-8")
+    ok = set_forge_target(cfg, {"uid": "6005_1", "budget": 5,
+                                "mins": {"3.value": 180, "3.odds": 20}})
+    assert ok["ok"] is True                                         # edges are allowed
+    hi = set_forge_target(cfg, {"uid": "6005_1", "budget": 5, "mins": {"3.value": 181}})
+    assert hi["ok"] is False and "150" in hi["error"] and "180" in hi["error"]
+    lo = set_forge_target(cfg, {"uid": "6005_1", "budget": 5, "mins": {"3.odds": 10}})
+    assert lo["ok"] is False and "20" in lo["error"] and "40" in lo["error"]
+    none = set_forge_target(cfg, {"uid": "6019_3", "budget": 5, "mins": {"19.value": 5}})
+    assert none["ok"] is False                                      # this stat has no value
+    assert set_forge_target(cfg, {"uid": "6019_3", "budget": 5, "mins": {"19.odds": 80}})["ok"]
