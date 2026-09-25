@@ -53,3 +53,147 @@ def demand(armies, target_lv: int) -> dict[int, list[dict]]:
                 out.setdefault(int(p["id"]), []).append(
                     {"uid": str(p["uid"]), "army_uid": str(a["uid"]), "lv": lv})
     return out
+
+
+ARMY_PAWN_MAX = 9  # pawns per army (engine ARMY_PAWN_MAX_COUNT)
+
+
+def _lv(p) -> int:
+    return int(p.get("lv", 0) or 0)
+
+
+def propose(group_armies, spare_armies, target_lv: int, *, rows, barracks_lv: int,
+            exp_book: int, army_count: int, army_cap: int,
+            buffer_size: int = ARMY_PAWN_MAX) -> dict:
+    """A buffer set for leveling ``group_armies`` to ``target_lv``.
+
+    One buffer per weak pawn type, sized to the weak count (≤ ``buffer_size``). A
+    buffer reuses the spare holding most pawns of that type (renamed), fills from
+    other spares (``merge``; when the base is full each incoming pawn swaps out one
+    of its other-type pawns — ``swap_out``) and recruits the rest. New armies beyond
+    the free slots → suggest dismissing the smallest unused spares (never applied
+    without the player's approval). Costs follow ``pawn_cost``.
+    """
+    weak = demand(group_armies, target_lv)
+    spares = {str(a["uid"]): a for a in spare_armies}
+    used_pawns: set[str] = set()
+    used_armies: set[str] = set()
+    buffers: list[dict] = []
+    new_armies = 0
+    for n, (ptype, pawns) in enumerate(sorted(weak.items(), key=lambda kv: -len(kv[1])), 1):
+        size = min(buffer_size, len(pawns))
+
+        def of_type(a, ptype=ptype):
+            return sorted((p for p in (a.get("pawns") or [])
+                           if int(p["id"]) == ptype and str(p["uid"]) not in used_pawns),
+                          key=lambda p: (-_lv(p), str(p["uid"])))
+        ranked = sorted((a for u, a in spares.items() if u not in used_armies and of_type(a)),
+                        key=lambda a: (-len(of_type(a)), str(a["uid"])))
+        buf = {"name": f"Nâng Cấp {n}", "base_uid": "", "types": {ptype: size},
+               "merge": [], "recruit": {}, "pawns": []}
+        have = 0
+        foreign: list[str] = []
+        if ranked:
+            base = ranked.pop(0)
+            buf["base_uid"] = str(base["uid"])
+            used_armies.add(buf["base_uid"])
+            for p in of_type(base)[:size]:
+                used_pawns.add(str(p["uid"]))
+                buf["pawns"].append({"id": ptype, "lv": _lv(p)})
+                have += 1
+            foreign = [str(p["uid"]) for p in (base.get("pawns") or [])
+                       if int(p["id"]) != ptype]
+            room = buffer_size - len(base.get("pawns") or [])
+        else:
+            new_armies += 1
+            room = buffer_size
+        for src in ranked:
+            for p in of_type(src):
+                if have >= size:
+                    break
+                swap_out = None
+                if room <= 0:
+                    if not foreign:
+                        break
+                    swap_out = foreign.pop(0)
+                else:
+                    room -= 1
+                used_pawns.add(str(p["uid"]))
+                buf["merge"].append({"from_uid": str(src["uid"]), "pawn_uid": str(p["uid"]),
+                                     "pawn_id": ptype, "swap_out": swap_out})
+                buf["pawns"].append({"id": ptype, "lv": _lv(p)})
+                have += 1
+        if have < size:
+            buf["recruit"] = {ptype: size - have}
+            buf["pawns"] += [{"id": ptype, "lv": 1}] * (size - have)
+        buffers.append(buf)
+
+    dismiss: list[str] = []
+    short = new_armies - max(0, army_cap - army_count)
+    if short > 0:
+        merged_from = {m["from_uid"] for b in buffers for m in b["merge"]}
+        free = sorted((a for u, a in spares.items() if u not in used_armies and u not in merged_from),
+                      key=lambda a: (len(a.get("pawns") or []), str(a["uid"])))
+        dismiss = [str(a["uid"]) for a in free[:short]]
+
+    books = time_s = 0
+    blocked: set[int] = set()
+    pawns_all = [(ptype, p["lv"]) for ptype, ps in weak.items() for p in ps]
+    pawns_all += [(p["id"], p["lv"]) for b in buffers for p in b["pawns"]]
+    for ptype, lv in pawns_all:
+        c = pawn_cost(rows, ptype, lv, target_lv, barracks_lv)
+        books += c["books"]
+        time_s += c["time_s"]
+        if c["blocked_at"] is not None:
+            blocked.add(ptype)
+    notes = []
+    if books > exp_book:
+        notes.append(f"thiếu sách exp: cần {books}, có {exp_book} — nâng theo đợt")
+    if blocked:
+        notes.append("Trại Lính chưa đủ cấp cho loại lính: " + ", ".join(map(str, sorted(blocked))))
+    if short > len(dismiss):
+        notes.append("không đủ ô đội: cần giải tán thêm hoặc tăng giới hạn đội")
+    for b in buffers:
+        b.pop("pawns")
+    return {"buffers": buffers, "dismiss": dismiss, "books_needed": books,
+            "books_have": int(exp_book), "time_s": time_s // 6, "blocked": sorted(blocked),
+            "notes": notes}
+
+
+def swap_pairs(main_army, buffer_army, target_lv: int) -> list[tuple[str, str]]:
+    """(weak main pawn, ready buffer pawn) pairs of the SAME type — weakest main
+    pawn first, each ready pawn used once."""
+    ready: dict[int, list[str]] = {}
+    for p in sorted(buffer_army.get("pawns") or [], key=lambda p: (-_lv(p), str(p["uid"]))):
+        if _lv(p) >= target_lv:
+            ready.setdefault(int(p["id"]), []).append(str(p["uid"]))
+    out = []
+    for p in sorted(main_army.get("pawns") or [], key=lambda p: (_lv(p), str(p["uid"]))):
+        pool = ready.get(int(p["id"]))
+        if _lv(p) < target_lv and pool:
+            out.append((str(p["uid"]), pool.pop(0)))
+    return out
+
+
+def pick_target(group_armies, buffer_army, target_lv: int) -> str | None:
+    """The main army the buffer improves most (most pairs, then lowest total lv)."""
+    best = None
+    for a in group_armies:
+        n = len(swap_pairs(a, buffer_army, target_lv))
+        if n:
+            key = (-n, sum(_lv(p) for p in a.get("pawns") or []), str(a["uid"]))
+            if best is None or key < best[0]:
+                best = (key, str(a["uid"]))
+    return best[1] if best else None
+
+
+def meeting_cell(main_index: int, owned, occupancy: dict, cap: int = 5,
+                 width: int = 600) -> int | None:
+    """An owned 4-neighbour of the main army's cell with room for one more army."""
+    x, y = main_index % width, main_index // width
+    owned = set(owned)
+    for c in sorted(ny * width + nx for nx, ny in ((x + 1, y), (x - 1, y), (x, y + 1), (x, y - 1))
+                    if 0 <= nx < width and 0 <= ny < width):
+        if c in owned and occupancy.get(c, 0) < cap:
+            return c
+    return None
