@@ -57,6 +57,18 @@ def test_predict_target_loss_maps_when_defeated():
     assert out.loss_lv == 4
 
 
+def test_predict_target_carries_battle_duration():
+    bridge = FakeBridge({"isWin": True, "lossLv": 0, "lossPercent": 0.0, "durationS": 42.5})
+    out = SimBattlePredictor(bridge=bridge).predict_target(
+        _state(), _army(), target_index=1, land_id=0, distance=1)
+    assert out.duration_s == 42.5
+    # an older sidecar without durationS -> unknown, not 0
+    bridge2 = FakeBridge({"isWin": True, "lossLv": 0, "lossPercent": 0.0})
+    out2 = SimBattlePredictor(bridge=bridge2).predict_target(
+        _state(), _army(), target_index=1, land_id=0, distance=1)
+    assert out2.duration_s is None
+
+
 def test_legacy_predict_requires_target_context():
     pred = SimBattlePredictor(bridge=FakeBridge({"isWin": True, "lossLv": 0, "lossPercent": 0}))
     with pytest.raises(SimUnavailable):

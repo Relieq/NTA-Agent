@@ -114,6 +114,11 @@ function runWithReinforce(frames, req) {
   if (!result) {
     return { isWin: false, lossLv: 5, lossPercent: 100, survivors: null, timedOut: true };
   }
+  // engine battle clock (getBattleTime = frame * floor(1000/fps) ms) — how long
+  // the real battle occupies the cell
+  result.frames = fsp.getCurrentFrameIndex();
+  result.timeMs = fsp.getBattleTime();
+  result.durationS = result.timeMs / 1000;
   return result;
 }
 

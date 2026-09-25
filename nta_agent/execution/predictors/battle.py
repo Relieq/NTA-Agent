@@ -52,6 +52,7 @@ class BattlePrediction:
     loss_lv: int          # 1..4, mirrors the client's tiers
     pawn_survival: list | None = None  # per-pawn [{uid,camp,alive,curHp}] from the sim
     source: str = ""      # "sim" (engine, accurate) | "stats" (crude fallback)
+    duration_s: float | None = None  # battle length on the engine clock (sim only)
 
 
 @dataclass

@@ -140,6 +140,8 @@ function forecast(input) {
     return { isWin: false, lossLv: 5, lossPercent: 100, survivors: null, timedOut: true };
   }
   result.timeMs = Math.round((fspModel.getBattleTime && fspModel.getBattleTime()) || 0);
+  result.frames = fspModel.getCurrentFrameIndex();
+  result.durationS = result.timeMs / 1000; // engine battle clock (frame * floor(1000/fps) ms)
   return result;
 }
 

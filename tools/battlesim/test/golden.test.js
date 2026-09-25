@@ -45,6 +45,9 @@ test("known matchup 3101 vs 4101: deterministic win, no loss", () => {
   assert.strictEqual(out.lossPercent, 0);
   assert.deepStrictEqual(out.survivors.self, { alive: 1, total: 1 });
   assert.deepStrictEqual(out.survivors.enemy, { alive: 0, total: 1 });
+  // battle length on the engine clock (frame * 50 ms)
+  assert.ok(out.frames > 0 && out.durationS > 0, `durationS=${out.durationS}`);
+  assert.strictEqual(out.durationS, out.frames * 50 / 1000);
 });
 
 test("determinism: same input yields identical result", () => {
@@ -146,6 +149,7 @@ test("co-located multi-army forecast staggers armies (lead at frame 0) and is or
   // fall back to the old single combined battle (all armies at frame 0).
   assert.ok(Array.isArray(a.survivors.pawns),
     "co-located multi-army must use the reinforce path (per-pawn survivors present)");
+  assert.ok(a.durationS > 0 && a.frames > 0, "reinforce path reports the battle length");
 });
 
 test("formation: beefy-front survives more than squishy-front", (t) => {
