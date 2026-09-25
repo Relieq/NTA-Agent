@@ -296,6 +296,8 @@ class OccupyCell:
     territory_source: object = None  # callable -> (owned_set, zone_centers) for bridging
     locked_source: object = None   # callable -> army-uid set the ArmyComposer is arranging
     lessons_source: object = None  # callable -> active lessons (Inc 3 contextual recall)
+    dig_source: object = None      # callable -> the dig's next cell or None (DigService)
+    dig_hard_sink: object = None   # callable(cell): the dig group can't win it now
     contest_range: int = 1     # a winnable candidate within this of an enemy is contested
     _pending: object = None    # (armies_list, target_index)
     _rally: object = None       # (armies_to_move, city, for_target) — consolidate then attack
@@ -469,6 +471,34 @@ class OccupyCell:
                 best = plan
         return best
 
+    def _dig_select(self, cands, plans_for, predict, cell):
+        """Dig: attack only the planned next cell (DigService), only with the dig
+        group (the active formation = farm group), within ``occupy.max_loss``. An
+        idle group that can't win it is reported (``dig_hard_sink``) so the dig
+        re-plans around the cell; a busy group just means 'not this tick'."""
+        from nta_agent.execution.advisor import best_plan
+        cand = next((c for c in cands if c.index == cell), None)
+        if cand is None:
+            return None
+        grp: set[str] = set()
+        if self.profile is not None:
+            try:
+                from nta_agent.execution.profile import active_formation
+                grp = {str(x) for x in (active_formation(self.profile).get("group") or [])}
+            except Exception:
+                grp = set()
+        plans = [p for p in plans_for(cell)
+                 if not grp or all(str(a.get("uid")) in grp for a in p.armies)]
+        if not plans:
+            return None
+        max_loss = float(self.profile.occupy.get("max_loss", 0) or 0) if self.profile else 0.0
+        plan = best_plan([cand], lambda _i: plans, predict, distance=self._plan_dist)
+        if plan is None or plan.prediction.loss_percent > max_loss:
+            if self.dig_hard_sink is not None:
+                self.dig_hard_sink(cell)
+            return None
+        return plan
+
     def _heal_diversion(self, cands, predict, idle_grp, state):
         """Route a wounded army to heal when its wounds tip its nearest target from
         clean (0-loss) to lossy AND it's convenient (route near, or <4 cells from a
@@ -623,8 +653,16 @@ class OccupyCell:
                    and (self.profile.occupy.get("loot") or {}).get("enabled", True))
         enemy = set(self.threats_source() or ()) if self.threats_source else set()
         plan = self._defensive_select(cands, plans_for, predict, enemy) if enemy else None
+        dig_cell = None
+        if plan is None and self.dig_source is not None:
+            try:
+                dig_cell = self.dig_source()
+            except Exception:
+                dig_cell = None
+            if dig_cell is not None:
+                plan = self._dig_select(cands, plans_for, predict, int(dig_cell))
         if plan is not None:
-            kind = "defend_border"
+            kind = "dig_step" if dig_cell is not None else "defend_border"
         elif mode in _exp.MODES:
             plan = self._expansion_select(cands, plans_for, predict, mode)
             kind = f"expansion:{mode}"

@@ -87,6 +87,16 @@ def _bbox(cells: Iterable[int], margin: int) -> tuple[int, int, int, int]:
             min(W - 1, max(p[0] for p in pts) + margin), min(W - 1, max(p[1] for p in pts) + margin))
 
 
+def target_ok(target: int, *, passable: Callable[[int], bool], others: Iterable[int] = (),
+              enemy: Iterable[int] = (), buffer: int = 2) -> bool:
+    """A cell we may dig to: occupiable land, nobody's, and beyond ``buffer`` of any enemy."""
+    enemy = set(enemy)
+    if target in enemy or target in set(others) or not passable(target):
+        return False
+    tx, ty = xy(target)
+    return all(abs(tx - ex) + abs(ty - ey) > buffer for ex, ey in (xy(e) for e in enemy))
+
+
 def plan_path(
     owned: Iterable[int],
     target: int,
