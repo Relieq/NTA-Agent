@@ -41,9 +41,10 @@ def _spares(at=MAIN):
 
 
 class FakeActions:
-    def __init__(self, armies):
+    def __init__(self, armies, swap_mutates=False):
         self.armies = armies
         self.calls = []
+        self.swap_mutates = swap_mutates
 
     def get_player_armys(self):
         return self.armies
@@ -62,6 +63,12 @@ class FakeActions:
 
     def exchange_pawn_army(self, index, army_uid, uid1, uid2, army_uid2=None):
         self.calls.append(("exchange", index, army_uid, uid1, uid2, army_uid2))
+        if self.swap_mutates and army_uid2 and army_uid2 != army_uid:
+            a1 = next(a for a in self.armies if a["uid"] == army_uid)
+            a2 = next(a for a in self.armies if a["uid"] == army_uid2)
+            i = next(k for k, p in enumerate(a1["pawns"]) if p["uid"] == uid1)
+            j = next(k for k, p in enumerate(a2["pawns"]) if p["uid"] == uid2)
+            a1["pawns"][i], a2["pawns"][j] = a2["pawns"][j], a1["pawns"][i]
 
     def rename_army(self, index, army_uid, name):
         self.calls.append(("rename", army_uid, name))
@@ -153,3 +160,104 @@ def test_levels_continuously_up_to_six_queued(tmp_path):
     assert acts.calls == []                                   # queue full (6)
     _tick(rule, _state(exp_book=0), acts)
     assert acts.calls == []                                   # no books
+
+
+# ---- Task 6: rendezvous next to the main army + same-type swaps ----------------
+
+W = 600
+FIELD = MAIN + 20 * W          # the main army's field cell
+OWNED = {FIELD - 1, FIELD + 1, FIELD + W, FIELD + 2, MAIN}
+
+
+def _setup_done(tmp_path):
+    buffers.save(tmp_path / "buffers.json", {
+        "proposal": {"buffers": [{"name": "Nâng Cấp 1", "base_uid": "B", "types": {"3305": 2},
+                                  "merge": [], "recruit": {}}], "dismiss": []},
+        "approved": True, "setup_done": True, "buffers": {}})
+
+
+def _field_world(buf_index=MAIN, main_index=FIELD, main_state=0):
+    main = {"uid": "G0", "name": "Đội 0", "index": main_index, "state": main_state,
+            "pawns": [_imp("w1", 1), _imp("w2", 2), _imp("ok", 3)]}
+    other = {"uid": "G1", "name": "Đội 1", "index": main_index, "state": 0,
+             "pawns": [_imp("z", 3)]}
+    buf = {"uid": "B", "name": "Nâng Cấp 1", "index": buf_index, "state": 0,
+           "pawns": [_imp("r1", 3), _imp("r2", 3)]}
+    return [main, other, buf]
+
+
+def _rule6(tmp_path):
+    r = _rule(tmp_path)
+    r.territory_source = lambda: (OWNED, [])
+    return r
+
+
+def _phase(tmp_path):
+    return buffers.load(tmp_path / "buffers.json")["buffers"]["B"]
+
+
+def test_ready_buffer_heads_for_a_cell_next_to_its_target(tmp_path):
+    _setup_done(tmp_path)
+    rule = _rule6(tmp_path)
+    acts = FakeActions(_field_world())
+    _tick(rule, _state(), acts)
+    assert _phase(tmp_path)["phase"] == "travel" and _phase(tmp_path)["target"] == "G0"
+    assert acts.calls == [("move", ["B"], FIELD - 1)]        # owned 4-neighbour, lowest index
+
+
+def test_meeting_cell_follows_the_main_army(tmp_path):
+    _setup_done(tmp_path)
+    rule = _rule6(tmp_path)
+    world = _field_world()
+    acts = FakeActions(world)
+    _tick(rule, _state(), acts)
+    world[2]["index"] = FIELD - 1                            # buffer arrived...
+    world[0]["index"] = FIELD + 1                            # ...but the main army moved on
+    world[0]["state"] = 1                                    # (still marching)
+    acts.calls.clear()
+    _tick(rule, _state(), acts)
+    assert acts.calls == [("move", ["B"], FIELD + 2)]        # next to its NEW cell
+
+
+def test_main_army_steps_over_then_swaps_pair_by_pair(tmp_path):
+    _setup_done(tmp_path)
+    rule = _rule6(tmp_path)
+    world = _field_world()
+    acts = FakeActions(world, swap_mutates=True)
+    _tick(rule, _state(), acts)                              # leveling -> travel, buffer walks
+    world[2]["index"] = FIELD - 1                            # buffer arrived next to G0
+    _tick(rule, _state(), acts)
+    assert ("move", ["G0"], FIELD - 1) in acts.calls
+    assert _phase(tmp_path)["phase"] == "swap" and rule.away_uids() == {"G0"}
+    world[0]["index"] = FIELD - 1                            # main arrived
+    acts.calls.clear()
+    _tick(rule, _state(), acts)
+    _tick(rule, _state(), acts)
+    assert acts.calls == [("exchange", FIELD - 1, "G0", "w1", "r1", "B"),
+                          ("exchange", FIELD - 1, "G0", "w2", "r2", "B")]
+    acts.calls.clear()
+    _tick(rule, _state(), acts)                              # no pairs left -> home
+    assert acts.calls == [("move", ["B"], MAIN)] and rule.away_uids() == set()
+    world[2]["index"] = MAIN
+    _tick(rule, _state(), acts)
+    assert _phase(tmp_path)["phase"] == "leveling"
+
+
+def test_swap_error_is_reported_with_its_ecode(tmp_path):
+    _setup_done(tmp_path)
+    rule = _rule6(tmp_path)
+    events = []
+    rule.on_event = lambda k, d=None: events.append((k, d))
+    world = _field_world(buf_index=FIELD - 1, main_index=FIELD - 1)
+    acts = FakeActions(world)
+    st = buffers.load(tmp_path / "buffers.json")
+    st["buffers"] = {"B": {"name": "Nâng Cấp 1", "phase": "swap", "target": "G0",
+                           "cell": FIELD - 1}}
+    buffers.save(tmp_path / "buffers.json", st)
+
+    def boom(*a, **k):
+        raise RuntimeError("game/HD_ExchangePawnArmy: ecode.500036")
+    acts.exchange_pawn_army = boom
+    _tick(rule, _state(), acts)
+    assert ("buffer_error", {"stage": "swap", "ecode": "500036",
+                             "msg": "game/HD_ExchangePawnArmy: ecode.500036"}) in events

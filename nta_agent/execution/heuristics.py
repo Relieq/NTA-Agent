@@ -1589,9 +1589,13 @@ class BufferLeveling:
     check_every: int = 2
     fail_cooldown: int = 12
     queue_cap: int = 6             # engine isPawnLvingQueueFull
-    QUIET_ECODES = ("500012", "500020", "500080", "500079", "500101")
+    # books out, marching, drill ground, already queued, queue full, cell in battle, cell full
+    QUIET_ECODES = ("500012", "500020", "500080", "500079", "500101", "500036", "500037")
+    territory_source: object = None  # callable -> (owned cells, centers) (runner)
     _cooldown: int = 0
     _pending: object = None        # (label, callable)
+    _away: set = field(default_factory=set)
+    _buffers: set = field(default_factory=set)
 
     # ---- helpers --------------------------------------------------------------
     def _rows(self):
@@ -1670,7 +1674,121 @@ class BufferLeveling:
             st["setup_done"] = True
             bstate.save(self.state_path, st)
             self._emit("buffer_setup", {"done": True})
+        if self._plan_travel(state, proposal, armies, group_armies, main, grp["target_lv"],
+                             actions, st):
+            return True
         return self._plan_level(state, proposal, armies, main, grp["target_lv"], actions)
+
+    def away_uids(self) -> set[str]:
+        """Main armies currently stepping over to / swapping with a buffer."""
+        return set(self._away)
+
+    def buffer_uids(self) -> set[str]:
+        return set(self._buffers)
+
+    def _plan_travel(self, state, proposal, armies, group_armies, main, target, actions, st):
+        """Per buffer: leveling -> travel (to an owned cell next to its target main
+        army, re-aimed whenever that army moves) -> swap (the main army steps over;
+        one same-type exchange a tick) -> home (back to the city) -> leveling."""
+        from nta_agent.execution import buffer_plan as bp
+        from nta_agent.execution.army_health import is_idle, leveling_pawn_uids
+        from nta_agent.runtime import buffers as bstate
+        names = {b["name"]: {int(t) for t in (b.get("types") or {})}
+                 for b in proposal.get("buffers") or []}
+        by_uid = {str(a.get("uid")): a for a in armies}
+        bufs = [a for a in armies if str(a.get("name", "")) in names]
+        self._buffers = {str(a["uid"]) for a in bufs}
+        recs = st.setdefault("buffers", {})
+        queued = leveling_pawn_uids(state)
+        owned = set()
+        if self.territory_source is not None:
+            try:
+                owned = set(self.territory_source()[0])
+            except Exception:
+                owned = set()
+        occupancy: dict[int, int] = {}
+        for a in armies:
+            occupancy[int(a.get("index", 0) or 0)] = occupancy.get(int(a.get("index", 0) or 0), 0) + 1
+        books = int(state.resources.exp_book or 0)
+        barracks = self._barracks_lv(state)
+        planned = None
+        for buf in bufs:
+            uid = str(buf["uid"])
+            rec = recs.setdefault(uid, {"name": buf.get("name"), "phase": "leveling",
+                                        "target": None, "cell": None})
+            bidx = int(buf.get("index", 0) or 0)
+            if rec["phase"] == "leveling":
+                if bidx != main or not is_idle(buf) or any(
+                        str(p["uid"]) in queued for p in buf.get("pawns") or []):
+                    continue
+                todo = [p for p in buf.get("pawns") or []
+                        if int(p["id"]) in names[buf["name"]] and int(p.get("lv", 0) or 0) < target
+                        and (bp.level_step(self._rows(), int(p["id"]), int(p.get("lv", 0) or 0))
+                             or {"books": 1e9})["books"] <= books
+                        and (bp.level_step(self._rows(), int(p["id"]), int(p.get("lv", 0) or 0))
+                             or {"barracks_lv": 1e9})["barracks_lv"] <= barracks]
+                tgt = None if todo else bp.pick_target(group_armies, buf, target)
+                if tgt is None:
+                    continue
+                rec.update(phase="travel", target=tgt, cell=None)
+                self._emit("buffer_travel", {"buffer": uid, "target": tgt})
+            mainarmy = by_uid.get(str(rec.get("target")))
+            if mainarmy is None and rec["phase"] in ("travel", "swap"):
+                rec.update(phase="home", target=None, cell=None)
+            if rec["phase"] == "travel":
+                midx = int(mainarmy.get("index", 0) or 0)
+                if bidx == midx:
+                    rec.update(phase="swap", cell=midx)
+                else:
+                    cell = midx if midx == main else bp.meeting_cell(midx, owned, occupancy)
+                    rec["cell"] = cell
+                    if cell is None:
+                        continue
+                    if bidx != cell:
+                        if is_idle(buf) and planned is None:
+                            moves = [{"uid": uid, "index": bidx}]
+                            planned = ("move", lambda m=moves, c=cell: actions.move_cell_army(m, c))
+                        continue
+                    if is_idle(mainarmy) and planned is None:
+                        rec["phase"] = "swap"
+                        moves = [{"uid": str(mainarmy["uid"]), "index": midx}]
+                        planned = ("move", lambda m=moves, c=cell: actions.move_cell_army(m, c))
+                    continue
+            if rec["phase"] == "swap":
+                cell = rec.get("cell")
+                midx = int(mainarmy.get("index", 0) or 0)
+                if midx != cell:
+                    if is_idle(mainarmy) and planned is None:  # (re)send it over
+                        moves = [{"uid": str(mainarmy["uid"]), "index": midx}]
+                        planned = ("move", lambda m=moves, c=cell: actions.move_cell_army(m, c))
+                    continue
+                if not (is_idle(mainarmy) and is_idle(buf)):
+                    continue
+                pairs = bp.swap_pairs(mainarmy, buf, target)
+                if pairs and planned is None:
+                    weak, ready = pairs[0]
+                    m_uid = str(mainarmy["uid"])
+
+                    def run(c=cell, m=m_uid, w=weak, r=ready, b=uid):
+                        actions.exchange_pawn_army(c, m, w, r, army_uid2=b)
+                        self._emit("buffer_swap", {"cell": c, "main": m, "weak": w, "ready": r})
+                    planned = ("swap", run)
+                    continue
+                if not pairs:
+                    rec.update(phase="home", target=None, cell=None)
+            if rec["phase"] == "home":
+                if bidx == main:
+                    rec.update(phase="leveling")
+                elif is_idle(buf) and planned is None:
+                    moves = [{"uid": uid, "index": bidx}]
+                    planned = ("move", lambda m=moves: actions.move_cell_army(m, main))
+        self._away = {str(r["target"]) for r in recs.values()
+                      if r.get("phase") == "swap" and r.get("target")}
+        bstate.save(self.state_path, st)
+        if planned is not None:
+            self._pending = planned
+            return True
+        return False
 
     def _plan_setup(self, step, sid, by_uid, main, actions, st) -> bool:
         from nta_agent.execution.army_health import is_idle

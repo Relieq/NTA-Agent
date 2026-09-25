@@ -188,6 +188,7 @@ def run(cfg: RuntimeConfig, *, ticks: int = 0, session=None, engine=None) -> Non
         if getattr(rule, "name", "") == "buffer_leveling":
             rule.state_path = cfg.buffers_path  # proposal/approval/phases (dashboard reads it)
             rule.on_event = log.append
+            rule.territory_source = _territory_from_forts  # owned cells for the meeting cell
         if getattr(rule, "name", "") == "occupy_cell":
             rule.on_event = log.append
             rule.threats_source = _enemy_from_forts  # defend contested border cells (P2)
