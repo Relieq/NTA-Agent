@@ -3,16 +3,8 @@
 // the client's forecast setup (ArtofwarForecastObj.toArmyStrip / getEnemyArmys)
 // but without the world model — direction/entry come from pure-geometry mapHelper.
 
-// Entry direction from attacker cell to target cell, from pure index geometry
-// (avoids the world model). 0=right 1=left 2=down 3=up, clamped to passPoints.
-function entryDir(fromIndex, targetIndex, mapWidth, nPassPoints) {
-  const dx = (targetIndex % mapWidth) - (fromIndex % mapWidth);
-  const dy = Math.floor(targetIndex / mapWidth) - Math.floor(fromIndex / mapWidth);
-  let dir;
-  if (Math.abs(dx) >= Math.abs(dy)) dir = dx >= 0 ? 0 : 1;
-  else dir = dy >= 0 ? 2 : 3;
-  return nPassPoints > 0 ? dir % nPassPoints : 0;
-}
+// Entry direction: the engine's getAddArmyDir, ported without the world model.
+const { entryDir } = require("./entry-dir");
 
 function pawnAttackSpeed(pawnBaseId) {
   const base = globalThis.assetsMgr.getJsonData("pawnBase", pawnBaseId);
@@ -57,10 +49,11 @@ function buildArea(input, requireByName) {
   // -first within an army, and attackIndex continues across armies in SELECTION
   // order (army 0's pawns act before army 1's) — this seeds the turn sequence,
   // which is what the 1-tile tactic exploits (archers selected first, tank last).
-  const firstEntry = passPoints[entryDir(input.armies[0].index, target, mapWidth, passPoints.length)]
+  const firstEntry = passPoints[entryDir(input.armies[0].index, target, mapWidth, passPoints.length,
+    input.mainCityIndex)]
     || passPoints[0];
   const ourArmys = input.armies.map((army) => {
-    const dir = entryDir(army.index, target, mapWidth, passPoints.length);
+    const dir = entryDir(army.index, target, mapWidth, passPoints.length, input.mainCityIndex);
     const entry = passPoints[dir] || passPoints[0];
     return {
       index: army.index,
