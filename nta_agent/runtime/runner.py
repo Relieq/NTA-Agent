@@ -190,6 +190,7 @@ def run(cfg: RuntimeConfig, *, ticks: int = 0, session=None, engine=None) -> Non
             rule.lessons_source = _active_lessons  # Inc 3: contextual lesson recall
             rule.dig_source = dig.next_target      # dig the planned path (after confirm)
             rule.dig_hard_sink = dig.report_hard
+            rule.dig_live_source = dig.is_live     # reserve the group while waiting too
             if _composer is not None:  # skip armies the composer is arranging (it locks them)
                 rule.locked_source = lambda: getattr(_composer, "locked_uids", set())
             if config is not None:  # pace discovery by the cheapest occupy cost

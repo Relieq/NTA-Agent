@@ -298,6 +298,7 @@ class OccupyCell:
     lessons_source: object = None  # callable -> active lessons (Inc 3 contextual recall)
     dig_source: object = None      # callable -> the dig's next cell or None (DigService)
     dig_hard_sink: object = None   # callable(cell): the dig group can't win it now
+    dig_live_source: object = None  # callable -> bool: a dig is on (reserve its group)
     contest_range: int = 1     # a winnable candidate within this of an enemy is contested
     _pending: object = None    # (armies_list, target_index)
     _rally: object = None       # (armies_to_move, city, for_target) — consolidate then attack
@@ -471,6 +472,17 @@ class OccupyCell:
                 best = plan
         return best
 
+    def _dig_reserved(self) -> set[str]:
+        """The dig group while a confirmed dig is on (active OR waiting) — farming
+        and expansion must leave it alone so it stays together for the dig."""
+        if self.dig_live_source is None:
+            return set()
+        try:
+            live = bool(self.dig_live_source())
+        except Exception:
+            live = False
+        return self._dig_group() if live else set()
+
     def _dig_group(self) -> set[str]:
         if self.profile is None:
             return set()
@@ -641,7 +653,7 @@ class OccupyCell:
         from nta_agent.execution.predictors.sim_bridge import SimUnavailable
 
         cand_by_index = {c.index: c for c in cands}
-        reserved: set[str] = set()  # the dig group while a dig is on (only dig uses it)
+        reserved: set[str] = set()  # filled after the dig step: only the dig uses its group
 
         def plans_for(i):
             # Candidate selection-orders from the active formation group (or all reachable).
@@ -732,8 +744,8 @@ class OccupyCell:
                                         all_armies=all_armies)
                 if plan == "gather":  # the group is being assembled next to the cell
                     return True
-                # the other armies keep farming; the dig group waits for its cell
-                reserved.update(self._dig_group())
+        if plan is None:  # the other armies keep farming; the dig group is kept for the dig
+            reserved.update(self._dig_reserved() | (self._dig_group() if dig_cell is not None else set()))
         if plan is not None:
             kind = "dig_step" if dig_cell is not None else "defend_border"
         elif mode in _exp.MODES:
