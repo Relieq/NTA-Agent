@@ -42,3 +42,9 @@ def test_setup_and_settings_panels_wired():
     st = _read("components/SettingsPanel.js")
     assert "/api/settings" in st and "/api/settings/test-key" in st
     assert 'type="password"' not in st or "secret" in st  # secrets never pre-filled
+
+
+def test_chat_panel_confirms_strike_and_shows_edits_in_words():
+    js = _read("components/BrainChatPanel.js")
+    assert "strike_target:strike.value.targets" in js and "confirmStrike" in js
+    assert "applied_text" in js and "JSON.stringify(o.applied)" not in js

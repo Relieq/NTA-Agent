@@ -86,6 +86,88 @@ def _dominant_by_uid(armies) -> dict:
     return out
 
 
+def _unlocked_pawn_ids(cfg):
+    """Pawn types unlocked right now (snapshot player.pawn_slots), or None if unknown.
+    Unlocks reset when the main city is re-created — never assume a type."""
+    try:
+        snap = json.loads(Path(cfg.snapshot_path).read_text(encoding="utf-8"))
+        ids = (snap.get("player") or {}).get("pawn_slots")
+    except (OSError, ValueError, AttributeError):
+        return None
+    return {int(i) for i in ids} if isinstance(ids, list) and ids else None
+
+
+_EDIT_LABELS = {
+    "occupy.expansion": "Kiểu mở rộng đất",
+    "occupy.max_march_ms": "Thời gian hành quân tối đa (ms)",
+    "occupy.policy.order": "Đội dẫn đầu khi đánh",
+    "occupy.loot.enabled": "Ưu tiên nhặt rương",
+    "occupy.loot.min_reward_per_chest": "Giá trị rương tối thiểu",
+    "revive.enabled": "Tự hồi sinh lính",
+    "logistics.enabled": "Tự bổ sung quân",
+    "logistics.target": "Số lính mục tiêu mỗi đội",
+    "army.active": "Đội hình đang dùng",
+}
+
+
+def describe_edits(clean: dict) -> list[str]:
+    """Readable Vietnamese lines for applied profile edits (the chat used to print
+    raw JSON)."""
+    out: list[str] = []
+
+    def fmt(v):
+        if isinstance(v, bool):
+            return "bật" if v else "tắt"
+        return json.dumps(v, ensure_ascii=False) if isinstance(v, (dict, list)) else str(v)
+
+    def walk(d, path):
+        for k, v in d.items():
+            p = f"{path}.{k}" if path else str(k)
+            if p == "notes" and isinstance(v, list):
+                out.append(f"Ghi chú chiến lược: {len(v)} mục")
+            elif p == "army.strike_target" and v == []:
+                out.append("Huỷ mục tiêu gom quân")
+            elif p == "army.presets" and isinstance(v, dict):
+                out.append("Đội hình đã lưu: " + ", ".join(v) if v else "Xoá đội hình đã lưu")
+            elif isinstance(v, dict) and v and p not in _EDIT_LABELS:
+                walk(v, p)
+            elif p not in ("rationale", "advice", "lessons", "question", "army_renames"):
+                out.append(f"{_EDIT_LABELS.get(p, p)} → {fmt(v)}")
+
+    walk(clean or {}, "")
+    return out
+
+
+def strike_summary(targets: list[dict]) -> str:
+    """'4 đội × 9 Lính Cường Nỏ (Đội 2–Đội 5) + 1 đội × 9 Lính Khiên Lớn (Đội 1)'."""
+    parts = []
+    for t in targets:
+        s = f"{t['armies']} đội × {t['size']} {t.get('name') or t['pawn_id']}"
+        if t.get("names"):
+            s += " (" + ", ".join(t["names"]) + ")"
+        parts.append(s)
+    return " + ".join(parts)
+
+
+def confirm_strike(cfg, strike) -> dict:
+    """Apply a strike-group goal the player CONFIRMED: re-check unlocks, save it and
+    hand it to the running agent (profile_edit). Pure of HTTP."""
+    from nta_agent.brain.guard import sanitize_strike
+    from nta_agent.execution.profile import apply_edits, load_profile, save_profile
+    names = {int(k): v for k, v in _pawn_names(cfg).items() if str(k).isdigit()}
+    clean, notes = sanitize_strike(strike, _unlocked_pawn_ids(cfg), "", names,
+                                   trust_size=True)
+    if not clean:
+        return {"ok": False, "error": "Không còn mục tiêu hợp lệ. " + " ".join(notes)}
+    edits = {"army": {"strike_target": clean}}
+    profile = load_profile(cfg.profile_path)
+    apply_edits(profile, edits)
+    save_profile(profile, cfg.profile_path)
+    append_command(cfg.commands_path, {"action": "profile_edit", "edits": edits})
+    return {"ok": True, "strike_target": clean, "summary": strike_summary(clean),
+            "notes": notes}
+
+
 def handle_chat(cfg, message, *, history=None, propose=None):
     """LLM chat turn: apply profile edits immediately, and PROPOSE (not execute) any
     army renames the player asked for — renames need explicit confirmation first
@@ -112,12 +194,25 @@ def handle_chat(cfg, message, *, history=None, propose=None):
     # description ("đội rìu khiên") to the right uid without knowing pawn ids.
     for row in dg.get("armies", []):
         row["troops"] = _troops_label(row.get("composition") or {}, names)
+    # The pawn types the player can field NOW (unlocks reset on a re-created city):
+    # the LLM must pick strike_target ids from this list, never from memory.
+    unlocked = _unlocked_pawn_ids(cfg)
+    pawn_names = {int(k): v for k, v in names.items() if str(k).isdigit()}
+    if unlocked is not None:
+        dg["unlocked_pawns"] = [{"id": i, "name": pawn_names.get(i, str(i))}
+                                for i in sorted(unlocked)]
     try:
         edits = propose(dg, profile, instruction=message, history=history or [])
     except BrainUnavailable as e:
         return {"ok": False, "error": "brain unavailable: %s" % e}
     except Exception as e:  # network/parse — surface, change nothing
         return {"ok": False, "error": str(e)}
+    # A strike-group goal can rally/recruit/dismiss troops: it is PROPOSED for
+    # confirmation (like renames), never applied straight from chat. [] (clear) is safe.
+    raw_strike = None
+    army_in = edits.get("army") if isinstance(edits, dict) else None
+    if isinstance(army_in, dict) and army_in.get("strike_target"):
+        raw_strike = army_in.pop("strike_target")
     clean = sanitize_edits(edits, profile, valid, valid_build_ids=valid_build)
     if clean:
         apply_edits(profile, clean)
@@ -139,9 +234,18 @@ def handle_chat(cfg, message, *, history=None, propose=None):
                      "dominant": dominant.get(str(a.get("uid"))),
                      "share": (max(comp.values()) / total) if total else 1.0,
                      "troops": _troops_label(dict(comp), names)})
-    guard_q = rename_ambiguity(message, renames, info)
-    if guard_q:
-        renames, question = [], guard_q
+    from nta_agent.brain.guard import sanitize_strike
+    strike, notices = ([], [])
+    if raw_strike:
+        strike, notices = sanitize_strike(raw_strike, unlocked, message, pawn_names)
+    if strike:
+        # Names the player gave belong to the NEW group (renamed once it's assembled),
+        # not to whichever existing armies the LLM guessed.
+        renames, question = [], ""
+    else:
+        guard_q = rename_ambiguity(message, renames, info)
+        if guard_q:
+            renames, question = [], guard_q
     proposal = []
     for r in renames:
         a = by_uid.get(r["uid"], {})
@@ -150,7 +254,12 @@ def handle_chat(cfg, message, *, history=None, propose=None):
                          "current_name": a.get("name", ""),
                          "troops": _troops_label(dict(comp), names)})
     return {"ok": True, "applied": clean, "rationale": (edits or {}).get("rationale", ""),
-            "renames": proposal, "needs_confirm": bool(proposal), "question": question,
+            "applied_text": describe_edits(clean),
+            "strike": ({"targets": strike, "summary": strike_summary(strike)}
+                       if strike else None),
+            "notices": notices,
+            "renames": proposal, "needs_confirm": bool(proposal) or bool(strike),
+            "question": question,
             "active": profile.army.get("active", ""),
             "presets": list(profile.army.get("presets") or {}),
             "notes": profile.notes}
@@ -770,8 +879,12 @@ class Handler(BaseHTTPRequestHandler):
                 length = int(self.headers.get("Content-Length", "0"))
                 body = json.loads(self.rfile.read(length) or b"{}")
                 renames = body.get("renames") or []
-            except (ValueError, TypeError):
+                strike = body.get("strike_target") or []
+            except (ValueError, TypeError, AttributeError):
                 self._json(400, {"ok": False, "error": "bad json"})
+                return
+            if strike:
+                self._json(200, confirm_strike(cfg, strike))
                 return
             self._json(200, confirm_renames(cfg, renames))
             return

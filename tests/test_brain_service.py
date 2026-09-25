@@ -330,3 +330,23 @@ def test_urgent_fires_on_early_warning_alerts(tmp_path):
     (tmp_path / "forts.json").write_text(json.dumps(
         {"threat_summary": {"count": 0, "approaching": True}}), encoding="utf-8")
     assert svc._urgent(_state()) is True
+
+
+def test_autonomous_brain_cannot_set_a_strike_group(tmp_path):
+    """A strike group moves/recruits/dismisses troops: only the player's confirmed
+    chat request may set it (2026-09-25)."""
+    prof = load_profile("none")
+    actions = SimpleNamespace(get_player_armys=list)
+    svc = BrainService(prof, _cfg(tmp_path), actions=actions,
+                       policy=BrainPolicy(every_ticks=1, max_calls=5),
+                       llm_propose=lambda dg, p: {"army": {"strike_target": [
+                           {"pawn_id": 3305, "armies": 4, "size": 9}]}})
+    svc.tick(_state())
+    assert not prof.army.get("strike_target")
+
+
+def test_lesson_levers_drop_strike_target():
+    from nta_agent.brain.guard import _safe_lever_edits
+    out = _safe_lever_edits({"army": {"strike_target": [{"pawn_id": 3305, "armies": 1}]},
+                             "occupy": {"expansion": "spiral"}}, set(), None)
+    assert "army" not in out and out["occupy"]["expansion"] == "spiral"

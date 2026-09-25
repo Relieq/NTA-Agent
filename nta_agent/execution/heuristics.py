@@ -1700,14 +1700,15 @@ class ArmyComposer:
         return {str(u) for u in (active_formation(self.profile).get("group") or [])}
 
     def applies(self, state: GameState, actions: Actions) -> bool:
+        target = self._target()
+        if not target:  # no goal -> release any lock and stand down — even mid-cooldown
+            self.locked_uids = set()   # (a cleared blocked goal kept 5 armies locked ~5 min)
+            self._strike_uids = []
+            self._cooldown = 0
+            self._status({"active": False})
+            return False
         if self._cooldown > 0:
             self._cooldown -= 1
-            return False
-        target = self._target()
-        if not target:  # no goal -> release any lock and stand down
-            self.locked_uids = set()
-            self._strike_uids = []
-            self._status({"active": False})
             return False
         city = int(getattr(state, "main_city_index", 0) or 0)
         if not city:
@@ -1754,6 +1755,7 @@ class ArmyComposer:
                           "issues": issues, "strike": self._strike_uids})
             if self.on_event:
                 self.on_event("composition_done", {"strike": self._strike_uids})
+            self._name_group(actions, target, plan["assign"], by_uid)
             self.profile.army["strike_target"] = []
             if self.target_sink is not None:
                 try:
@@ -1766,6 +1768,27 @@ class ArmyComposer:
         self._status({"active": True, "blocked": False, "done": False,
                       "issues": issues, "strike": self._strike_uids})
         return bool(plan["actions"])
+
+    def _name_group(self, actions, target, assign, by_uid) -> None:
+        """Give the assembled armies the names the player chose. ``assign`` follows
+        the target entries in order (one row per army), so names[i] of each entry
+        goes to that entry's i-th army. Best-effort: a failed rename never blocks."""
+        wanted = []
+        for t in target:
+            names = list(t.get("names") or [])
+            wanted += [names[i] if i < len(names) else None for i in range(int(t["armies"]))]
+        done, failed = [], []
+        for row, name in zip(assign, wanted, strict=False):
+            army = by_uid.get(str(row.get("uid"))) if row.get("uid") else None
+            if not name or army is None or army.get("name") == name:
+                continue
+            try:
+                actions.rename_army(int(army.get("index", 0) or 0), str(army["uid"]), name)
+                done.append({"uid": str(army["uid"]), "name": name})
+            except Exception as e:
+                failed.append({"uid": str(army["uid"]), "name": name, "err": str(e)[:80]})
+        if (done or failed) and self.on_event:
+            self.on_event("composition_named", {"renamed": done, "failed": failed})
 
     def _status(self, s: dict) -> None:
         if self.status_sink is not None:

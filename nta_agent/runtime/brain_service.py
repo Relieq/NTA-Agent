@@ -206,11 +206,10 @@ class BrainService:
             # occupy brain-editable).
             if isinstance(edits, dict):
                 edits.pop("build", None)
-                # army.* is human-owned EXCEPT strike_target (the brain's composition
-                # goal) — keep only that from the brain's army edits, drop the rest.
-                army_e = edits.pop("army", None)
-                if isinstance(army_e, dict) and isinstance(army_e.get("strike_target"), list):
-                    edits["army"] = {"strike_target": army_e["strike_target"]}
+                # army.* is human-owned — including strike_target now: a strike group
+                # rallies/recruits/dismisses troops, so it only comes from the PLAYER's
+                # chat request, confirmed on the dashboard (2026-09-25).
+                edits.pop("army", None)
                 if isinstance(edits.get("occupy"), dict):
                     edits["occupy"].pop("max_loss", None)
             valid = {str(a.get("uid")) for a in armies}

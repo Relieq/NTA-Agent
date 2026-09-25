@@ -229,3 +229,43 @@ def test_done_clears_target_one_shot():
     # next tick: no goal -> stands down, releases every lock, sink not called again
     assert r.applies(_state(), FakeActions(armies)) is False
     assert sunk == [1] and r.locked_uids == set()
+
+
+class NamingActions(FakeActions):
+    def rename_army(self, index, army_uid, name):
+        self.calls.append(("rename", army_uid, name, index))
+
+
+def test_done_names_the_group_in_target_order():
+    """The names the player gave ('Đội 1'..'Đội 5') are applied once assembled."""
+    target = [{"pawn_id": 3206, "armies": 1, "size": 3, "names": ["Đội 1"]},
+              {"pawn_id": 3305, "armies": 2, "size": 3, "names": ["Đội 2", "Đội 3"]}]
+    armies = [_army("tank", [3206] * 3), _army("imp1", [3305] * 3), _army("imp2", [3305] * 3)]
+    r = ArmyComposer(profile=_profile(target))
+    r._strike_uids = ["tank", "imp1", "imp2"]
+    acts = NamingActions(armies)
+    assert r.applies(_state(), acts) is False
+    assert [c[1:3] for c in acts.calls if c[0] == "rename"] == \
+        [("tank", "Đội 1"), ("imp1", "Đội 2"), ("imp2", "Đội 3")]
+
+
+def test_done_skips_armies_already_named_and_entries_without_names():
+    target = [{"pawn_id": 3206, "armies": 1, "size": 3},
+              {"pawn_id": 3305, "armies": 2, "size": 3, "names": ["Đội 2"]}]
+    armies = [_army("tank", [3206] * 3), _army("imp1", [3305] * 3), _army("imp2", [3305] * 3)]
+    armies[1]["name"] = "Đội 2"
+    r = ArmyComposer(profile=_profile(target))
+    r._strike_uids = ["tank", "imp1", "imp2"]
+    acts = NamingActions(armies)
+    r.applies(_state(), acts)
+    assert [c for c in acts.calls if c[0] == "rename"] == []
+
+
+def test_cleared_goal_releases_armies_even_during_blocked_cooldown():
+    """2026-09-25: clearing a blocked goal left 5 armies locked ~5 min (cooldown)."""
+    r = ArmyComposer(profile=_profile(TARGET))
+    r.locked_uids = {"a", "b"}
+    r._cooldown = 60
+    r.profile.army["strike_target"] = []
+    assert r.applies(_state(), FakeActions([])) is False
+    assert r.locked_uids == set() and r._cooldown == 0
