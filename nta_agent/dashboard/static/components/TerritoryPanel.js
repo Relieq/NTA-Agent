@@ -5,12 +5,23 @@ const STEPS = [1, 2, 5, 10, 20, 25, 50, 100];
 const ML = 28, MT = 18;   // ruler margins
 
 function labelStep(scale){ for(const s of STEPS){ if(s*scale >= 56) return s; } return 100; }
+const DIG_STATE={previewing:"Đang tính đường…", preview:"Xem trước — chờ xác nhận", active:"Đang dig",
+ waiting:"Đang chờ (ô chưa đánh nổi)", done:"Hoàn tất", failed:"Không dig được", cancelled:"Đã huỷ"};
+const DIG_REASON={no_path:"không có đường (bị chặn, hoặc mọi lối đều sát địch)",
+ blocked_by_hard:"mọi lối đều phải qua ô nhóm dig chưa thắng nổi trong giới hạn tổn thất — sẽ chờ hồi máu/mạnh lên rồi thử lại",
+ target_unsafe:"ô đích đã có chủ hoặc sát địch", target_lost:"đích bị chiếm và quanh đó không còn ô an toàn",
+ owned:"ô này đã là của bạn"};
+function fmtDur(s){ s=Math.round(s||0); const h=Math.floor(s/3600), m=Math.round((s%3600)/60);
+ return h? `${h} giờ ${m} phút` : `${m} phút`; }
 
 export default {
  setup(){
   const canvas=ref(null), tip=ref(null), sel=ref(null);
   let scale=16, originX=0, originY=0, fitted=false, hover=null;
   let data={main:0, mw:MAPW, owned:[], accepted:[], forts:[], garr:[], zone:[], fortCount:0, fortCap:0, armyCells:{}};
+  const dig=ref({state:"idle"});
+  let digBuf=2; try{ const v=parseInt(localStorage.getItem("nta.digBuffer")); if(v>=0&&v<=6) digBuf=v; }catch(e){}
+  const digBuffer=ref(digBuf);
   let stateMap=new Map(), zoneSet=new Set();
   let dragging=false, moved=0, lastX=0, lastY=0;
 
@@ -171,6 +182,28 @@ export default {
      ctx.fillText("🏯", cx, cy); }
     else { ctx.fillStyle="#f5b301"; ctx.beginPath();
      ctx.arc(cx,cy,Math.max(1.5,scale/5),0,7); ctx.fill(); } });
+   // Dig plan: orange path outline, planned Cứ Điểm (faded 🏯), hard cells (✕), target 🎯.
+   const dg=dig.value||{};
+   if(["preview","active","waiting","previewing"].includes(dg.state)){
+    ctx.strokeStyle="#ff9f1c"; ctx.lineWidth=2;
+    (dg.path||[]).forEach(([x,y],i)=>{ if(!inView(x,y)) return;
+     ctx.strokeRect(sX(x)+2,sY(y)+2,scale-4,scale-4);
+     if(i===0 && dg.state==="active"){ ctx.fillStyle="rgba(255,159,28,0.35)"; ctx.fillRect(sX(x)+2,sY(y)+2,scale-4,scale-4); } });
+    ctx.globalAlpha=0.6;
+    (dg.forts||[]).forEach(([x,y])=>{ if(!inView(x,y)) return; box(x,y,"#8957e5");
+     if(scale>=16){ ctx.font=Math.min(scale-3,16)+"px system-ui"; ctx.textAlign="center"; ctx.textBaseline="middle";
+      ctx.fillText("🏯", sX(x)+scale/2, sY(y)+scale/2); } });
+    ctx.globalAlpha=1;
+    ctx.strokeStyle="#da3633"; ctx.lineWidth=2;
+    (dg.hard||[]).forEach(([x,y])=>{ if(!inView(x,y)) return; ctx.beginPath();
+     ctx.moveTo(sX(x)+3,sY(y)+3); ctx.lineTo(sX(x)+scale-3,sY(y)+scale-3);
+     ctx.moveTo(sX(x)+scale-3,sY(y)+3); ctx.lineTo(sX(x)+3,sY(y)+scale-3); ctx.stroke(); });
+    const t=dg.target_xy;
+    if(t && inView(t[0],t[1])){ ctx.strokeStyle="#ff9f1c"; ctx.lineWidth=3;
+     ctx.strokeRect(sX(t[0])+1,sY(t[1])+1,scale-2,scale-2);
+     if(scale>=14){ ctx.font=Math.min(scale-3,16)+"px system-ui"; ctx.textAlign="center"; ctx.textBaseline="middle";
+      ctx.fillText("🎯", sX(t[0])+scale/2, sY(t[1])+scale/2); } }
+   }
    if(hover && inView(hover.x,hover.y)){ ctx.strokeStyle="#58a6ff"; ctx.lineWidth=2;
     ctx.strokeRect(sX(hover.x)+1,sY(hover.y)+1,scale-2,scale-2); }
    ctx.restore();
@@ -191,6 +224,7 @@ export default {
    // in-game map's army markers. Grouped by cell index: count of armies + pawns +
    // the most-active state (idle < march < fight) for the cell's colour.
    const arms=(await getJSON("/api/armies"))||[];
+   const dg=await getJSON("/api/dig"); if(dg) dig.value=dg;
    const armyCells={};
    arms.forEach(a=>{ const i=(a&&a.index)|0; if(!i) return;
     const c=armyCells[i]||(armyCells[i]={x:i%mw, y:Math.floor(i/mw), armies:[], pawns:0, maxState:0});
@@ -236,6 +270,7 @@ export default {
      const inZone=zoneSet.has(c.x+","+c.y);
      sel.value={ x:c.x, y:c.y, index: st?st.index:idx(c.x,c.y), state: st?st.label:"trống",
        armies: ac?ac.armies:null, inZone,
+       diggable: !st || st.label==="biên giới trống",
        capReached: data.fortCap>0 && data.fortCount>=data.fortCap,
        left:Math.min(ev.clientX-r.left, r.width-170), top:(ev.clientY-r.top) }; } } }
   function onLeave(){ hover=null; tip.value=null; render(); }
@@ -249,16 +284,48 @@ export default {
    built.value=(r&&r.ok)?`Đã gửi lệnh xây Cứ Điểm @(${sel.value.x},${sel.value.y})`:((r&&r.error)||"Lỗi");
    sel.value=null; setTimeout(()=>{built.value="";}, 4000); load(); }
 
+  const digMsg=ref("");
+  async function digCmd(op, body){
+   const r=await postJSON("/api/dig/"+op, body||{});
+   if(r && r.ok){ dig.value=r; digMsg.value=""; } else digMsg.value=(r&&r.error)||"Lỗi";
+   render(); }
+  function digHere(){ if(!sel.value) return;
+   const b=Math.max(0,Math.min(6,parseInt(digBuffer.value)||0));
+   try{ localStorage.setItem("nta.digBuffer", String(b)); }catch(e){}
+   digCmd("request",{index:sel.value.index, buffer:b}); sel.value=null; }
+  const digConfirm=()=>digCmd("confirm");
+  const digCancel=()=>digCmd("cancel");
+
   onMounted(()=>{ const cv=canvas.value; if(cv) cv.addEventListener("wheel", onWheel, {passive:false}); });
   onUnmounted(()=>{ const cv=canvas.value; if(cv) cv.removeEventListener("wheel", onWheel); });
 
-  return { canvas, tip, sel, built, onDown, onMove, onUp, onLeave, zoomBtn, recenterBtn, fitBtn, buildFort };
+  return { canvas, tip, sel, built, onDown, onMove, onUp, onLeave, zoomBtn, recenterBtn, fitBtn, buildFort,
+           dig, digBuffer, digMsg, digHere, digConfirm, digCancel, fmtDur, DIG_STATE, DIG_REASON };
  },
  template:`<div class="card full"><h2>Lãnh thổ</h2>
   <div style="display:flex;gap:6px;align-items:center;margin-bottom:6px;flex-wrap:wrap">
    <button @click="zoomBtn(1.25)">＋</button><button @click="zoomBtn(0.8)">－</button>
    <button @click="fitBtn">Vừa khung</button><button @click="recenterBtn">Về thành chính</button>
-   <span class="muted" style="font-size:12px">Kéo để di chuyển · cuộn để phóng to · bấm ô để xem toạ độ</span></div>
+   <span class="muted" style="font-size:12px">Kéo để di chuyển · cuộn để phóng to · bấm ô để xem toạ độ / ⛏ dig tới đó</span></div>
+  <div v-if="dig.state && dig.state!=='idle'" class="digcard" style="border:1px solid #ff9f1c;border-radius:6px;
+    padding:6px 10px;margin-bottom:6px;font-size:13px;display:flex;gap:10px;flex-wrap:wrap;align-items:center">
+   <b>⛏ Dig tới ({{ (dig.target_xy||[])[0] }}, {{ (dig.target_xy||[])[1] }})</b>
+   <span>{{ DIG_STATE[dig.state] || dig.state }}</span>
+   <span v-if="dig.cells!=null && ['preview','active','waiting'].includes(dig.state)">
+    {{ dig.cells }} ô · ước tính {{ fmtDur(dig.total_s) }}
+    <span v-if="(dig.forts||[]).length"> · {{ dig.forts.length }} Cứ Điểm dự kiến</span>
+    <span v-if="dig.stamina"> · ~{{ dig.stamina }} thể lực</span></span>
+   <span v-if="dig.retargets && dig.retargets.length" style="color:#e3b341">
+    đích cũ bị chiếm → đổi sang ô gần nhất</span>
+   <span v-if="dig.reason && dig.reason!=='ok' && DIG_REASON[dig.reason]" style="color:#e3b341">{{ DIG_REASON[dig.reason] }}</span>
+   <span v-if="dig.rough" class="muted">(ước lượng thô — mô phỏng không sẵn sàng)</span>
+   <span v-if="dig.pending" class="muted">⏳ chờ agent xử lý (agent phải đang chạy)</span>
+   <span class="muted" v-if="['preview','active'].includes(dig.state)">chưa tính thời gian chờ thể lực/hồi máu</span>
+   <button v-if="dig.state==='preview' && ['ok','blocked_by_hard'].includes(dig.reason) && !dig.pending"
+     @click="digConfirm">✔ Xác nhận dig</button>
+   <button v-if="['preview','previewing','active','waiting'].includes(dig.state)" @click="digCancel">✖ Huỷ</button>
+   <span v-if="digMsg" style="color:#da3633">{{ digMsg }}</span>
+  </div>
   <div style="position:relative">
    <canvas ref="canvas" class="terrmap" width="640" height="360"
      @mousedown="onDown" @mousemove="onMove" @mouseup="onUp" @mouseleave="onLeave"
@@ -275,6 +342,10 @@ export default {
     <template v-if="sel.inZone">
      <div v-if="sel.capReached" class="muted" style="font-size:12px;color:#e3b341">Đã đủ số Cứ Điểm</div>
      <button v-else @click="buildFort">🏯 Xây Cứ Điểm ở đây</button></template>
+    <div v-if="sel.diggable" style="font-size:12px;margin:4px 0">
+     <button @click="digHere">⛏ Dig tới đây</button>
+     <label class="muted"> cách địch ≥ <input type="number" min="0" max="6" v-model="digBuffer"
+       style="width:3em"> ô</label></div>
     <button @click="sel=null">Đóng</button></div>
    <div v-if="built" class="muted" style="position:absolute;left:8px;bottom:8px;background:#0d1117;
      border:1px solid var(--border-hi);border-radius:4px;padding:2px 8px;font-size:12px;color:#199e70;z-index:8">{{ built }}</div>
@@ -289,6 +360,7 @@ export default {
    <span>quân (số=lính): <b style="color:#c3c2b7">▢</b>rảnh <b style="color:#58a6ff">▢</b>hành quân <b style="color:#da3633">▢</b>đang đánh</span>
    <span><b style="color:#da3633">■</b> ô địch</span>
    <span><b class="muted">▢</b> biên giới trống (xấp xỉ)</span>
+   <span><b style="color:#ff9f1c">▢</b> đường dig 🎯 đích · <b style="color:#da3633">✕</b> ô chưa đánh nổi</span>
    <span><b style="color:#F5E900">◇</b> vùng bảo vệ/tăng tốc = bán kính 6 ô (Manhattan) quanh thành 2×2 — không cần xây Cứ Điểm bên trong</span>
   </div></div>`
 };

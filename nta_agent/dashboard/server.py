@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 import json
+import os
 import re
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
@@ -381,6 +382,53 @@ def read_forts_view(cfg) -> dict:
             "pending": _read_pending_forts(cfg)}
 
 
+def read_dig(cfg) -> dict:
+    """The dig status (dig.json, written by the agent's DigService) + whether a
+    dashboard request is still waiting for the agent to pick it up."""
+    try:
+        d = json.loads(Path(cfg.dig_state_path).read_text(encoding="utf-8"))
+    except (OSError, ValueError):
+        d = {}
+    if not isinstance(d, dict):
+        d = {}
+    try:
+        req = json.loads(Path(cfg.dig_request_path).read_text(encoding="utf-8"))
+    except (OSError, ValueError):
+        req = {}
+    pending = bool(req.get("seq") is not None and req.get("seq") != d.get("seq"))
+    out = {"state": "idle", **d, "pending": pending}
+    if pending:
+        out["pending_op"] = req.get("op")
+    return out
+
+
+def dig_command(cfg, op: str, body: dict) -> dict:
+    """request {index, buffer} | confirm | cancel -> dig_request.json (a fresh seq),
+    which the agent's DigService answers in dig.json."""
+    import time as _time
+    if op not in ("request", "confirm", "cancel"):
+        return {"ok": False, "error": "thao tác không hợp lệ"}
+    req = {"seq": _time.time_ns(), "op": op}
+    if op == "request":
+        try:
+            idx = int(body["index"])
+        except (KeyError, TypeError, ValueError):
+            return {"ok": False, "error": "cần chọn ô đích"}
+        if not 0 <= idx < 600 * 600:
+            return {"ok": False, "error": "ô ngoài bản đồ"}
+        try:
+            buffer = int(body.get("buffer", 2))
+        except (TypeError, ValueError):
+            buffer = 2
+        req.update(index=idx, buffer=max(0, min(6, buffer)))
+    p = Path(cfg.dig_request_path)
+    p.parent.mkdir(parents=True, exist_ok=True)
+    tmp = p.with_suffix(".tmp")
+    tmp.write_text(json.dumps(req), encoding="utf-8")
+    os.replace(tmp, p)
+    return {"ok": True, **read_dig(cfg)}
+
+
 def _read_pending_forts(cfg) -> list:
     """Fort cells queued to build (waiting on resources), as [{index, x, y}]."""
     from nta_agent.runtime import fort_queue
@@ -729,6 +777,8 @@ class Handler(BaseHTTPRequestHandler):
             self._json(200, read_territory_view(cfg))
         elif parsed.path == "/api/forts":
             self._json(200, read_forts_view(cfg))
+        elif parsed.path == "/api/dig":
+            self._json(200, read_dig(cfg))
         elif parsed.path == "/api/intel":
             self._json(200, read_intel(cfg))
         elif parsed.path == "/api/errors":
@@ -879,6 +929,25 @@ class Handler(BaseHTTPRequestHandler):
                 self._json(400, {"ok": False, "error": "bad json"})
                 return
             r = set_forge_target(cfg, body if isinstance(body, dict) else {})
+            self._json(200 if r["ok"] else 400, r)
+            return
+        if parsed.path.startswith("/api/dig/"):
+            # pick a target / confirm the previewed path / cancel — the agent's
+            # DigService does the work (a preview never sends a game command)
+            op = parsed.path[len("/api/dig/"):]
+            body = {}
+            if op == "request":
+                body = self._body()
+                if body is None:
+                    return
+            else:
+                try:  # drain an optional body (see /api/agent/)
+                    length = int(self.headers.get("Content-Length", "0"))
+                    if length:
+                        self.rfile.read(length)
+                except (ValueError, TypeError):
+                    pass
+            r = dig_command(cfg, op, body)
             self._json(200 if r["ok"] else 400, r)
             return
         if parsed.path == "/api/forts/build":
