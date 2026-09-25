@@ -89,6 +89,16 @@ def run(cfg: RuntimeConfig, *, ticks: int = 0, session=None, engine=None) -> Non
     brain = BrainService(profile, cfg, on_event=on_event, actions=agent.actions)
     from nta_agent.runtime.fort_service import FortService
     forts = FortService(cfg, agent.actions, on_event=on_event)
+    # Dig a path to a player-picked cell (dashboard request -> preview -> confirm).
+    from nta_agent.runtime.dig_service import (
+        DigService,
+        make_predict_factory,
+        make_stamina_fn,
+    )
+    dig = DigService(cfg, agent.actions, profile=profile, on_event=on_event,
+                     predict_factory=make_predict_factory(agent.actions, profile))
+    dig._stamina_fn = make_stamina_fn(
+        config, dig.world, lambda: int(getattr(session.state, "main_city_index", 0) or 0))
     # Early warning (capture / incoming hostile marches / approach) -> alerts.json.
     from nta_agent.runtime.alert_service import AlertService
     alerts = AlertService(cfg, agent.actions, on_event=on_event,
@@ -138,6 +148,8 @@ def run(cfg: RuntimeConfig, *, ticks: int = 0, session=None, engine=None) -> Non
         centers = ([main, main + 1, main + 600, main + 601] if main else []) + forts
         return owned, centers
 
+    dig._forts_source = _forts_from_json
+
     def _clear_strike_target():
         from nta_agent.execution.profile import clear_strike_target
         clear_strike_target(cfg.profile_path)
@@ -176,6 +188,8 @@ def run(cfg: RuntimeConfig, *, ticks: int = 0, session=None, engine=None) -> Non
             rule.threats_source = _enemy_from_forts  # defend contested border cells (P2)
             rule.territory_source = _territory_from_forts  # bridging (forward staging)
             rule.lessons_source = _active_lessons  # Inc 3: contextual lesson recall
+            rule.dig_source = dig.next_target      # dig the planned path (after confirm)
+            rule.dig_hard_sink = dig.report_hard
             if _composer is not None:  # skip armies the composer is arranging (it locks them)
                 rule.locked_source = lambda: getattr(_composer, "locked_uids", set())
             if config is not None:  # pace discovery by the cheapest occupy cost
@@ -262,6 +276,8 @@ def run(cfg: RuntimeConfig, *, ticks: int = 0, session=None, engine=None) -> Non
         _safe(log.tick, i, fired, state)
         _safe(_write_health)
         _safe(alerts.tick, state)  # observe-only: runs even when paused/captured
+        # dig: previews only read map chunks; the digging itself is OccupyCell's
+        _safe(dig.tick, state)
         _safe(_write_forge_view, state)
         # pick up dashboard edits + stop the brain from clobbering them (shared obj)
         _safe(reload_into, profile, cfg.profile_path)

@@ -209,6 +209,22 @@
       "sha256": "b3756c3b63ccb04a6f7e4595d04ff92c5a9004b9fadd4ac4ab417fd6b7028756",
       "rows": 112
     },
+    "maps_0.json": {
+      "sha256": "0cfaff7b63ba2cf0477da90225cbd54a8c5cef4e2f696e67a6b03346255654bc",
+      "rows": 2500
+    },
+    "maps_13.json": {
+      "sha256": "ab07930efe652bc30fff908ce7b8cd66c25755d7d081ae4a895e4cdf039e729f",
+      "rows": 360000
+    },
+    "maps_14.json": {
+      "sha256": "7dd50cf32294c623eb5f0e957ad2e0eaea82ad2e7eac3d560dadf48596b69716",
+      "rows": 360000
+    },
+    "maps_15.json": {
+      "sha256": "428562385374b33630501c1aa71f60690135a03c40312bd7928a196dd023a2a8",
+      "rows": 360000
+    },
     "mythBlindBoxBase.json": {
       "sha256": "99c7141131c2b051a3c43920c10ecfc87df31b00b2fd6a76ee2009621d3b4162",
       "rows": 4

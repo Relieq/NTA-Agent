@@ -145,3 +145,11 @@ def test_forge_panel_wired():
     assert "possible" in fp and ".odds" in fp          # per-stat minimums per effect
     app = _c("App.js")
     assert "ForgePanel" in app
+
+
+def test_territory_map_dig_controls():
+    terr = _c("TerritoryPanel.js")
+    assert "/api/dig" in terr and "/api/dig/" in terr
+    assert "Dig tới đây" in terr and "Xác nhận dig" in terr and "Huỷ" in terr
+    assert "path" in terr and "🎯" in terr and "hard" in terr      # path overlay
+    assert "nta.digBuffer" in terr                                  # enemy buffer input

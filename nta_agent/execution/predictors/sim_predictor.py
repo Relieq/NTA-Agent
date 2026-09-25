@@ -95,6 +95,7 @@ class SimBattlePredictor:
             loss_percent=float(res.get("lossPercent", 0.0) or 0.0),
             loss_lv=int(res.get("lossLv", 0) or 0),
             pawn_survival=(res.get("survivors") or {}).get("pawns"),
+            duration_s=(float(res["durationS"]) if res.get("durationS") is not None else None),
         )
 
     def predict(self, my_pawns: list[dict], enemy_pawns: list[dict]) -> BattlePrediction:

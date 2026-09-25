@@ -118,6 +118,14 @@ class RuntimeConfig:
         return self.log_dir / "pending_renames.json"   # renames waiting for an idle army
 
     @property
+    def dig_request_path(self) -> Path:
+        return self.log_dir / "dig_request.json"      # dashboard -> agent (request/confirm/cancel)
+
+    @property
+    def dig_state_path(self) -> Path:
+        return self.log_dir / "dig.json"              # agent -> dashboard (preview/active/...)
+
+    @property
     def fort_decisions_path(self) -> Path:
         return self.log_dir / "fort_decisions.json"
 

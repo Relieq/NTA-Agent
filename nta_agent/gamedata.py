@@ -229,10 +229,13 @@ def extract_config_tables(apk: Path, out_dir: Path, res_base: str = RES_BASE,
     with zipfile.ZipFile(apk) as z:
         cfg = json.loads(z.read(f"{res_base}/config.json"))
         paths_, uuids = cfg["paths"], cfg["uuids"]
+        # common/json/* = config tables; tmp/json/maps/maps_<n> = the world maps' per-cell
+        # landIds (index = y*600+x), used to plan digs without probing every cell
         tables = {
             int(idx): v[0].split("/")[-1]
             for idx, v in paths_.items()
-            if isinstance(v, list) and v and str(v[0]).startswith("common/json/")
+            if isinstance(v, list) and v
+            and str(v[0]).startswith(("common/json/", "tmp/json/maps/"))
         }
         for idx, name in sorted(tables.items(), key=lambda kv: kv[1]):
             uuid = decode_uuid(uuids[idx])
