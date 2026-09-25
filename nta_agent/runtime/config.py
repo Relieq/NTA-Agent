@@ -114,6 +114,10 @@ class RuntimeConfig:
         return self.log_dir / "agent.pid"
 
     @property
+    def pending_renames_path(self) -> Path:
+        return self.log_dir / "pending_renames.json"   # renames waiting for an idle army
+
+    @property
     def fort_decisions_path(self) -> Path:
         return self.log_dir / "fort_decisions.json"
 

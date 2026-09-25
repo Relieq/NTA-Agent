@@ -31,7 +31,7 @@ export default {
   async function confirm(){
    busy.value=true;
    const o=await postJSON("/api/chat/confirm",{renames:pending.value.map(r=>({uid:r.uid,name:r.name}))});
-   say("Brain", (o&&o.ok)? ("✔ Đã gửi lệnh đổi tên "+(o.queued||[]).length+" đội (agent thực thi khi đang chạy).")
+   say("Brain", (o&&o.ok)? ("✔ Đã xếp lệnh đổi tên "+(o.queued||[]).length+" đội — agent đổi khi đội rảnh (đội đang đánh/hành quân sẽ được đổi sau).")
                          : ("⚠️ "+((o&&o.error)||"lỗi")));
    pending.value=null; busy.value=false;
   }

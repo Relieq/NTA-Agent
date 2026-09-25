@@ -119,8 +119,10 @@ def test_tick_executes_rename_army(tmp_path):
     cfg = _cfg(tmp_path)
     act = FakeActions()
     act.rename_army = lambda index, uid, name: act.calls.append(("rename", index, uid, name))
+    # the rename is sent with the army's CURRENT index (it moved), once it's idle
+    act.get_player_armys = lambda: [{"uid": "A", "name": "D1", "index": 80000, "state": 0}]
     svc = DecisionService(act, FakeConfig(), cfg)
     append_command(cfg.commands_path,
                    {"action": "rename_army", "index": 79542, "uid": "A", "name": "Đội 1"})
     svc.tick(_state())
-    assert ("rename", 79542, "A", "Đội 1") in act.calls
+    assert ("rename", 80000, "A", "Đội 1") in act.calls
