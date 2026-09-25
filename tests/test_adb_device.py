@@ -7,7 +7,16 @@ from nta_agent.io.adb import DeviceManager
 
 @pytest.fixture(scope="module")
 def dm() -> DeviceManager:
-    return DeviceManager.connect()
+    # connect() trusts the configured serial, so check the emulator is really attached
+    # (LDPlayer is normally closed day to day — skip instead of failing the suite).
+    try:
+        d = DeviceManager.connect()
+        listed = d._raw(["devices"], timeout=10).decode("utf-8", "ignore")
+    except Exception as e:
+        pytest.skip(f"no adb/emulator: {e}")
+    if f"{d.serial}\tdevice" not in listed:
+        pytest.skip(f"emulator {d.serial} not attached")
+    return d
 
 
 @pytest.mark.device

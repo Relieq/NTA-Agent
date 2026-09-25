@@ -272,3 +272,18 @@ def test_gold_comes_from_the_user_not_the_player():
     g = GameState()
     apply_user(g, {"uid": "1", "gold": 75})
     assert g.resources.gold == 75
+
+
+def test_level_updates_never_invent_a_building():
+    """Live 2026-09-25 the dashboard listed '#3202 Lv2' (3202 = Lính Khiên Lớn, not a
+    building): a level update for an unknown uid was appended as a new building. The
+    engine's buildUp(uid, lv) only updates an EXISTING building; only ADD_BUILD adds."""
+    from nta_agent.state import apply_notify, from_entry_rst
+    from nta_agent.state.store import apply_area_notify
+    st = from_entry_rst({"player": {"uid": "1", "mainCityIndex": 5,
+        "builds": [{"index": 5, "uid": "b1", "id": 2001, "lv": 5}]}})
+    apply_notify(st, {"list": [{"type": 5, "data_5": {"index": 5, "uid": "p9", "id": 3202, "lv": 2}}]})
+    apply_area_notify(st, {"type": 5, "index": 5, "data_5": {"index": 5, "uid": "p9", "id": 3202, "lv": 2}})
+    assert [(b.id, b.lv) for b in st.builds] == [(2001, 5)]
+    apply_area_notify(st, {"type": 8, "index": 5, "data_8": {"index": 5, "uid": "n", "id": 2008, "lv": 1}})
+    assert {b.id for b in st.builds} == {2001, 2008}          # ADD_BUILD still adds

@@ -333,8 +333,12 @@ def apply_player_update(state: GameState, item: dict[str, Any]) -> None:
             equips.append(dict(eq))
 
 
-def _apply_build_update(state: GameState, info: dict[str, Any]) -> None:
-    """Merge one AreaBuildInfo (index,uid,id,lv,point) into ``state.builds``."""
+def _apply_build_update(state: GameState, info: dict[str, Any], add: bool = False) -> None:
+    """Merge one AreaBuildInfo (index,uid,id,lv,point) into ``state.builds``.
+
+    Like the engine's ``buildUp(uid, lv)`` this only updates an EXISTING building;
+    only ADD_BUILD passes ``add=True``. Appending unknown uids turned a queue item
+    that isn't a building (a pawn-type upgrade, 3202 Lv2) into a phantom building."""
     b = _building(info)
     if not b.index:
         b.index = state.main_city_index
@@ -344,7 +348,8 @@ def _apply_build_update(state: GameState, info: dict[str, Any]) -> None:
             if b.uid:
                 existing.uid = b.uid
             return
-    state.builds.append(b)
+    if add:
+        state.builds.append(b)
 
 
 def apply_notify(state: GameState, notify: dict[str, Any]) -> GameState:
@@ -370,7 +375,7 @@ def apply_area_notify(state: GameState, notify: dict[str, Any]) -> GameState:
     if t in (_AREA_BUILD_UP, _AREA_ADD_BUILD):
         info = notify.get(f"data_{t}")
         if isinstance(info, dict):
-            _apply_build_update(state, info)
+            _apply_build_update(state, info, add=(t == _AREA_ADD_BUILD))
     elif t == _AREA_REMOVE_BUILD:
         uid = str(notify.get("data_9") or "")
         if uid:
