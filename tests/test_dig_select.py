@@ -83,3 +83,59 @@ def test_a_wounded_group_waits_to_heal_instead_of_marking_the_cell_hard():
     assert r._dig_select(CANDS, plans_for, predict, CELL) is None
     assert r.hard == []
     assert "dig_heal_wait" in events
+
+
+# --- the whole group must be there: live 2026-09-25 a split group made every cell
+#     look 'hard' (a lone army loses) and the dig re-routed every minute ---
+
+def _army(uid, idx, state=0):
+    return {"uid": uid, "index": idx, "state": state, "pawns": [{"id": 3305}]}
+
+
+GROUP = ("g1", "g2", "g3")
+
+
+def _group_plans(idxs):
+    def plans_for(i):
+        out = [Plan(armies=[{"uid": u, "index": idxs[u]}], target=i, label=u, prediction=None)
+               for u in GROUP if u in idxs]
+        full = [{"uid": u, "index": idxs[u]} for u in GROUP if u in idxs]
+        if len(full) > 1 and len({a["index"] for a in full}) == 1:
+            out.append(Plan(armies=full, target=i, label="all", prediction=None))
+        return out
+    return plans_for
+
+
+def _needs_all(plan):  # only the whole group wins cleanly; any subset loses
+    return SimpleNamespace(win=len(plan.armies) == 3, loss_percent=0.0 if len(plan.armies) == 3 else 100.0)
+
+
+def test_busy_group_member_means_wait_not_hard():
+    r = _rule(group=GROUP)
+    armies = [_army("g1", CELL - 1), _army("g2", CELL - 1), _army("g3", 7, state=1)]  # g3 marching
+    got = r._dig_select(CANDS, _group_plans({"g1": CELL - 1, "g2": CELL - 1}), _needs_all, CELL,
+                        all_armies=armies)
+    assert got is None and r.hard == []
+
+
+def test_idle_but_split_group_is_gathered_next_to_the_cell():
+    r = _rule(group=GROUP)
+    r.territory_source = lambda: ({CELL - 1, CELL - 600}, [])
+    armies = [_army("g1", CELL - 1), _army("g2", 5), _army("g3", 9)]
+    got = r._dig_select(CANDS, _group_plans({"g1": CELL - 1, "g2": 5, "g3": 9}), _needs_all,
+                        CELL, all_armies=armies)
+    assert got == "gather" and r.hard == []
+    moved, stage, tgt = r._rally
+    assert stage in (CELL - 1, CELL - 600) and tgt == CELL
+    assert sorted(a["uid"] for a in moved) == ["g2", "g3"]   # g1 is already there
+
+
+def test_assembled_group_attacks_and_only_it_can_call_a_cell_hard():
+    r = _rule(group=GROUP)
+    here = {u: CELL - 1 for u in GROUP}
+    armies = [_army(u, CELL - 1) for u in GROUP]
+    plan = r._dig_select(CANDS, _group_plans(here), _needs_all, CELL, all_armies=armies)
+    assert plan is not None and len(plan.armies) == 3
+    lossy = lambda p: SimpleNamespace(win=True, loss_percent=5.0)
+    assert r._dig_select(CANDS, _group_plans(here), lossy, CELL, all_armies=armies) is None
+    assert r.hard == [CELL]
