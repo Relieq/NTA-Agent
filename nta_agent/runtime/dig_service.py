@@ -108,6 +108,10 @@ class DigService:
         n = self.dig.get("next")
         return int(n) if n is not None else None
 
+    def is_live(self) -> bool:
+        """A confirmed dig is on (active or waiting): the dig group is reserved."""
+        return self.dig.get("state") in LIVE and self._pending_op() != "cancel"
+
     def report_hard(self, idx: int) -> None:
         """OccupyCell couldn't win ``idx`` within max_loss with the real defenders:
         treat it as hard for a while and re-plan around it."""

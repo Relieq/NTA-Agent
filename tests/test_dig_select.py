@@ -139,3 +139,15 @@ def test_assembled_group_attacks_and_only_it_can_call_a_cell_hard():
     lossy = lambda p: SimpleNamespace(win=True, loss_percent=5.0)
     assert r._dig_select(CANDS, _group_plans(here), lossy, CELL, all_armies=armies) is None
     assert r.hard == [CELL]
+
+
+def test_dig_group_is_reserved_while_the_dig_waits():
+    # dig waiting (no next cell): expansion must still leave the group alone
+    from nta_agent.execution.heuristics import OccupyCell as OC
+    r = OC(profile=SimpleNamespace(occupy={"max_loss": 0},
+                                   army={"group": ["g1"], "presets": {}, "active": ""}))
+    r.dig_source = lambda: None
+    r.dig_live_source = lambda: True
+    assert r._dig_reserved() == {"g1"}
+    r.dig_live_source = lambda: False
+    assert r._dig_reserved() == set()

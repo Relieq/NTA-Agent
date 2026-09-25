@@ -275,3 +275,19 @@ def test_pending_cancel_stops_digging_before_the_agent_handles_it(tmp_path):
     assert svc.next_target() is not None
     _req(tmp_path, 3, "cancel")                 # not ticked yet
     assert svc.next_target() is None
+
+
+def test_is_live_covers_waiting_and_a_pending_cancel_ends_it(tmp_path):
+    scan = {"owned": _owned_block()}
+    svc, _ = _svc(tmp_path, scan)
+    assert svc.is_live() is False
+    _req(tmp_path, 1, "request", index=I(16, 10))
+    svc.tick(_state())
+    assert svc.is_live() is False            # a preview reserves nothing
+    _req(tmp_path, 2, "confirm")
+    svc.tick(_state())
+    assert svc.is_live() is True
+    svc.dig["state"] = "waiting"
+    assert svc.is_live() is True             # waiting still owns the group
+    _req(tmp_path, 3, "cancel")
+    assert svc.is_live() is False
