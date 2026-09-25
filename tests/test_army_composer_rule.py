@@ -301,3 +301,32 @@ def test_failed_rename_backs_off_instead_of_retrying_every_tick():
         r._cooldown = 0
         r.applies(_state(), acts)
     assert sum(1 for c in acts.calls if c[0] == "rename") == 1
+
+
+def test_group_names_are_stable_when_the_assignment_order_changes():
+    """2026-09-25 11:53: the planner's order changed and 'Đội 4' became 'Đội 5' while
+    'Đội 2'/'Đội 3' were re-assigned (ecode 500061). A name the group already gave an
+    army sticks; only armies without a group name get the free ones."""
+    target = [{"pawn_id": 3305, "armies": 3, "size": 3, "names": ["Đội 2", "Đội 3", "Đội 4"]}]
+    armies = [_army("new", [3305] * 3), _army("a", [3305] * 3), _army("b", [3305] * 3)]
+    armies[1]["name"], armies[2]["name"] = "Đội 2", "Đội 4"
+    r = ArmyComposer(profile=_profile(target))
+    acts = NamingActions(armies)
+    r._name_group(acts, target, [{"uid": "new", "pawn_id": 3305}, {"uid": "a", "pawn_id": 3305},
+                                 {"uid": "b", "pawn_id": 3305}], {x["uid"]: x for x in armies})
+    assert [c[1:3] for c in acts.calls if c[0] == "rename"] == [("new", "Đội 3")]
+
+
+def test_rally_skips_armies_in_battle_and_the_batch_continues():
+    """500036 (in battle) on a rally aborted the whole batch ~every minute (26x)."""
+    target = [{"pawn_id": 3305, "armies": 1, "size": 3}]
+    far = _army("far", [3305], index=999)
+    far["state"] = 2                                   # fighting
+    r = ArmyComposer(profile=_profile(target))
+    r._city = CITY
+    r._plan = {"actions": [{"op": "rally", "uids": ["far"], "to": CITY},
+                           {"op": "move_pawn", "from": "d", "pawn": "p", "to": "far"}]}
+    acts = NamingActions([far])
+    r.act(acts)
+    assert not any(c[0] == "rally" for c in acts.calls)
+    assert any(c[0] == "move" for c in acts.calls)

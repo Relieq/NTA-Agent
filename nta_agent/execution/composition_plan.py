@@ -109,6 +109,17 @@ def plan_composition_step(target, armies, city_index, strike_uids, reserved_uids
             pid = int(p.get("id", 0) or 0)
             if pid in needed_types and not _is_hero(p):
                 donor_pool.setdefault(pid, []).append((d["uid"], p.get("uid")))
+    # Take pawns out of MIXED armies first and leave pure ones for last (user rule
+    # 2026-09-25: it broke up a full 9-IMP army while mixed IMP+Đao Khiên armies kept
+    # their IMP). The pool is popped from the END, so sort purest donors to the front.
+    donor_by_uid = {d["uid"]: d for d in co_donors}
+
+    def _purity(entry, pid):
+        d = donor_by_uid[entry[0]]
+        n = len(d.get("pawns") or []) or 1
+        return (_count(d, pid) / n, _count(d, pid))
+    for pid, pool in donor_pool.items():
+        pool.sort(key=lambda e, pid=pid: _purity(e, pid), reverse=True)
 
     # 2a) PURGE non-target pawns out of each strike army (end state = pure target type).
     #     Prefer MOVING to a co-located donor with room (preserve the unit), starting
