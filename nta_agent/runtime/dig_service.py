@@ -259,9 +259,12 @@ class DigService:
         # only covers unowned cells, so re-placing would forget them) and act as nodes
         queued = set(dig.get("forts_queued") or [])
         carry = [f for f in (dig.get("fort_idx") or []) if f in owned and f not in queued]
-        nodes = (main_block(main) + [int(f) for f in (self._forts_source() or [])]
+        # the protection zone (radius 6 round the city) is already sped up: count
+        # from its edge, like one big fort (user 2026-09-25)
+        nodes = ([int(f) for f in (self._forts_source() or [])]
                  + fort_queue.load(self.cfg.pending_forts_path) + carry)
-        forts = carry + (dp.place_forts(plan.path, nodes, world.lv, every=self.fort_every)
+        forts = carry + (dp.place_forts(plan.path, nodes, world.lv, every=self.fort_every,
+                                        main=main, main_radius=6)
                          if plan.path else [])
         stamina = sum(self._stamina(i) for i in plan.path)
         # what it would take: the loss % each hard cell costs (None = a defeat), so
