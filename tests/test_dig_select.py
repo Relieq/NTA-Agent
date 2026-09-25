@@ -151,3 +151,23 @@ def test_dig_group_is_reserved_while_the_dig_waits():
     assert r._dig_reserved() == {"g1"}
     r.dig_live_source = lambda: False
     assert r._dig_reserved() == set()
+
+
+def test_member_in_the_drill_ground_counts_as_busy():
+    # live 2026-09-25: Đội 1 had a pawn leveling (state still 0) -> MoveCellArmy
+    # ecode.500080 "Đang ở Thao Trường" and the gather looped every minute
+    r = _rule(group=GROUP)
+    r.territory_source = lambda: ({CELL - 1}, [])
+    g3 = {"uid": "g3", "index": 9, "state": 0, "pawns": [{"uid": "p9", "id": 3202}]}
+    armies = [_army("g1", CELL - 1), _army("g2", CELL - 1), g3]
+    got = r._dig_select(CANDS, _group_plans({"g1": CELL - 1, "g2": CELL - 1, "g3": 9}),
+                        _needs_all, CELL, all_armies=armies, busy_pawns={"p9"})
+    assert got is None and r._rally is None and r.hard == []
+
+
+def test_leveling_pawn_uids_reads_the_queue():
+    from nta_agent.execution.army_health import leveling_pawn_uids
+    st = SimpleNamespace(raw={"player": {"pawnLvingQueues": {
+        "pawnUIDMap": {"p1": 1}, "map": {"x": {"puid": "p2", "auid": "a"}}}}})
+    assert leveling_pawn_uids(st) == {"p1", "p2"}
+    assert leveling_pawn_uids(SimpleNamespace(raw={})) == set()

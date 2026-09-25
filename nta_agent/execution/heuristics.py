@@ -492,7 +492,7 @@ class OccupyCell:
         except Exception:
             return set()
 
-    def _dig_select(self, cands, plans_for, predict, cell, all_armies=None):
+    def _dig_select(self, cands, plans_for, predict, cell, all_armies=None, busy_pawns=()):
         """Dig: attack only the planned next cell (DigService), only with the dig
         group (the active formation = farm group), within ``occupy.max_loss``.
 
@@ -511,8 +511,13 @@ class OccupyCell:
         grp = self._dig_group()
         members = [a for a in (all_armies or [])
                    if str(a.get("uid")) in grp and (a.get("pawns") or [])]
+        busy_pawns = {str(u) for u in (busy_pawns or ())}
+
+        def busy(a) -> bool:  # marching/fighting, recruiting, reviving or leveling
+            return (not is_idle(a) or bool(a.get("drillPawns")) or bool(a.get("curingPawns"))
+                    or any(str(p.get("uid")) in busy_pawns for p in (a.get("pawns") or [])))
         if grp and members:
-            if not all(is_idle(a) for a in members):
+            if any(busy(a) for a in members):
                 return None  # part of the group is busy: wait for it
             spots = {int(a.get("index", 0) or 0) for a in members}
             if len(spots) > 1:
@@ -740,8 +745,10 @@ class OccupyCell:
                     all_armies = actions.get_player_armys()
                 except Exception:
                     all_armies = None
+                from nta_agent.execution.army_health import leveling_pawn_uids
                 plan = self._dig_select(cands, plans_for, predict, int(dig_cell),
-                                        all_armies=all_armies)
+                                        all_armies=all_armies,
+                                        busy_pawns=leveling_pawn_uids(state))
                 if plan == "gather":  # the group is being assembled next to the cell
                     return True
         if plan is None:  # the other armies keep farming; the dig group is kept for the dig
@@ -950,8 +957,14 @@ class OccupyCell:
             if move:
                 try:
                     actions.move_cell_army(move, city)
-                except Exception:
+                except Exception as e:
                     self._cooldown = self.fail_cooldown
+                    if self.on_event:  # a silent failure left a dig gather looping
+                        ecode = str(e).split("ecode.")[-1][:6] if "ecode." in str(e) else ""
+                        self.on_event("rally_error", {
+                            "ecode": ecode, "msg": str(e)[:160], "to": city,
+                            "to_xy": [city % 600, city // 600],
+                            "armies": [m["uid"] for m in move]})
             return
         if not self._pending:
             return
@@ -1348,9 +1361,12 @@ class HealRouting:
                 occupancy[idx] = occupancy.get(idx, 0) + 1
         # Only route IDLE wounded armies — a marching/fighting/recruiting/leveling
         # army can't be moved (server rejects: ecode.500020/500036/...).
+        from nta_agent.execution.army_health import leveling_pawn_uids
+        lving = leveling_pawn_uids(state)  # in the drill ground: can't move (500080)
         candidates = [a for a in armies
                       if army_is_wounded(a) and is_idle(a)
-                      and int(a.get("index", 0) or 0) not in nodes]
+                      and int(a.get("index", 0) or 0) not in nodes
+                      and not any(str(p.get("uid")) in lving for p in (a.get("pawns") or []))]
         candidates.sort(key=army_wound_frac, reverse=True)
         pending = []
         for a in candidates[: self.max_route_per_tick]:
@@ -1456,14 +1472,8 @@ class Leveling:
     _pending: object = None
 
     def _queue_uids(self, state) -> set:
-        q = ((state.raw or {}).get("player") or {}).get("pawnLvingQueues")
-        if isinstance(q, dict):
-            uids = set(q.get("pawnUIDMap") or {})
-            for item in (q.get("map") or {}).values():
-                if isinstance(item, dict) and item.get("puid"):
-                    uids.add(str(item["puid"]))
-            return {str(u) for u in uids}
-        return set()
+        from nta_agent.execution.army_health import leveling_pawn_uids
+        return leveling_pawn_uids(state)
 
     def applies(self, state: GameState, actions: Actions) -> bool:
         cfg = getattr(self.profile, "leveling", None) or {}
