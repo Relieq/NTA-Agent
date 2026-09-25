@@ -8,6 +8,7 @@ from nta_agent.execution.buffer_plan import (
     pawn_cost,
     pick_target,
     propose,
+    reshape,
     swap_pairs,
 )
 
@@ -106,3 +107,18 @@ def test_meeting_cell_is_owned_adjacent_with_room():
     assert meeting_cell(c, owned, {c - 1: 5, c + 1: 2}) == c + 1
     assert meeting_cell(c, owned, {c - 1: 5, c + 1: 5, c + W: 5}) is None
     assert meeting_cell(c, set(), {}) is None
+
+
+def test_reshape_trades_a_surplus_imp_for_the_hunter_the_target_needs():
+    hunter = 3401
+    buf = {"uid": "B", "pawns": [_imp(f"b{k}", 3) for k in range(8)] + [_imp("b8", 2)]}
+    target = {"uid": "E", "pawns": [_imp(f"e{k}") for k in range(8)] +
+              [{"uid": "eh", "id": hunter, "lv": 1}]}
+    spares = [{"uid": "S", "pawns": [{"uid": "sh", "id": hunter, "lv": 1}, _imp("s1")]}]
+    assert reshape(buf, target, spares, 3) == [("b8", "S", "sh")]   # lowest-lv surplus IMP out
+
+
+def test_reshape_nothing_when_the_buffer_already_fits():
+    buf = {"uid": "B", "pawns": [_imp(f"b{k}", 3) for k in range(2)]}
+    target = {"uid": "M", "pawns": [_imp("m1"), _imp("m2")]}
+    assert reshape(buf, target, [{"uid": "S", "pawns": [{"uid": "x", "id": 3401, "lv": 3}]}], 3) == []

@@ -1701,7 +1701,8 @@ class BufferLeveling:
         if self._plan_travel(state, proposal, armies, group_armies, main, grp["target_lv"],
                              actions, st):
             return True
-        return self._plan_level(state, proposal, armies, main, grp["target_lv"], actions)
+        return self._plan_level(state, proposal, armies, group_armies, main,
+                                grp["target_lv"], actions)
 
     def away_uids(self) -> set[str]:
         """Main armies currently stepping over to / swapping with a buffer."""
@@ -1717,10 +1718,18 @@ class BufferLeveling:
         from nta_agent.execution import buffer_plan as bp
         from nta_agent.execution.army_health import is_idle, leveling_pawn_uids
         from nta_agent.runtime import buffers as bstate
-        names = {b["name"]: {int(t) for t in (b.get("types") or {})}
+        weak_types = set(bp.demand(group_armies, target))
+        names = {b["name"]: weak_types | {int(t) for t in (b.get("types") or {})}
                  for b in proposal.get("buffers") or []}
         by_uid = {str(a.get("uid")): a for a in armies}
         bufs = [a for a in armies if str(a.get("name", "")) in names]
+        members = {str(a.get("uid")) for a in group_armies}
+        spares_home = [a for a in armies
+                       if str(a.get("uid")) not in members and str(a.get("name", "")) not in names
+                       and int(a.get("index", 0) or 0) == main and is_idle(a)]
+        weakest = max(group_armies, default=None,
+                      key=lambda a: sum(1 for p in a.get("pawns") or []
+                                        if int(p.get("lv", 0) or 0) < target))
         self._buffers = {str(a["uid"]) for a in bufs}
         recs = st.setdefault("buffers", {})
         queued = leveling_pawn_uids(state)
@@ -1744,6 +1753,16 @@ class BufferLeveling:
             if rec["phase"] == "leveling":
                 if bidx != main or not is_idle(buf) or any(
                         str(p["uid"]) in queued for p in buf.get("pawns") or []):
+                    continue
+                trades = (bp.reshape(buf, weakest, spares_home, target)
+                          if weakest is not None and spares_home else [])
+                if trades and planned is None:  # fit the buffer's types first (P2)
+                    out_uid, spare_uid, in_uid = trades[0]
+
+                    def trade(o=out_uid, s=spare_uid, i=in_uid, b=uid):
+                        actions.exchange_pawn_army(main, b, o, i, army_uid2=s)
+                        self._emit("buffer_reshape", {"buffer": b, "out": o, "spare": s, "in": i})
+                    planned = ("reshape", trade)
                     continue
                 todo = [p for p in buf.get("pawns") or []
                         if int(p["id"]) in names[buf["name"]] and int(p.get("lv", 0) or 0) < target
@@ -1857,9 +1876,9 @@ class BufferLeveling:
         self._pending = (kind, run)
         return True
 
-    def _plan_level(self, state, proposal, armies, main, target, actions) -> bool:
+    def _plan_level(self, state, proposal, armies, group_armies, main, target, actions) -> bool:
         from nta_agent.execution.army_health import leveling_pawn_uids
-        from nta_agent.execution.buffer_plan import level_step
+        from nta_agent.execution.buffer_plan import demand, level_step
         queue = [q for q in (((state.raw or {}).get("player") or {})
                              .get("pawnLevelingQueues") or [])
                  if isinstance(q, dict) and int(q.get("index", 0) or 0) == main]
@@ -1868,7 +1887,8 @@ class BufferLeveling:
         queued = leveling_pawn_uids(state)
         books = int(state.resources.exp_book or 0)
         barracks = self._barracks_lv(state)
-        types = {b["name"]: {int(t) for t in (b.get("types") or {})}
+        weak_types = set(demand(group_armies, target))
+        types = {b["name"]: weak_types | {int(t) for t in (b.get("types") or {})}
                  for b in proposal.get("buffers") or []}
         cands = []
         for a in armies:

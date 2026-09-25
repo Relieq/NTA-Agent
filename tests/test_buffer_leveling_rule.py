@@ -261,3 +261,24 @@ def test_swap_error_is_reported_with_its_ecode(tmp_path):
     _tick(rule, _state(), acts)
     assert ("buffer_error", {"stage": "swap", "ecode": "500036",
                              "msg": "game/HD_ExchangePawnArmy: ecode.500036"}) in events
+
+
+def test_buffer_reshapes_with_a_spare_at_the_city_then_levels_the_new_type(tmp_path):
+    hunter = 3401
+    rows = dict(ROWS)
+    rows[3401001] = {"lv_cost": "1,0,300|7,0,1", "lv_time": 400, "lv_cond": "4,2004,1"}
+    _setup_done(tmp_path)
+    rule = BufferLeveling(profile=_prof(), state_path=tmp_path / "buffers.json", rows=rows)
+    e = {"uid": "G0", "name": "E", "index": MAIN + 5, "state": 0,
+         "pawns": [_imp(f"e{k}") for k in range(8)] + [{"uid": "eh", "id": hunter, "lv": 1}]}
+    buf = {"uid": "B", "name": "Nâng Cấp 1", "index": MAIN, "state": 0,
+           "pawns": [_imp(f"b{k}", 2) for k in range(9)]}
+    spare = {"uid": "S", "name": "D7", "index": MAIN, "state": 0,
+             "pawns": [{"uid": "sh", "id": hunter, "lv": 1}]}
+    acts = FakeActions([e, {"uid": "G1", "name": "x", "index": MAIN + 5, "state": 0, "pawns": []},
+                        buf, spare], swap_mutates=True)
+    _tick(rule, _state(), acts)
+    assert acts.calls == [("exchange", MAIN, "B", "b0", "sh", "S")]
+    acts.calls.clear()
+    _tick(rule, _state(), acts)
+    assert acts.calls == [("level", "B", "sh")]              # the hunter is leveled too

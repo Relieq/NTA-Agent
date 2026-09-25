@@ -197,3 +197,36 @@ def meeting_cell(main_index: int, owned, occupancy: dict, cap: int = 5,
         if c in owned and occupancy.get(c, 0) < cap:
             return c
     return None
+
+
+def reshape(buffer_army, target_army, spares_at_city, target_lv: int) -> list[tuple[str, str, str]]:
+    """Trades that make the buffer fit ``target_army``'s weak pawns by type:
+    ``(buffer pawn out, spare army uid, spare pawn in)``. A buffer pawn of a type
+    the target doesn't need (surplus, lowest level first) goes to a spare army in
+    the city for a pawn of a type the buffer lacks (highest level first) — e.g. an
+    IMP buffer takes one hunter to serve an 8 IMP + 1 hunter army."""
+    need: dict[int, int] = {}
+    for p in target_army.get("pawns") or []:
+        if _lv(p) < target_lv:
+            need[int(p["id"])] = need.get(int(p["id"]), 0) + 1
+    have: dict[int, list[dict]] = {}
+    for p in buffer_army.get("pawns") or []:
+        have.setdefault(int(p["id"]), []).append(p)
+    surplus: list[dict] = []
+    for t, ps in have.items():
+        extra = len(ps) - need.get(t, 0)
+        if extra > 0:
+            surplus += sorted(ps, key=lambda p: (_lv(p), str(p["uid"])))[:extra]
+    surplus.sort(key=lambda p: (_lv(p), str(p["uid"])))
+    deficit = {t: n - len(have.get(t, [])) for t, n in need.items() if n > len(have.get(t, []))}
+    offers = sorted(((str(a["uid"]), p) for a in spares_at_city for p in (a.get("pawns") or [])
+                     if int(p["id"]) in deficit),
+                    key=lambda sp: (-_lv(sp[1]), sp[0], str(sp[1]["uid"])))
+    out: list[tuple[str, str, str]] = []
+    for spare_uid, sp in offers:
+        t = int(sp["id"])
+        if not surplus or deficit.get(t, 0) <= 0:
+            continue
+        out.append((str(surplus.pop(0)["uid"]), spare_uid, str(sp["uid"])))
+        deficit[t] -= 1
+    return out
