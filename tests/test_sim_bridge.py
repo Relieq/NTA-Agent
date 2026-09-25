@@ -61,3 +61,27 @@ def test_forecast_raises_when_unavailable():
     b = SimBridge(node="definitely-not-a-real-binary-xyz", server_js="nope.js")
     with pytest.raises(SimUnavailable):
         b.forecast({"playerUid": "1"})
+
+
+def test_sidecar_pipes_are_utf8(monkeypatch):
+    # Node writes raw UTF-8 (army names like "Đội 1" in replay summaries); decoding
+    # with the Windows locale (cp1258) killed the reader thread on byte 0x90
+    import subprocess
+
+    from nta_agent.execution.predictors import sim_bridge
+    seen = {}
+
+    class FakeProc:
+        stdout = None
+        stdin = None
+
+        def poll(self):
+            return None
+
+    def fake_popen(*a, **kw):
+        seen.update(kw)
+        return FakeProc()
+    monkeypatch.setattr(subprocess, "Popen", fake_popen)
+    b = sim_bridge.SimBridge()
+    b._spawn()
+    assert seen.get("encoding") == "utf-8"

@@ -56,6 +56,10 @@ class SimBridge:
                 stderr=subprocess.DEVNULL,
                 env=self.env,
                 text=True,
+                # Node speaks UTF-8; the Windows locale (cp1258) choked on names
+                # like "Đội" in replay output and killed the reader thread
+                encoding="utf-8",
+                errors="replace",
                 bufsize=1,
             )
         except (OSError, ValueError) as e:
