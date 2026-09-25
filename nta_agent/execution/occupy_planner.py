@@ -54,7 +54,7 @@ def discover_targets(
                 continue
             if area.get("cityId"):
                 continue  # someone else's city
-            pawns = [p for g in area.get("armys", []) or [] for p in g.get("pawns", []) or []]
+            pawns = _hostile_pawns(area, my_uid)
             if pawns:
                 hp = area.get("hp") or [0, 0]
                 occupiable.append(Candidate(index=idx, defenders=pawns,
@@ -97,7 +97,7 @@ def discover_frontier(
             area = {}  # unreachable/fogged cell -> falls through the checks below
         if str(area.get("owner", "")) == my_uid or area.get("cityId"):
             continue
-        pawns = [p for g in area.get("armys", []) or [] for p in g.get("pawns", []) or []]
+        pawns = _hostile_pawns(area, my_uid)
         if not pawns:
             continue  # empty/impassable frontier cell -> not an occupy target
         hp = area.get("hp") or [0, 0]
@@ -105,6 +105,14 @@ def discover_frontier(
                              hp=(int(hp[0]), int(hp[-1])),
                              land_id=int(area.get("landId", 0) or 0), owned_neighbors=1))
     return out
+
+
+def _hostile_pawns(area: dict, my_uid: str) -> list[dict]:
+    """The pawns guarding a cell — NOT my own armies standing or fighting there (live
+    2026-09-25: 26 of 27 'defenders' were ours, so the sim fought copies of our armies
+    until it timed out)."""
+    from nta_agent.execution.predictors.battle import enemy_pawns_of_area
+    return enemy_pawns_of_area(area, str(my_uid))
 
 
 def discover_around(
@@ -140,7 +148,7 @@ def discover_around(
             continue
         if area.get("cityId"):
             continue
-        pawns = [p for g in area.get("armys", []) or [] for p in g.get("pawns", []) or []]
+        pawns = _hostile_pawns(area, my_uid)
         if pawns:
             hp = area.get("hp") or [0, 0]
             occupiable.append(Candidate(index=idx, defenders=pawns,

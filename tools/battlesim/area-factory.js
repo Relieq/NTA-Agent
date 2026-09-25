@@ -6,6 +6,14 @@
 // Entry direction: the engine's getAddArmyDir, ported without the world model.
 const { entryDir } = require("./entry-dir");
 
+// Protobuf omits zero-valued scalars: a defender at (3,0) decodes as {x:3}. An undefined
+// coordinate makes every distance NaN and the forecast never engages (it ran until the
+// sidecar timed out). Same fix as record-replay.js normPoints.
+function normPoints(pawns) {
+  for (const p of pawns || [])
+    if (p.point) p.point = { x: p.point.x || 0, y: p.point.y || 0 };
+}
+
 function pawnAttackSpeed(pawnBaseId) {
   const base = globalThis.assetsMgr.getJsonData("pawnBase", pawnBaseId);
   return (base && base.attack_speed) || 0;
@@ -79,6 +87,7 @@ function buildArea(input, requireByName) {
   enemyConf.armys.forEach((a) => {
     a.state = FIGHT;
     a.owner = a.owner || "";
+    normPoints(a.pawns);
     a.pawns.sort((p, q) => {
       const ps = 100 * pawnAttackSpeed(p.id) + (99 - mapHelper.getPointToPointDis(p.point, entry));
       const qs = 100 * pawnAttackSpeed(q.id) + (99 - mapHelper.getPointToPointDis(q.point, entry));
@@ -120,6 +129,7 @@ function enemyArmysFor(input, requireByName, entry) {
   conf.armys.forEach((a) => {
     a.state = a.state || 2;
     a.owner = a.owner || "";
+    normPoints(a.pawns);
     a.pawns.sort((p, q) => {
       const ps = 100 * pawnAttackSpeed(p.id) + (99 - mapHelper.getPointToPointDis(p.point, entry));
       const qs = 100 * pawnAttackSpeed(q.id) + (99 - mapHelper.getPointToPointDis(q.point, entry));

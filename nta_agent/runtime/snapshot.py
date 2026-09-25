@@ -3,6 +3,7 @@ from __future__ import annotations
 
 import json
 import os
+import time
 from dataclasses import asdict
 from pathlib import Path
 
@@ -54,5 +55,14 @@ def write_snapshot(state: GameState, path: Path) -> dict:
     path.parent.mkdir(parents=True, exist_ok=True)
     tmp = path.with_suffix(path.suffix + ".tmp")
     tmp.write_text(json.dumps(d, ensure_ascii=False), encoding="utf-8")
-    os.replace(tmp, path)
+    # Windows refuses to replace a file another process (the dashboard) has open for
+    # reading (WinError 5 / PermissionError): retry briefly instead of losing the tick.
+    for attempt in range(5):
+        try:
+            os.replace(tmp, path)
+            break
+        except PermissionError:
+            if attempt == 4:
+                raise
+            time.sleep(0.05 * (attempt + 1))
     return d

@@ -83,3 +83,14 @@ def test_expired_build_queue_item_bumps_building_level():
     GameSession.sync(fake)
     assert st.build_queue == []
     assert {b.id: b.lv for b in st.builds}[2002] == 2
+
+
+def test_expired_queue_item_without_a_building_adds_nothing():
+    """A finished BT-queue item whose uid matches no building (e.g. a pawn-type upgrade
+    like 3202 Lv2) must not appear as a building."""
+    st = from_entry_rst({"player": {"uid": "me", "mainCityIndex": 5,
+        "builds": [{"index": 5, "uid": "h", "id": 2001, "lv": 6}],
+        "btQueues": [{"index": 5, "uid": "p9", "id": 3202, "lv": 2, "surplusTime": 0}]}})
+    fake = SimpleNamespace(state=st, _bt_deadlines={"p9": 0.0}, drain_pushes=list)
+    GameSession.sync(fake)
+    assert [(b.id, b.lv) for b in st.builds] == [(2001, 6)]

@@ -61,3 +61,34 @@ def test_pawn_hp_map_normalized_to_list():
     assert _pawn({"id": 3101, "lv": 1, "hp": {"0": 100, "1": 135}})["hp"] == [100, 135]
     assert _pawn({"id": 3101, "lv": 1, "hp": [120, 135]})["hp"] == [120, 135]
     assert _pawn({"id": 3101, "lv": 1})["hp"] is None  # enemy w/o hp -> engine computes
+
+
+def test_treasures_always_carry_a_rewards_list():
+    """The engine's fromSvrTreasureInfo does treasure.rewards.map(...): protobuf omits
+    an empty repeated field, so a live {uid,id} treasure crashed the forecast."""
+    from nta_agent.execution.predictors.sim_input import _pawn
+    p = _pawn({"id": 3305, "lv": 1, "hp": {0: 55, 1: 55},
+               "treasures": [{"uid": "t1", "id": 401}, {"uid": "t2", "id": 402, "rewards": [{"id": 1}]}]})
+    assert p["treasures"] == [{"uid": "t1", "id": 401, "rewards": []},
+                              {"uid": "t2", "id": 402, "rewards": [{"id": 1}]}]
+
+
+def test_hp_with_only_current_uses_it_as_max():
+    from nta_agent.execution.predictors.sim_input import _hp_list
+    assert _hp_list({"0": 65}) == [65, 65]
+
+
+def test_enemy_conf_is_normalised_points_hp_treasures():
+    from types import SimpleNamespace
+
+    from nta_agent.execution.predictors.sim_input import build_forecast_input
+    st = SimpleNamespace(user=SimpleNamespace(uid="1"), raw={}, main_city_index=0)
+    ec = {"armys": [{"uid": "npc", "pawns": [
+        {"id": 4111, "point": {"x": 3}, "hp": {"0": 498}},
+        {"id": 3201, "point": {"y": 9}, "hp": {"0": 5, "1": 9}, "treasures": [{"uid": "t", "id": 1}]}]}],
+        "hp": [6, 6]}
+    out = build_forecast_input(st, [], target_index=1, land_id=0, distance=1, enemy_army_conf=ec)
+    p0, p1 = out["enemyArmyConf"]["armys"][0]["pawns"]
+    assert p0["point"] == {"x": 3, "y": 0} and p0["hp"] == [498, 498]
+    assert p1["point"] == {"x": 0, "y": 9} and p1["hp"] == [5, 9]
+    assert p1["treasures"] == [{"uid": "t", "id": 1, "rewards": []}]
