@@ -269,3 +269,35 @@ def test_cleared_goal_releases_armies_even_during_blocked_cooldown():
     r.profile.army["strike_target"] = []
     assert r.applies(_state(), FakeActions([])) is False
     assert r.locked_uids == set() and r._cooldown == 0
+
+
+def test_complete_armies_are_named_while_the_group_is_still_assembling():
+    """2026-09-25: 4 IMP armies were full but kept 'D2'/'D1' until the whole group
+    (waiting on 7 recruits) was done. Name each army as soon as it's complete."""
+    target = [{"pawn_id": 3206, "armies": 1, "size": 3, "names": ["Đội 1"]},
+              {"pawn_id": 3305, "armies": 2, "size": 3, "names": ["Đội 2", "Đội 3"]}]
+    armies = [_army("tank", [3206]), _army("imp1", [3305] * 3), _army("imp2", [3305] * 3)]
+    r = ArmyComposer(profile=_profile(target))
+    r._strike_uids = ["tank", "imp1", "imp2"]
+    acts = NamingActions(armies)
+    r.applies(_state(), acts)
+    renamed = [c[1:3] for c in acts.calls if c[0] == "rename"]
+    assert ("imp1", "Đội 2") in renamed and ("imp2", "Đội 3") in renamed
+    assert all(u != "tank" for u, _ in renamed)          # incomplete: not yet
+
+
+def test_failed_rename_backs_off_instead_of_retrying_every_tick():
+    class Busy(NamingActions):
+        def rename_army(self, index, army_uid, name):
+            self.calls.append(("rename", army_uid, name, index))
+            raise RuntimeError("ecode.500036")
+    target = [{"pawn_id": 3305, "armies": 1, "size": 3, "names": ["Đội 2"]},
+              {"pawn_id": 3206, "armies": 1, "size": 3}]
+    armies = [_army("imp1", [3305] * 3), _army("tank", [3206])]
+    r = ArmyComposer(profile=_profile(target), rename_retry_ticks=3)
+    r._strike_uids = ["imp1", "tank"]
+    acts = Busy(armies)
+    for _ in range(3):
+        r._cooldown = 0
+        r.applies(_state(), acts)
+    assert sum(1 for c in acts.calls if c[0] == "rename") == 1

@@ -128,3 +128,28 @@ def test_500054_stops_creating_new_armies():
     r.act(act)                       # 500054 -> _max_army_count learned
     assert act.calls == []
     assert r.applies(st, act) is False   # won't try to create a new army again
+
+
+def test_new_army_name_avoids_armies_outside_the_city():
+    """Live 2026-09-25: 4 armies named 'D1' — the name was picked from the CITY's
+    armies only, so a 'D1' out on the map didn't count."""
+    st = _state([3101])
+    full = [{"uid": f"c{i}", "name": f"D{i+2}", "pawns": [{}] * 9, "state": None} for i in range(2)]
+
+    class Everywhere(FakeActions):
+        def get_player_armys(self):
+            return full + [{"uid": "far", "name": "D1", "pawns": [{}] * 9, "state": 2}]
+    act = Everywhere(st, armys=full)
+    r = Recruit(config=False)
+    assert r.applies(st, act) is True
+    r.act(act)
+    assert act.calls[-1][3] == "D4"          # D1 (far away), D2, D3 (in city) are taken
+
+
+def test_stands_down_while_a_strike_group_is_recruiting():
+    """The composer needs the cereal + drill queue for the group (2026-09-25:
+    6x ecode 500018 'recruit slots full' while the generic rule filled other armies)."""
+    st = _state([3101])
+    act = FakeActions(st, armys=[{"uid": "A", "pawns": [{}, {}], "state": None}])
+    r = Recruit(config=False, locked_source=lambda: {"strike1"})
+    assert r.applies(st, act) is False
