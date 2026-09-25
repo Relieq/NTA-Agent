@@ -40,6 +40,9 @@ class DecisionService:
         self.armies_every = armies_every
         self._armies_counter = 0
         self.profile = profile  # shared live Profile for profile_edit commands
+        from nta_agent.runtime.rename_queue import RenameQueue
+        self.renames = RenameQueue(getattr(cfg, "pending_renames_path", None)
+                                   or Path(cfg.commands_path).with_name("pending_renames.json"))
 
     def _write_decisions(self, state) -> None:
         data = [asdict(d) for d in pending_decisions(state, self.config)]
@@ -102,9 +105,9 @@ class DecisionService:
             self.actions.create_city(int(cmd["index"]), FORT_BUILD_ID)
             return
         if action == "rename_army":
-            # Chat action tool (human-initiated): rename an army via the hands.
-            self.actions.rename_army(int(cmd.get("index", 0) or 0),
-                                     str(cmd["uid"]), str(cmd["name"]))
+            # Chat/dashboard rename: queued until the army is idle, then sent with its
+            # current index (a one-shot send failed on busy/marching armies).
+            self.renames.add(str(cmd["uid"]), str(cmd["name"]))
             return
         track = cmd.get("track")
         tp = _TRACK_TP.get(track)
@@ -149,3 +152,7 @@ class DecisionService:
                 sys.stderr.write(f"[decision] {cmd.get('action')} failed: {e}\n")
             finally:
                 mark_done(self.cfg.commands_done_path, cmd["id"])
+        try:
+            self.renames.process(self.actions, self._on_event)
+        except Exception as e:  # a network hiccup must not kill the loop
+            sys.stderr.write(f"[renames] process failed: {e}\n")
