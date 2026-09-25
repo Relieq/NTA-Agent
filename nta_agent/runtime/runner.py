@@ -185,6 +185,9 @@ def run(cfg: RuntimeConfig, *, ticks: int = 0, session=None, engine=None) -> Non
             rule.ledger = ledger
         if getattr(rule, "name", "") == "leveling":
             rule.dig_live_source = dig.is_live  # the dig group isn't leveled mid-dig
+        if getattr(rule, "name", "") == "buffer_leveling":
+            rule.state_path = cfg.buffers_path  # proposal/approval/phases (dashboard reads it)
+            rule.on_event = log.append
         if getattr(rule, "name", "") == "occupy_cell":
             rule.on_event = log.append
             rule.threats_source = _enemy_from_forts  # defend contested border cells (P2)
