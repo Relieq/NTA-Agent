@@ -5,7 +5,8 @@ const { ref, onMounted } = window.Vue;
 const FIELDS=[
  {key:"openai_api_key", label:"OpenAI API key", secret:true,
   help:"Tuỳ chọn — bật \"bộ não\" (chiến lược + chat). Tính phí theo tài khoản OpenAI của bạn."},
- {key:"openai_model", label:"Model", placeholder:"gpt-4o-mini"},
+ {key:"openai_model", label:"Model", kind:"model",
+  help:"Danh sách lấy từ tài khoản OpenAI của bạn (cần key). Mặc định gpt-4o-mini."},
  {key:"brain_max_calls", label:"Giới hạn lượt gọi bộ não / phiên", placeholder:"50"},
  {key:"xxtea_key", label:"XXTEA key (tuỳ chọn)", secret:true,
   help:"Để trống — app tự tìm khoá trong chính bản game của bạn. Chỉ nhập nếu tự dò thất bại."},
@@ -18,8 +19,22 @@ export default {
  setup(){
   const cur=ref({}); const draft=ref({}); const msg=ref(""); const ok=ref(true);
   const app=ref({}); const upd=ref(null);
+  const models=ref([]); const modelsErr=ref(""); const custom=ref(false);
+  async function loadModels(){
+   const r=await getJSON("/api/settings/models");
+   models.value=(r&&r.models)||[]; modelsErr.value=(r&&!r.ok&&r.error)||"";
+  }
+  // current value first if the account list lacks it (custom / older model)
+  const modelOptions=()=>{
+   const c=cur.value.openai_model; const cv=c&&c.set?c.value:"";
+   return cv && !models.value.includes(cv) ? [cv, ...models.value] : models.value;
+  };
+  function pickModel(v){
+   if(v==="__custom__"){ custom.value=true; draft.value.openai_model=""; }
+   else { custom.value=false; draft.value.openai_model=v; }
+  }
   async function load(){ cur.value=(await getJSON("/api/settings"))||{}; app.value=(await getJSON("/api/app"))||{};
-   upd.value=await getJSON("/api/update/check"); }
+   upd.value=await getJSON("/api/update/check"); loadModels(); }
   async function checkNow(){ upd.value=await getJSON("/api/update/check?force=1");
    flash(upd.value&&upd.value.update ? "Có bản mới "+upd.value.update.version : ((upd.value&&upd.value.error)||"Đang dùng bản mới nhất"), true); }
   async function rollback(){
@@ -33,7 +48,8 @@ export default {
    for(const f of FIELDS){ const v=draft.value[f.key]; if(v!==undefined && v!=="") body[f.key]=v; }
    if(!Object.keys(body).length){ flash("Không có thay đổi",false); return; }
    const r=await postJSON("/api/settings",body);
-   if(r&&r.ok){ draft.value={}; cur.value=r.settings; flash("Đã lưu",true); } else flash((r&&r.error)||"Lỗi",false);
+   if(r&&r.ok){ draft.value={}; custom.value=false; cur.value=r.settings; flash("Đã lưu",true);
+                if(body.openai_api_key) loadModels(); } else flash((r&&r.error)||"Lỗi",false);
   }
   async function clear(key){
    const r=await postJSON("/api/settings",{[key]:""});
@@ -45,7 +61,8 @@ export default {
    flash(r&&r.ok ? "Key hợp lệ ✅" : ((r&&r.error)||"Lỗi"), !!(r&&r.ok));
   }
   onMounted(load);
-  return { FIELDS, cur, draft, msg, ok, app, upd, save, clear, testKey, checkNow, rollback };
+  return { FIELDS, cur, draft, msg, ok, app, upd, save, clear, testKey, checkNow, rollback,
+           models, modelsErr, custom, loadModels, modelOptions, pickModel };
  },
  template:`<div class="card full"><h2>Cài đặt</h2>
   <div class="muted" style="font-size:12px;margin-bottom:6px">
@@ -55,7 +72,19 @@ export default {
    <tr v-for="f in FIELDS" :key="f.key" style="border-top:1px solid var(--border,#30363d)">
     <td style="padding:6px 8px 6px 0;width:34%"><b>{{ f.label }}</b>
      <div v-if="f.help" class="muted" style="font-size:11px">{{ f.help }}</div></td>
-    <td style="padding:6px 0">
+    <td v-if="f.kind==='model'" style="padding:6px 0">
+     <div style="display:flex;gap:6px;align-items:center;flex-wrap:wrap">
+      <select style="max-width:260px" :value="custom ? '__custom__' : (draft.openai_model || (cur.openai_model&&cur.openai_model.value) || '')"
+       @change="pickModel($event.target.value)">
+       <option value="" disabled>{{ models.length ? 'chọn model…' : 'mặc định (gpt-4o-mini)' }}</option>
+       <option v-for="m in modelOptions()" :key="m" :value="m">{{ m }}</option>
+       <option value="__custom__">Khác… (tự nhập)</option>
+      </select>
+      <button title="Tải lại danh sách" @click="loadModels">↻</button>
+      <input v-if="custom" type="text" autocomplete="off" style="width:180px" placeholder="tên model" v-model="draft.openai_model">
+     </div>
+     <div v-if="modelsErr" class="muted" style="font-size:11px">{{ modelsErr }}</div></td>
+    <td v-else style="padding:6px 0">
      <input :type="f.secret?'password':'text'" autocomplete="off" style="width:100%;max-width:340px"
       :placeholder="(cur[f.key]&&cur[f.key].set) ? (f.secret ? 'đã lưu: '+cur[f.key].value : cur[f.key].value) : (f.placeholder||'chưa đặt')"
       v-model="draft[f.key]"></td>

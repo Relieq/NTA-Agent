@@ -33,3 +33,33 @@ def test_adb_settings_used():
     settings.set_values({"adb_path": r"X:\adb.exe", "adb_serial": "emulator-5556"})
     s = config.Settings.detect()
     assert s.adb_path == r"X:\adb.exe" and s.serial == "emulator-5556"
+
+
+def test_chat_retries_without_temperature_when_model_rejects_it(monkeypatch):
+    import io
+    import json
+    import urllib.error
+
+    from nta_agent.brain import llm
+    settings.set_values({"openai_api_key": "sk-abc12345", "openai_model": "o3-mini"})
+    sent = []
+
+    class Resp(io.BytesIO):
+        def __enter__(self):
+            return self
+
+        def __exit__(self, *a):
+            return False
+
+    def fake_urlopen(req, timeout):
+        payload = json.loads(req.data)
+        sent.append(payload)
+        if "temperature" in payload:
+            raise urllib.error.HTTPError(
+                req.full_url, 400, "bad", {},
+                io.BytesIO(b'{"error":{"message":"Unsupported value: temperature"}}'))
+        return Resp(json.dumps({"choices": [{"message": {"content": "{}"}}]}).encode())
+    monkeypatch.setattr(llm.urllib.request, "urlopen", fake_urlopen)
+    assert llm.default_chat()([{"role": "user", "content": "hi"}]) == "{}"
+    assert [("temperature" in p) for p in sent] == [True, False]
+    assert sent[-1]["model"] == "o3-mini"

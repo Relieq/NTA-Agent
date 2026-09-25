@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 import json
+import urllib.error
 import urllib.request
 
 from nta_agent import settings
@@ -154,14 +155,27 @@ def default_chat():
         raise BrainUnavailable("OPENAI_API_KEY not set")
     model = settings.get("openai_model", "gpt-4o-mini")
 
-    def chat(messages):
-        body = json.dumps({"model": model, "messages": messages, "temperature": 0.2,
-                           "response_format": {"type": "json_object"}}).encode("utf-8")
+    def post(payload: dict) -> dict:
         req = urllib.request.Request(
-            "https://api.openai.com/v1/chat/completions", data=body,
+            "https://api.openai.com/v1/chat/completions",
+            data=json.dumps(payload).encode("utf-8"),
             headers={"Authorization": "Bearer " + key, "Content-Type": "application/json"})
-        with urllib.request.urlopen(req, timeout=30) as resp:
-            data = json.loads(resp.read().decode("utf-8"))
+        with urllib.request.urlopen(req, timeout=60) as resp:
+            return json.loads(resp.read().decode("utf-8"))
+
+    def chat(messages):
+        payload = {"model": model, "messages": messages, "temperature": 0.2,
+                   "response_format": {"type": "json_object"}}
+        try:
+            data = post(payload)
+        except urllib.error.HTTPError as e:
+            # Some models (e.g. reasoning ones picked in Settings) only accept the
+            # default temperature — retry once without it.
+            detail = e.read().decode("utf-8", "ignore") if e.fp else ""
+            if e.code != 400 or "temperature" not in detail:
+                raise
+            payload.pop("temperature")
+            data = post(payload)
         return data["choices"][0]["message"]["content"]
 
     return chat

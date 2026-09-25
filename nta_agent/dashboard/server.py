@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 import json
+import re
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
 from types import SimpleNamespace
@@ -313,6 +314,39 @@ def test_openai_key(opener=None) -> dict:
         return {"ok": False, "error": f"không kết nối được: {e}"}
 
 
+_CHAT_PREFIXES = ("gpt-", "chatgpt-", "o1", "o3", "o4")
+_NOT_CHAT = ("audio", "realtime", "tts", "transcribe", "image", "search", "embedding",
+             "instruct", "moderation", "whisper", "dall-e",
+             "codex", "-pro", "gpt-live")  # Responses-API-only / non-chat families
+_SNAPSHOT = re.compile(r"-\d{4}-\d{2}-\d{2}$|-\d{4}$")
+
+
+def list_openai_models(opener=None) -> dict:
+    """Chat-capable models the stored key can use (GET /v1/models), for the Settings
+    dropdown. Dated snapshots and non-chat families are hidden to keep it short."""
+    import urllib.error
+    import urllib.request
+
+    from nta_agent import settings
+    key = settings.get("openai_api_key")
+    if not key:
+        return {"ok": False, "models": [], "error": "chưa nhập OpenAI API key"}
+    req = urllib.request.Request("https://api.openai.com/v1/models",
+                                 headers={"Authorization": "Bearer " + key})
+    try:
+        with (opener or urllib.request.urlopen)(req, timeout=8) as r:
+            data = json.loads(r.read().decode("utf-8"))
+    except urllib.error.HTTPError as e:
+        return {"ok": False, "models": [],
+                "error": "key bị từ chối (401)" if e.code == 401 else f"HTTP {e.code}"}
+    except (urllib.error.URLError, OSError, ValueError) as e:
+        return {"ok": False, "models": [], "error": f"không lấy được danh sách: {e}"}
+    ids = sorted({m.get("id", "") for m in data.get("data", []) if isinstance(m, dict)})
+    models = [i for i in ids if i.startswith(_CHAT_PREFIXES)
+              and not any(x in i for x in _NOT_CHAT) and not _SNAPSHOT.search(i)]
+    return {"ok": True, "models": models}
+
+
 def read_app_info() -> dict:
     from nta_agent import paths
     return {"version": paths.app_version(), "packaged": paths.is_packaged(),
@@ -557,6 +591,8 @@ class Handler(BaseHTTPRequestHandler):
             self._json(200, steps.status())
         elif parsed.path == "/api/settings":
             self._json(200, read_settings())
+        elif parsed.path == "/api/settings/models":
+            self._json(200, list_openai_models())
         elif parsed.path == "/api/app":
             self._json(200, read_app_info())
         elif parsed.path == "/api/update/check":
