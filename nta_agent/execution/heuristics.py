@@ -444,8 +444,10 @@ class OccupyCell:
     def _defensive_select(self, cands, plans_for, predict, enemy):
         """P2: when an enemy is contesting a border cell, claim the winnable cell
         nearest the enemy to wall it off (deny the silent creep). Returns a plan or
-        None if nothing is contested/winnable."""
+        None if nothing is contested/winnable within ``occupy.max_loss`` (the same
+        cap farming/expansion honour — defending is no excuse to lose troops)."""
         from nta_agent.execution.advisor import best_plan
+        max_loss = float(self.profile.occupy.get("max_loss", 0) or 0) if self.profile else 0.0
         w = 600
         epos = [(e % w, e // w) for e in enemy]
         if not epos:
@@ -458,7 +460,8 @@ class OccupyCell:
             if edist > self.contest_range:
                 continue  # not contested by an enemy
             plan = best_plan([c], plans_for, predict, distance=self._plan_dist)
-            if plan is None or not plan.prediction.win:
+            if (plan is None or not plan.prediction.win
+                    or plan.prediction.loss_percent > max_loss):
                 continue
             key = (edist, plan.prediction.loss_percent)  # closest-to-enemy, then safest
             if best_key is None or key < best_key:
