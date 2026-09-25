@@ -1466,6 +1466,7 @@ class Leveling:
     to re-confirm live once a workable multi-army state exists.)"""
     name: str = "leveling"
     check_every: int = 4
+    dig_live_source: object = None  # callable -> bool: a dig is on (leave its group alone)
     on_event: object = None
     profile: object = None
     _cooldown: int = 0
@@ -1506,6 +1507,17 @@ class Leveling:
         from nta_agent.execution.army_health import is_idle
         home_farm = [a for a in farm_armies
                      if is_idle(a) and int(a.get("index", 0) or 0) == main]
+        # While a dig is on the farm group IS the dig group: don't pull, swap or
+        # level-in-place its pawns (that parks an army in the drill ground and the
+        # dig waits on it). Pawns already in the leveling army keep going.
+        dig_live = False
+        if self.dig_live_source is not None:
+            try:
+                dig_live = bool(self.dig_live_source())
+            except Exception:
+                dig_live = False
+        if dig_live:
+            home_farm = []
         act = next_level_action(home_farm, level_army, target, farm_home=bool(home_farm),
                                 queue_uids=self._queue_uids(state),
                                 exp_book=state.resources.exp_book,
