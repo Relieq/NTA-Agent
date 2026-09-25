@@ -49,7 +49,7 @@ def test_profile_edit_sets_leveling(tmp_path):
                                                  "max_leveling": 2}})
     assert out["ok"] is True
     v = read_profile_view(cfg)
-    assert v["leveling"] == {"enabled": True, "target_lv": 8, "max_leveling": 2}
+    assert v["leveling"] == {"enabled": True, "target_lv": 8, "max_leveling": 2, "groups": []}
 
 
 def test_profile_edit_sets_army_group_with_valid_uids(tmp_path):

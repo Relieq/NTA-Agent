@@ -34,7 +34,7 @@ def test_profile_post_leveling_persists_and_keeps_build(tmp_path):
         _post(port, {"leveling": {"enabled": True, "target_lv": 5, "max_leveling": 3}})
         v = _get(port)
         # leveling saved AND the build edit was NOT wiped by the leveling post
-        assert v["leveling"] == {"enabled": True, "target_lv": 5, "max_leveling": 3}
+        assert v["leveling"] == {"enabled": True, "target_lv": 5, "max_leveling": 3, "groups": []}
         assert v["build"]["order"] == [2016, 2006] and v["build"]["skip"] == [2000]
     finally:
         srv.shutdown()
