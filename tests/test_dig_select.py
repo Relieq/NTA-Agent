@@ -171,3 +171,12 @@ def test_leveling_pawn_uids_reads_the_queue():
         "pawnUIDMap": {"p1": 1}, "map": {"x": {"puid": "p2", "auid": "a"}}}}})
     assert leveling_pawn_uids(st) == {"p1", "p2"}
     assert leveling_pawn_uids(SimpleNamespace(raw={})) == set()
+
+
+def test_leveling_pawn_uids_reads_the_live_list_shape():
+    # live 2026-09-25: player.pawnLevelingQueues = [{uid, index, auid, puid, id, lv, ...}]
+    from nta_agent.execution.army_health import leveling_pawn_uids
+    st = SimpleNamespace(raw={"player": {"pawnLevelingQueues": [
+        {"uid": "q1", "index": 71372, "auid": "1790258465519001",
+         "puid": "1790312511107001", "id": 3202, "lv": 3}]}})
+    assert leveling_pawn_uids(st) == {"1790312511107001"}

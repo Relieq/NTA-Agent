@@ -35,15 +35,23 @@ def is_idle(army: dict) -> bool:
 
 
 def leveling_pawn_uids(state) -> set[str]:
-    """Pawn uids being leveled (``player.pawnLvingQueues``). Their army sits in the
-    drill ground: its ``state`` stays 0 but it can't move (ecode.500080)."""
-    q = ((getattr(state, "raw", None) or {}).get("player") or {}).get("pawnLvingQueues")
-    if not isinstance(q, dict):
-        return set()
-    uids = {str(u) for u in (q.get("pawnUIDMap") or {})}
-    for item in (q.get("map") or {}).values():
+    """Pawn uids being leveled. Their army sits in the drill ground: its ``state``
+    stays 0 but it can't move (MoveCellArmy ecode.500080).
+
+    Live shape (verified 2026-09-25): ``player.pawnLevelingQueues`` = a LIST of
+    ``{uid, index, auid, puid, id, lv, needTime, surplusTime}``. The older
+    ``pawnLvingQueues`` {pawnUIDMap, map} shape is still accepted."""
+    player = (getattr(state, "raw", None) or {}).get("player") or {}
+    uids: set[str] = set()
+    for item in player.get("pawnLevelingQueues") or []:
         if isinstance(item, dict) and item.get("puid"):
             uids.add(str(item["puid"]))
+    q = player.get("pawnLvingQueues")
+    if isinstance(q, dict):
+        uids |= {str(u) for u in (q.get("pawnUIDMap") or {})}
+        for item in (q.get("map") or {}).values():
+            if isinstance(item, dict) and item.get("puid"):
+                uids.add(str(item["puid"]))
     return uids
 
 
