@@ -64,6 +64,13 @@ A live territory map: owned cells, borders, enemies, and the suggested zone for 
 **fort** (click a cell and the agent builds it). Expansion follows a spiral or octopus
 pattern depending on how close the enemy is.
 
+**⛏ Dig to a cell:** click any cell → *Dig tới đây*. The agent plans the fastest chain of occupies
+(march + battle length from the simulator), keeps a safety distance from enemies, plans forts
+(~every 7 cells, on level-1 land when possible) and shows a **preview** (cells / time / stamina).
+Only after you **confirm** does the farm group start digging; other armies keep farming. If the
+target is taken it switches to the nearest safe cell; cells the group can't win within the loss
+limit are routed around, or it waits and tells you what loss % would unblock it.
+
 ### 🧭 Advisor and alerts
 <img src="docs/images/advisor.png" alt="Advisor" width="760">
 

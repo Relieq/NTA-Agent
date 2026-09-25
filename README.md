@@ -59,6 +59,13 @@ và **ngân sách sắt** cho mỗi món. Agent rèn lại tới khi đạt, ho�
 Bản đồ lãnh thổ trực tiếp: ô đã chiếm, biên giới, quân địch, vùng gợi ý xây **Cứ Điểm**
 (bấm 1 ô là agent xây). Kiểu mở rộng xoắn ốc / bạch tuộc tuỳ tình hình địch.
 
+**⛏ Dig tới một ô:** bấm ô bất kỳ trên bản đồ → *Dig tới đây*. Agent tính đường chiếm ô liên tiếp
+nhanh nhất (hành quân + thời lượng trận theo bộ mô phỏng), giữ khoảng cách an toàn với địch, dự kiến
+chỗ đặt Cứ Điểm (~7 ô một cái, ưu tiên đất cấp 1), rồi cho **xem trước** số ô / thời gian / thể lực.
+Chỉ khi bạn bấm **Xác nhận** nhóm đội farm mới bắt đầu dig; các đội khác vẫn farm như thường. Đích bị
+chiếm → tự đổi sang ô an toàn gần nhất; ô nào chưa thắng nổi trong giới hạn tổn thất → đi vòng, hoặc
+chờ và báo cần chịu bao nhiêu % tổn thất.
+
 ### 🧭 Cố vấn và cảnh báo
 <img src="docs/images/advisor.png" alt="Cố vấn" width="760">
 
