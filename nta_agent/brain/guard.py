@@ -361,3 +361,50 @@ def rename_ambiguity(instruction, renames, armies) -> str | None:
                     "Bạn muốn đổi tên đội nào (gọi theo tên đội)?\n"
                     + "\n".join(cand(b) for b in pool))
     return None
+
+
+# A soldier count the player gave explicitly ("mỗi đội 5 lính", "3 con") — only then
+# may an army be smaller than full.
+_SOLDIER_COUNT = re.compile(r"\b\d+\s*(linh|con|nguoi|quan|pawn|soldier)")
+_FULL_ARMY = 9
+
+
+def sanitize_strike(strike, unlocked, instruction: str, pawn_names: dict | None = None,
+                    trust_size: bool = False):
+    """Validate a chat-proposed ``army.strike_target`` BEFORE it is shown for
+    confirmation. Returns ``(clean, notes)``:
+
+    * pawn types that aren't unlocked (``unlocked`` = set of ids; ``None`` = unknown,
+      keep all) are dropped with a note — unlocks reset when the main city is
+      re-created, so the LLM must never assume a type (live: 'khiên lớn' -> locked 3206);
+    * ``size`` is a full army (9) unless the instruction states a soldier count
+      (live: the LLM invented size 1);
+    * optional ``names`` (the names the player gave this entry's armies, in order) are
+      trimmed to 12 chars and capped to ``armies``;
+    * each entry gets a readable ``name`` (pawn type) for the confirm card.
+    """
+    names = pawn_names or {}
+    # trust_size: re-validating an already-confirmed proposal (size was settled then)
+    explicit_size = trust_size or bool(_SOLDIER_COUNT.search(_fold(instruction)))
+    clean, notes = [], []
+    for t in strike if isinstance(strike, list) else []:
+        if not (isinstance(t, dict) and t.get("pawn_id")):
+            continue
+        pid = int(_num(t["pawn_id"], 1000, 99999, 0))
+        if not pid:
+            continue
+        label = names.get(pid) or f"lính {pid}"
+        if unlocked is not None and pid not in unlocked:
+            notes.append(f"{label} ({pid}) chưa mở khoá — bỏ khỏi nhóm.")
+            continue
+        armies = int(_num(t.get("armies", 1), 1, 20, 1))
+        size = int(_num(t.get("size", _FULL_ARMY), 1, _FULL_ARMY, _FULL_ARMY))
+        if not explicit_size:
+            size = _FULL_ARMY
+        entry = {"pawn_id": pid, "armies": armies, "size": size, "name": label}
+        given = [str(n).strip()[:12] for n in (t.get("names") or [])
+                 if isinstance(n, (str, int)) and str(n).strip()]
+        if given:
+            entry["names"] = given[:armies]
+        clean.append(entry)
+    return clean, notes
