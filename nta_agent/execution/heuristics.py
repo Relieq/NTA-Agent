@@ -2010,12 +2010,14 @@ class SpareArmies:
     on_event: object = None
     check_every: int = 3
     eval_every: int = 40            # ticks between "can they win anything?" checks
+    stuck_after_s: float = 1800.0   # warn only after the spares went unused this long
     fail_cooldown: int = 12
     _cooldown: int = 0
     _pending: object = None
     _reserved: set = field(default_factory=set)
     _since_eval: int = 10**9
     _last_sig: object = None
+    _last_used: float = field(default_factory=lambda: __import__("time").time())
 
     def reserved_uids(self) -> set[str]:
         """Spares being gathered/sorted — occupy must not send them off mid-way."""
@@ -2054,8 +2056,16 @@ class SpareArmies:
         self._reserved = set()
         if len(spares) == 0:
             return False
-        away = [a for a in spares if int(a.get("index", 0) or 0) != main]
-        home = [a for a in spares if int(a.get("index", 0) or 0) == main and is_idle(a)]
+        import time as _time
+        now = _time.time()
+        if any(not is_idle(a) for a in spares):  # marching/fighting: they ARE being used
+            self._last_used = now
+        spots = {int(a.get("index", 0) or 0) for a in spares}
+        # scattered -> gather at the city; standing together (e.g. on the cell they
+        # just took) -> sort/attack right there, no walk home and back
+        spot = main if len(spots) > 1 else next(iter(spots))
+        away = [a for a in spares if int(a.get("index", 0) or 0) != spot]
+        home = [a for a in spares if int(a.get("index", 0) or 0) == spot and is_idle(a)]
         if away:
             self._reserved = {str(a["uid"]) for a in spares}
             walk = [{"uid": str(a["uid"]), "index": int(a["index"])} for a in away if is_idle(a)]
@@ -2070,10 +2080,10 @@ class SpareArmies:
             op = ops[0]
             if op[0] == "move":
                 _, src, pawn, dst = op
-                self._pending = ("sort", lambda: actions.change_pawn_army(main, src, pawn, dst))
+                self._pending = ("sort", lambda: actions.change_pawn_army(spot, src, pawn, dst))
             else:
                 _, a, pa, b, pb = op
-                self._pending = ("sort", lambda: actions.exchange_pawn_army(main, a, pa, pb,
+                self._pending = ("sort", lambda: actions.exchange_pawn_army(spot, a, pa, pb,
                                                                             army_uid2=b))
             return True
         if len(home) < len(spares):
@@ -2085,9 +2095,14 @@ class SpareArmies:
         self._since_eval = 0
         found = self.predict(state, home) if self.predict is not None else None
         names = [a.get("name") or a.get("uid") for a in spares]
-        if found:
-            self._write({"status": "ok", "armies": names, "target": found.get("target"),
-                         "loss": found.get("loss")})
+        used_recently = now - self._last_used < self.stuck_after_s
+        if found or used_recently:
+            # the screen uses generated defenders; OccupyCell (real ones) may still find
+            # wins — spares seen marching/fighting recently are clearly not stuck
+            self._write({"status": "ok", "armies": names, "target": (found or {}).get("target"),
+                         "loss": (found or {}).get("loss"), "used_recently": used_recently})
+            self._last_sig = None if not found else sig
+            return False
         elif sig != self._last_sig:
             comp = {}
             for a in spares:

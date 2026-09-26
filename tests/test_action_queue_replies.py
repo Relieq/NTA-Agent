@@ -54,3 +54,18 @@ def test_leveling_queue_is_sequential_and_ages_out():
     assert leveling_pawn_uids(st, now=1050.0) == {"a", "b"}
     assert leveling_pawn_uids(st, now=1150.0) == {"b"}
     assert leveling_pawn_uids(st, now=1400.0) == set()
+
+
+def test_entry_stamps_when_the_leveling_queue_was_read():
+    # live 2026-09-26: the entry queue had no read time -> never aged -> a buffer whose
+    # pawns were all lv3 still looked 'queued' and never left the city
+    import time
+
+    from nta_agent.state.store import from_entry_rst
+    before = time.time()
+    st = from_entry_rst({"player": {"mainCityIndex": MAIN, "pawnLevelingQueues": [
+        {"index": MAIN, "puid": "p1", "needTime": 488000, "surplusTime": 10000}]}})
+    at = st.raw["player"]["_pawnLevelingQueuesAt"]
+    assert before <= at <= time.time()
+    assert leveling_pawn_uids(st, now=at + 5) == {"p1"}
+    assert leveling_pawn_uids(st, now=at + 60) == set()
