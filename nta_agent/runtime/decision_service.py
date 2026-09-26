@@ -45,7 +45,9 @@ class DecisionService:
                                    or Path(cfg.commands_path).with_name("pending_renames.json"))
 
     def _write_decisions(self, state) -> None:
-        data = [asdict(d) for d in pending_decisions(state, self.config)]
+        from nta_agent.runtime import world_random
+        pools = world_random.load(self.cfg.world_random_path)             if hasattr(self.cfg, "world_random_path") else {}
+        data = [asdict(d) for d in pending_decisions(state, self.config, pools=pools)]
         path = Path(self.cfg.decisions_path)
         path.parent.mkdir(parents=True, exist_ok=True)
         tmp = path.with_suffix(path.suffix + ".tmp")

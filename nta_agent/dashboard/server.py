@@ -583,7 +583,8 @@ def read_forge_view(cfg) -> dict:
     targets = forge_targets.load(cfg.forge_targets_path)
     equips = [{**e, "target": targets.get(str(e.get("uid")))}
               for e in (data.get("equips") or []) if isinstance(e, dict)]
-    return {"equips": equips, "busy": data.get("busy"), "iron": data.get("iron", 0)}
+    return {"equips": equips, "busy": data.get("busy"), "iron": data.get("iron", 0),
+            "smelting": data.get("smelting"), "fixator": data.get("fixator", 0)}
 
 
 def set_forge_target(cfg, body: dict) -> dict:

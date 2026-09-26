@@ -302,6 +302,11 @@ def run(cfg: RuntimeConfig, *, ticks: int = 0, session=None, engine=None) -> Non
                           name_of=lambda i: _vi(f"name_{i}"),
                           effect_text=lambda t: _vi(f"effect_{t}"),
                           pools=_wr.load(cfg.world_random_path))
+        ptext = config.table("pawnText")
+        for r in rows:  # exclusive: which troop it is for (readable on the dashboard)
+            if r.get("pawn_id"):
+                row = ptext.get(f"name_{r['pawn_id']}") or {}
+                r["pawn_name"] = row.get("vi") or row.get("en") or str(r["pawn_id"])
         out = {"equips": rows, "busy": player.get("currForgeEquip") or None,
                "smelting": player.get("currSmeltEquip") or None,
                "iron": state.resources.iron,

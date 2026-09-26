@@ -81,12 +81,28 @@ def _desc(config, text_name: str, value: int) -> str:
             tmpl = tmpl.replace("{1}", (odds.replace(",", "–") + "%") if odds else "")
             parts.append(tmpl)
         if str(base.get("exclusive_pawn") or "").strip():
-            parts.append("(chuyên dụng)")  # pawn-locked; agent won't auto-forge
+            pawn = (config.table("pawnText").get(f"name_{base.get('exclusive_pawn')}") or {})
+            parts.append("(chuyên dụng cho " + (pawn.get("vi") or pawn.get("en")
+                                                 or str(base.get("exclusive_pawn"))) + ")")
         return " · ".join(parts)
     return ""
 
 
-def pending_decisions(state, config) -> list[Decision]:
+def _pool_text(config, pool) -> str:
+    """This match's effect pool of an exclusive equip, as readable effect lines."""
+    lines = []
+    for eff_id in pool or []:
+        row = config.table("equipText").get(f"effect_{eff_id}") or {}
+        tmpl = _clean(row.get("vi") or row.get("en") or "")
+        fx = config.table("equipEffect").get(eff_id) or {}
+        val = str(fx.get("value") or "").replace(",", "–") + str(fx.get("suffix") or "")
+        odds = str(fx.get("odds") or "").replace(",", "–")
+        lines.append(tmpl.replace("{0}", val).replace("{1}", odds + "%" if odds else "")
+                     if tmpl else f"hiệu ứng #{eff_id}")
+    return "hiệu ứng random trận này: " + " / ".join(lines) if lines else ""
+
+
+def pending_decisions(state, config, pools=None) -> list[Decision]:
     player = (state.raw or {}).get("player", {}) or {}
     out: list[Decision] = []
     for slot_field, (tp, text_name) in TRACKS.items():
@@ -100,12 +116,19 @@ def pending_decisions(state, config) -> list[Decision]:
                 continue  # already chosen, or nothing offered -> not pending
             # selectIds ARE the offered ids directly (pawn/policy/equip id), not
             # ceri-row ids — resolve name/desc straight from them.
-            options = [
-                {"ceri_id": sid, "value": sid,
-                 "name": _name(text_table, sid),
-                 "desc": _desc(config, text_name, sid)}
-                for sid in select_ids
-            ]
+            options = []
+            for sid in select_ids:
+                opt = {"ceri_id": sid, "value": sid, "name": _name(text_table, sid),
+                       "desc": _desc(config, text_name, sid)}
+                if text_name == "equipText":
+                    base = config.table("equipBase").get(sid) or {}
+                    if str(base.get("exclusive_pawn") or "").strip():
+                        # exclusive: its random effect lines are PER MATCH (world pools)
+                        pool = (pools or {}).get(int(sid)) or []
+                        extra = _pool_text(config, pool)
+                        opt.update(exclusive=True, pool=list(pool),
+                                   desc=opt["desc"] + (" · " + extra if extra else ""))
+                options.append(opt)
             out.append(Decision(track=_TRACK_NAME[slot_field], tp=tp, slot_key=str(slot_key),
                                 lv=int(slot.get("lv", 0) or 0),
                                 reset_count=int(slot.get("resetCount", 0) or 0),

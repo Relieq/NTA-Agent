@@ -51,7 +51,8 @@ def test_read_alerts_default_and_file(tmp_path):
 def test_forge_view_and_target_update(tmp_path):
     from nta_agent.dashboard.server import read_forge_view, set_forge_target
     cfg = RuntimeConfig(distinct_id="x", log_dir=tmp_path)
-    assert read_forge_view(cfg) == {"equips": [], "busy": None, "iron": 0}
+    assert read_forge_view(cfg) == {"equips": [], "busy": None, "iron": 0,
+                                     "smelting": None, "fixator": 0}
     Path(cfg.forge_view_path).write_text(json.dumps({"equips": [
         {"uid": "6001_1", "quality": 0.5, "target": None}], "busy": None, "iron": 7}),
         encoding="utf-8")

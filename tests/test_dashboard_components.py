@@ -178,3 +178,11 @@ def test_intel_panel_shows_the_spare_armies_warning():
 def test_territory_map_draws_allies():
     terr = _c("TerritoryPanel.js")
     assert "ally_cells" in terr and "đồng minh" in terr
+
+
+def test_forge_panel_exclusive_controls():
+    fp = _c("ForgePanel.js")
+    assert "fixator_budget" in fp and "máy cố định" in fp      # per-item fixator budget
+    assert "lock_effect" in fp and "🔒" in fp                   # locked line marker
+    assert "smelted" in fp and "dung luyện" in fp               # smelted line marker
+    assert "pool_known" in fp and "blocked" in fp and "pawn_name" in fp
