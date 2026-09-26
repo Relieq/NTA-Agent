@@ -210,6 +210,12 @@ def run(cfg: RuntimeConfig, *, ticks: int = 0, session=None, engine=None) -> Non
             # every rule that moves/fills armies must skip the ones the composer owns
             if _composer is not None:
                 rule.locked_source = lambda: getattr(_composer, "locked_uids", set())
+            if getattr(rule, "name", "") == "logistics" and _buffers is not None:
+                # Logistics packs/moves pawns between armies: keep it off the buffers,
+                # the armies a buffer setup draws from and a main army away swapping
+                rule.locked_source = lambda: (
+                    set(getattr(_composer, "locked_uids", set()) if _composer else set())
+                    | _buffers.buffer_uids() | _buffers.away_uids())
             if getattr(rule, "name", "") in ("logistics", "heal_routing"):
                 # treat built forts as heal/relay nodes (fortAutoSupports is empty
                 # for a freshly built fort; detect them from the chunk city decode)

@@ -1626,6 +1626,7 @@ class BufferLeveling:
     _pending: object = None        # (label, callable)
     _away: set = field(default_factory=set)
     _buffers: set = field(default_factory=set)
+    _setup_reserved: set = field(default_factory=set)
 
     # ---- helpers --------------------------------------------------------------
     def _rows(self):
@@ -1695,6 +1696,14 @@ class BufferLeveling:
             return False  # nothing happens before the player approves
         proposal = st.get("proposal") or {}
         by_uid = {str(a.get("uid")): a for a in armies}
+        # While setting up, hold the armies the approved plan uses (base, merge
+        # sources, dismissals) — live 2026-09-26 expansion sent D1/D5 out mid-setup.
+        self._setup_reserved = set() if st["setup_done"] else {
+            str(u) for u in ([b.get("base_uid") for b in proposal.get("buffers") or []]
+                             + [m.get("from_uid") for b in proposal.get("buffers") or []
+                                for m in b.get("merge") or []]
+                             + list(proposal.get("dismiss") or []))
+            if u}
         if not st["setup_done"]:
             done = set(st.get("done") or [])
             for step in self._setup_steps(proposal):
@@ -1703,6 +1712,7 @@ class BufferLeveling:
                     return self._plan_setup(step, sid, by_uid, main, actions, st)
             st["setup_done"] = True
             bstate.save(self.state_path, st)
+            self._setup_reserved = set()
             self._emit("buffer_setup", {"done": True})
         if self._plan_travel(state, proposal, armies, group_armies, main, grp["target_lv"],
                              actions, st):
@@ -1715,7 +1725,9 @@ class BufferLeveling:
         return set(self._away)
 
     def buffer_uids(self) -> set[str]:
-        return set(self._buffers)
+        """Armies occupy must leave alone: the buffers, and — during setup — the
+        armies the approved plan draws from."""
+        return set(self._buffers) | set(self._setup_reserved)
 
     def _plan_travel(self, state, proposal, armies, group_armies, main, target, actions, st):
         """Per buffer: leveling -> travel (to an owned cell next to its target main

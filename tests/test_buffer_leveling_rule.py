@@ -282,3 +282,19 @@ def test_buffer_reshapes_with_a_spare_at_the_city_then_levels_the_new_type(tmp_p
     acts.calls.clear()
     _tick(rule, _state(), acts)
     assert acts.calls == [("level", "B", "sh")]              # the hunter is leveled too
+
+
+def test_setup_armies_are_reserved_until_setup_is_done(tmp_path):
+    # live 2026-09-26: expansion sent D1 + D5 (the approved base/merge source) out
+    # right after the first merge, stalling the setup
+    rule = _rule(tmp_path)
+    acts = FakeActions(_group() + _spares())
+    rule.applies(_state(), acts)                              # proposal
+    assert rule.buffer_uids() == set()                        # nothing reserved before approval
+    buffers.approve(tmp_path / "buffers.json")
+    _tick(rule, _state(), acts)
+    assert rule.buffer_uids() == {"D5", "D1"}                 # base + merge source held
+    for _ in range(6):
+        _tick(rule, _state(), acts)
+    assert buffers.load(tmp_path / "buffers.json")["setup_done"] is True
+    assert rule.buffer_uids() == {"D5"}                       # D5 is the buffer now; D1 freed
