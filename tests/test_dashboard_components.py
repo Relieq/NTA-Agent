@@ -161,3 +161,10 @@ def test_leveling_panel_buffer_mode():
     assert "/api/leveling" in lv and "/api/leveling/confirm" in lv
     assert "Nâng bằng đội dư" in lv and "Nâng trực tiếp" in lv and "Xác nhận" in lv
     assert "books_needed" in lv and "dismiss" in lv
+
+
+def test_forts_under_construction_are_shown():
+    fp = _c("FortsPanel.js")
+    assert "building" in fp and "Đang xây" in fp and "surplus_s" in fp
+    terr = _c("TerritoryPanel.js")
+    assert "Cứ Điểm đang xây" in terr and "🏗" in terr and "Cứ Điểm chờ xây" in terr

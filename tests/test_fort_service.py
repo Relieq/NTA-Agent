@@ -193,3 +193,41 @@ def test_approach_alert_written_and_emitted(tmp_path):
     assert data["approach"]["near_count"] == 1
     assert data["threat_summary"]["approaching"] is True     # brain _urgent keys off this
     assert any(k == "threat_alert" and d.get("kind") == "approach" for k, d in events)
+
+
+def test_forts_under_construction_are_listed(tmp_path):
+    """A queued fort vanished from the dashboard once create_city was sent: it isn't
+    in pending_forts any more and not yet a built city. HD_GetBTCityQueues lists it."""
+    main = 100 * 600 + 100
+    site = 110 * 600 + 104
+    owned = {main, site}
+
+    def scan(actions, main, uid, map_width=600, focus=None):
+        return {"owned": set(owned), "cities": {main: 1},
+                "enemy_cells": set(), "enemy_cities": {}, "frontier": set()}
+
+    class Acts:
+        def get_bt_city_queues(self):
+            return [{"index": site, "id": 2102, "needTime": 1800000, "surplusTime": 900000},
+                    {"index": 999999, "id": 2102, "needTime": 1, "surplusTime": 1}]  # not ours
+
+    cfg = Cfg()
+    cfg.forts_path = tmp_path / "forts.json"
+    cfg.fort_decisions_path = tmp_path / "fort_decisions.json"
+    svc = FortService(cfg=cfg, actions=Acts(), scan=scan, max_count_fn=lambda bid: 20)
+    svc.tick(_state(land_count=2, main=main))
+    data = json.loads(cfg.forts_path.read_text(encoding="utf-8"))
+    assert data["building"] == [{"x": 104, "y": 110, "index": site, "id": 2102,
+                                 "surplus_s": 900, "need_s": 1800}]
+    assert data["fort_count"] == 1          # counts toward the cap while it builds
+
+
+def test_construction_list_is_optional(tmp_path):
+    main = 100 * 600 + 100
+
+    def scan(actions, main, uid, map_width=600, focus=None):
+        return {"owned": {main}, "cities": {main: 1}, "enemy_cells": set(),
+                "enemy_cities": {}, "frontier": set()}
+    cfg, svc = _make(tmp_path, scan=scan, max_count_fn=lambda bid: 3)   # actions=object()
+    svc.tick(_state(land_count=1, main=main))
+    assert json.loads(cfg.forts_path.read_text(encoding="utf-8"))["building"] == []

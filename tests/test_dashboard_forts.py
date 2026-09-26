@@ -35,7 +35,7 @@ def test_read_forts_view_missing_returns_empty(tmp_path):
     assert v == {"owned_count": 0, "owned_cells": [], "accepted": [], "rejected": [],
                  "enemy_cells": [], "enemy_cities": [], "frontier": [], "recommendations": [],
                  "fort_zone": [], "fort_count": 0, "forts": [], "fort_cap": 0,
-                 "threats": [], "threat_summary": {"count": 0}, "pending": []}
+                 "threats": [], "threat_summary": {"count": 0}, "pending": [], "building": []}
 
 
 def test_read_alerts_default_and_file(tmp_path):
@@ -105,3 +105,13 @@ def test_forge_mins_must_lie_within_the_rollable_range(tmp_path):
     none = set_forge_target(cfg, {"uid": "6019_3", "budget": 5, "mins": {"19.value": 5}})
     assert none["ok"] is False                                      # this stat has no value
     assert set_forge_target(cfg, {"uid": "6019_3", "budget": 5, "mins": {"19.odds": 80}})["ok"]
+
+
+def test_read_forts_view_passes_forts_under_construction(tmp_path):
+    cfg = RuntimeConfig(distinct_id="x", log_dir=tmp_path)
+    Path(cfg.forts_path).parent.mkdir(parents=True, exist_ok=True)
+    Path(cfg.forts_path).write_text(json.dumps({
+        "building": [{"x": 572, "y": 132, "index": 79772, "id": 2102, "surplus_s": 600,
+                      "need_s": 1800}], "scanned_at": 100}), encoding="utf-8")
+    v = read_forts_view(cfg)
+    assert v["building"][0]["index"] == 79772 and v["scanned_at"] == 100

@@ -86,6 +86,12 @@ class Actions:
         return self.session.request("game/HD_CreateCity",
                                     {"index": int(index), "id": int(build_id)})
 
+    def get_bt_city_queues(self) -> list[dict]:
+        """City-type structures under construction (GAME_HD_GetBTCityQueues):
+        ``[{index, id, needTime, surplusTime}]`` (ms) — a Cứ Điểm being built."""
+        reply = self.session.request("game/HD_GetBTCityQueues", {})
+        return reply.get("btCityQueues", []) or []
+
     # ---- reads ----------------------------------------------------------- #
     def get_area(self, index: int, no_record: bool = True) -> dict:
         return self.session.request(

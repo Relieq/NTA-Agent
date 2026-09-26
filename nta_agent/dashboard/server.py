@@ -364,7 +364,7 @@ def read_forts_view(cfg) -> dict:
         return {"owned_count": 0, "owned_cells": [], "accepted": [], "rejected": [],
                 "enemy_cells": [], "enemy_cities": [], "frontier": [], "recommendations": [],
                 "fort_zone": [], "fort_count": 0, "forts": [], "fort_cap": 0,
-                "threats": [], "threat_summary": {"count": 0}, "pending": []}
+                "threats": [], "threat_summary": {"count": 0}, "pending": [], "building": []}
     return {"owned_count": data.get("owned_count", 0),
             "owned_cells": data.get("owned_cells") or [],
             "accepted": data.get("accepted") or [],
@@ -379,7 +379,9 @@ def read_forts_view(cfg) -> dict:
             "fort_cap": data.get("fort_cap", 0),
             "threats": data.get("threats") or [],
             "threat_summary": data.get("threat_summary") or {"count": 0},
-            "pending": _read_pending_forts(cfg)}
+            "pending": _read_pending_forts(cfg),
+            # forts under construction (sent, not built yet) + when that was read
+            "building": data.get("building") or [], "scanned_at": data.get("scanned_at")}
 
 
 def read_dig(cfg) -> dict:
