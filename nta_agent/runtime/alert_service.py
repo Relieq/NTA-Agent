@@ -51,9 +51,14 @@ class AlertService:
             forts = self._forts()
             owned = {int(y) * self.mw + int(x) for x, y in (forts.get("owned_cells") or [])}
             me = getattr(getattr(state, "user", None), "uid", "")
+            from nta_agent.execution.alliance import ally_uids
+            try:
+                allies = ally_uids(self.actions, state)
+            except Exception:
+                allies = set()
             incoming = hostile_marches(getattr(state, "world_marches", {}) or {}, me, owned,
                                        int(getattr(state, "main_city_index", 0) or 0),
-                                       mw=self.mw, now=now)
+                                       mw=self.mw, now=now, allies=allies)
             for h in incoming:
                 if h["uid"] not in self._seen:
                     self._seen.add(h["uid"])

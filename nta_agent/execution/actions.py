@@ -104,6 +104,12 @@ class Actions:
         return self.session.request("game/HD_CreateCity",
                                     {"index": int(index), "id": int(build_id)})
 
+    def get_alliance(self, alliance_uid: str) -> dict:
+        """An alliance's info incl. ``members[{uid, nickname, job, ...}]``
+        (GAME_HD_GetAlliance{uid}) — its members are our allies."""
+        reply = self.session.request("game/HD_GetAlliance", {"uid": str(alliance_uid)})
+        return reply.get("alliance") or {}
+
     def get_bt_city_queues(self) -> list[dict]:
         """City-type structures under construction (GAME_HD_GetBTCityQueues):
         ``[{index, id, needTime, surplusTime}]`` (ms) — a Cứ Điểm being built."""

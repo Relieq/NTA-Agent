@@ -28,19 +28,22 @@ def _main_block(main: int, mw: int) -> set[int]:
 
 
 def hostile_marches(marches: dict, my_uid, owned, main: int, *, mw: int = 600,
-                    now: float | None = None) -> list[dict]:
+                    now: float | None = None, allies=()) -> list[dict]:
     """Other players' marches targeting our main city block or an owned cell.
 
     Sorted most-dangerous first: strikes on the main city, then soonest arrival.
     ``eta_s`` = server surplusTime (ms) minus the time since we received it.
     """
     me = str(my_uid)
+    allies = {str(a) for a in (allies or ())}
     block = _main_block(int(main or 0), mw)
     owned = set(owned or ())
     now = time.time() if now is None else now
     out = []
     for m in (marches or {}).values():
         if not isinstance(m, dict) or str(m.get("owner", "")) in ("", me):
+            continue
+        if str(m.get("owner", "")) in allies:  # an ally's march (e.g. support) isn't an attack
             continue
         tgt = int(m.get("targetIndex", 0) or 0)
         on_main = tgt in block

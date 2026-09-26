@@ -173,3 +173,8 @@ def test_forts_under_construction_are_shown():
 def test_intel_panel_shows_the_spare_armies_warning():
     ip = _c("IntelPanel.js")
     assert "r.spares" in ip and "Đội lẻ" in ip
+
+
+def test_territory_map_draws_allies():
+    terr = _c("TerritoryPanel.js")
+    assert "ally_cells" in terr and "đồng minh" in terr

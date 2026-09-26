@@ -129,7 +129,7 @@ def scan_owned(actions, main: int, uid, map_width: int = 600, focus=None):
     return owned, cities
 
 
-def scan_map(actions, main: int, uid, map_width: int = 600, focus=None) -> dict:
+def scan_map(actions, main: int, uid, map_width: int = 600, focus=None, allies=None) -> dict:
     """Fetch the near chunks and decode EVERY player in them.
 
     Returns owned/cities (mine), enemy_cells/enemy_cities (all other players),
@@ -141,6 +141,9 @@ def scan_map(actions, main: int, uid, map_width: int = 600, focus=None) -> dict:
     cities: dict[int, int] = {}
     enemy_cells: set[int] = set()
     enemy_cities: dict[int, int] = {}
+    ally_cells: set[int] = set()
+    ally_cities: dict[int, int] = {}
+    allies = {str(a) for a in (allies or ())}
     seen: set[int] = set()
 
     def fetch(cid: int) -> list[int]:
@@ -159,6 +162,9 @@ def scan_map(actions, main: int, uid, map_width: int = 600, focus=None) -> dict:
                 owned.update(cells)
                 cities.update(cmap)
                 mine_here = cells
+            elif str(u) in allies:  # alliance members: not enemies (still not ours)
+                ally_cells.update(cells)
+                ally_cities.update(cmap)
             else:
                 enemy_cells.update(cells)
                 enemy_cities.update(cmap)
@@ -177,7 +183,8 @@ def scan_map(actions, main: int, uid, map_width: int = 600, focus=None) -> dict:
         for nx, ny in ((x + 1, y), (x - 1, y), (x, y + 1), (x, y - 1)):
             if 0 <= nx < map_width and 0 <= ny < map_width:
                 n = ny * map_width + nx
-                if n not in owned and n not in enemy_cells:
+                if n not in owned and n not in enemy_cells and n not in ally_cells:
                     frontier.add(n)
     return {"owned": owned, "cities": cities, "enemy_cells": enemy_cells,
-            "enemy_cities": enemy_cities, "frontier": frontier}
+            "enemy_cities": enemy_cities, "frontier": frontier,
+            "ally_cells": ally_cells, "ally_cities": ally_cities}

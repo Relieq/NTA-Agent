@@ -41,3 +41,14 @@ def test_scan_map_splits_mine_and_enemy_and_frontier():
     assert _idx(9, 10) in m["frontier"] and _idx(12, 10) in m["frontier"]
     assert _idx(10, 10) not in m["frontier"]        # owned is not frontier
     assert _idx(20, 20) not in m["frontier"]         # enemy is not frontier
+
+
+def test_allied_cells_are_not_enemies_nor_frontier():
+    mine = {"indexs1": _rect_bytes(10, 10, 11, 11), "indexs2": b"", "cities": b""}
+    ally = {"indexs1": _rect_bytes(12, 10, 12, 10), "indexs2": b"", "cities": b""}  # next to me
+    enemy = {"indexs1": _rect_bytes(20, 20, 20, 20), "indexs2": b"", "cities": b""}
+    acts = FakeActions({"57696053": mine, "777": ally, "999": enemy})
+    m = scan_map(acts, main=_idx(10, 10), uid="57696053", map_width=600, allies={"777"})
+    assert _idx(12, 10) in m["ally_cells"] and _idx(12, 10) not in m["enemy_cells"]
+    assert _idx(20, 20) in m["enemy_cells"]
+    assert _idx(12, 10) not in m["frontier"]          # can't occupy an ally's cell either

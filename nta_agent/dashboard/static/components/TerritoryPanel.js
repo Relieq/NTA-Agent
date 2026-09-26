@@ -19,7 +19,7 @@ export default {
   const canvas=ref(null), tip=ref(null), sel=ref(null);
   let scale=16, originX=0, originY=0, fitted=false, hover=null;
   let data={main:0, mw:MAPW, owned:[], accepted:[], forts:[], garr:[], zone:[], fortCount:0, fortCap:0, armyCells:{},
-            building:[], pending:[]};
+            building:[], pending:[], enemy:[], enemyCities:[], frontier:[], ally:[], allyCities:[]};
   const dig=ref({state:"idle"});
   let digBuf=2; try{ const v=parseInt(localStorage.getItem("nta.digBuffer")); if(v>=0&&v<=6) digBuf=v; }catch(e){}
   const digBuffer=ref(digBuf);
@@ -55,6 +55,7 @@ export default {
    data.garr.forEach(([x,y])=>put(x,y,"quân trú"));
    data.owned.forEach(([x,y])=>put(x,y,"đã chiếm"));
    data.enemy.forEach(([x,y])=>put(x,y,"địch"));
+   data.ally.forEach(([x,y])=>put(x,y,"đồng minh"));
    data.frontier.forEach(([x,y])=>put(x,y,"biên giới trống"));
   }
 
@@ -121,6 +122,10 @@ export default {
      ctx.strokeStyle="#e3b341"; ctx.lineWidth=1.5; ctx.strokeRect(sX(x)+2,sY(y)+2,scale-4,scale-4); } });
    data.enemy.forEach(([x,y])=>{ if(inView(x,y)){ box(x,y,"#da3633");        // ô địch (đỏ)
     ctx.strokeStyle="#0b1320"; ctx.lineWidth=1; ctx.strokeRect(sX(x)+1.5,sY(y)+1.5,scale-3,scale-3); } });
+   data.ally.forEach(([x,y])=>{ if(inView(x,y)){ box(x,y,"#2f81f7");        // ô đồng minh (lam)
+    ctx.strokeStyle="#0b1320"; ctx.lineWidth=1; ctx.strokeRect(sX(x)+1.5,sY(y)+1.5,scale-3,scale-3); } });
+   data.allyCities.forEach(c=>{ if(inView(c.x,c.y)){ ctx.strokeStyle="#cfe3ff"; ctx.lineWidth=2;
+    ctx.strokeRect(sX(c.x)+3,sY(c.y)+3,scale-6,scale-6); } });             // thành đồng minh
    data.enemyCities.forEach(c=>{ if(inView(c.x,c.y)){ ctx.strokeStyle="#0b1320"; ctx.lineWidth=2;
     ctx.strokeRect(sX(c.x)+3,sY(c.y)+3,scale-6,scale-6); } });             // thành/fort địch
    // troop markers: ring coloured by activity + pawn-count badge (idle steel /
@@ -247,6 +252,7 @@ export default {
     forts:f.forts||[],   // built Cứ Điểm from the chunk city decode (authoritative)
     garr:(t.garrisons||[]).map(i=>[i%mw, Math.floor(i/mw)]),
     enemy:f.enemy_cells||[], enemyCities:f.enemy_cities||[], frontier:f.frontier||[],
+    ally:f.ally_cells||[], allyCities:f.ally_cities||[],
     zone:f.fort_zone||[], fortCount:f.fort_count||0, fortCap:f.fort_cap||0, armyCells,
     building:f.building||[], pending:f.pending||[] };
    zoneSet=new Set(data.zone.map(([x,y])=>x+","+y));
@@ -377,6 +383,7 @@ export default {
    <span><b style="color:#d95926">▨</b> vùng gợi ý xây Cứ Điểm — bấm 1 ô để agent xây</span>
    <span>quân (số=lính): <b style="color:#c3c2b7">▢</b>rảnh <b style="color:#58a6ff">▢</b>hành quân <b style="color:#da3633">▢</b>đang đánh</span>
    <span><b style="color:#da3633">■</b> ô địch</span>
+   <span><b style="color:#2f81f7">■</b> ô đồng minh (cùng liên minh)</span>
    <span><b class="muted">▢</b> biên giới trống (xấp xỉ)</span>
    <span><b style="color:#ff9f1c">▢</b> đường dig 🎯 đích · <b style="color:#da3633">✕</b> ô chưa đánh nổi</span>
    <span><b style="color:#F5E900">◇</b> vùng bảo vệ/tăng tốc = bán kính 6 ô (Manhattan) quanh thành 2×2 — không cần xây Cứ Điểm bên trong</span>

@@ -231,3 +231,31 @@ def test_construction_list_is_optional(tmp_path):
     cfg, svc = _make(tmp_path, scan=scan, max_count_fn=lambda bid: 3)   # actions=object()
     svc.tick(_state(land_count=1, main=main))
     assert json.loads(cfg.forts_path.read_text(encoding="utf-8"))["building"] == []
+
+
+def test_allied_cells_are_listed_apart_and_not_threats(tmp_path):
+    main = 100 * 600 + 100
+    ally_cell = 100 * 600 + 102            # right next to us
+    seen = {}
+
+    def scan(actions, main, uid, map_width=600, focus=None, allies=None):
+        seen["allies"] = allies
+        return {"owned": {main, main + 1}, "cities": {main: 1}, "enemy_cells": set(),
+                "enemy_cities": {}, "frontier": set(), "ally_cells": {ally_cell},
+                "ally_cities": {}}
+
+    class Acts:
+        def get_alliance(self, uid):
+            return {"members": [{"uid": "u1"}, {"uid": "friend"}]}
+
+    cfg = Cfg()
+    cfg.forts_path = tmp_path / "forts.json"
+    cfg.fort_decisions_path = tmp_path / "fort_decisions.json"
+    svc = FortService(cfg=cfg, actions=Acts(), scan=scan, max_count_fn=lambda b: 5)
+    st = _state(land_count=2, main=main)
+    st.raw["player"]["allianceUid"] = "ALLI"
+    svc.tick(st)
+    data = json.loads(cfg.forts_path.read_text(encoding="utf-8"))
+    assert seen["allies"] == {"friend"}
+    assert data["ally_cells"] == [[102, 100]] and data["enemy_cells"] == []
+    assert data["threat_summary"]["count"] == 0
