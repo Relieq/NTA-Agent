@@ -1211,12 +1211,22 @@ class Recruit:
                         and len(army.get("pawns", [])) < self.max_army_pawns):
                     self._pending = (bu, pid, army_uid, "", len(army.get("pawns", [])))
                     return True
-        # recruit into a non-marching city army that still has room
-        room = next((a for a in armys
-                     if not a.get("state") and not self._is_full(a)
-                     and len(a.get("pawns", [])) < self.max_army_pawns), None)
+        # recruit into a non-marching city army that still has room — with THAT army's
+        # own main troop type, so a refill never mixes it (live 2026-09-26: a tank army
+        # got a Cường Nỏ, the first unlocked type). Its type locked/unaffordable -> skip it.
+        room, fill = None, pawn
+        for a in armys:
+            if a.get("state") or self._is_full(a) or len(a.get("pawns", [])) >= self.max_army_pawns:
+                continue
+            main = _main_pawn_type(a)
+            if main is None:
+                room, fill = a, pawn
+                break
+            if main in unlocked and self._affordable(state, main):
+                room, fill = a, main
+                break
         if room:
-            self._pending = (bu, pawn, str(room["uid"]), "", len(room.get("pawns", [])))
+            self._pending = (bu, fill, str(room["uid"]), "", len(room.get("pawns", [])))
         elif len(armys) < self.max_armies and not (
                 self._max_army_count and len(armys) >= self._max_army_count):
             # Name against ALL the player's armies — the city list misses those out on
@@ -1252,6 +1262,14 @@ class Recruit:
                 return
             self._cooldown = self.fail_cooldown
             raise
+
+
+def _main_pawn_type(army: dict) -> int | None:
+    """The most common troop type in an army (None if its pawns carry no id)."""
+    from collections import Counter
+    ids = Counter(int(p.get("id")) for p in army.get("pawns") or []
+                  if isinstance(p, dict) and p.get("id"))
+    return ids.most_common(1)[0][0] if ids else None
 
 
 @dataclass

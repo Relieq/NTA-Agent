@@ -153,3 +153,25 @@ def test_stands_down_while_a_strike_group_is_recruiting():
     act = FakeActions(st, armys=[{"uid": "A", "pawns": [{}, {}], "state": None}])
     r = Recruit(config=False, locked_source=lambda: {"strike1"})
     assert r.applies(st, act) is False
+
+
+def test_refills_an_army_with_its_own_troop_type():
+    # live 2026-09-26: Đội 1 (7 Khiên Lớn 3202 + 1 Đao Khiên) lost a pawn and got a
+    # Cường Nỏ 3305 — the first unlocked type — mixing the army. Refill with the
+    # army's main type instead (user: armies stay pure where possible).
+    st = _state([3305, 3202, 3201])
+    pawns = [{"id": 3202}] * 7 + [{"id": 3201}]
+    act = FakeActions(st, armys=[{"uid": "D1", "pawns": pawns, "state": None}])
+    r = Recruit(config=False)
+    assert r.applies(st, act) is True
+    r.act(act)
+    assert act.calls == [("bar", 3202, "D1", "")]
+
+
+def test_refill_waits_when_the_armys_type_is_not_unlocked():
+    st = _state([3305])
+    act = FakeActions(st, armys=[{"uid": "D1", "pawns": [{"id": 3202}] * 8, "state": None}])
+    r = Recruit(config=False)
+    r.applies(st, act)
+    r.act(act)
+    assert all(c[1] == 3305 and c[2] != "D1" for c in act.calls)   # never mixes D1

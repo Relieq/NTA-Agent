@@ -330,9 +330,16 @@ class Actions:
         return reply
 
     def lock_equip_effect(self, equip_uid: str, effect: int) -> dict:
-        """Lock an equip effect (GAME_HD_LockEquipEffect). Costs fixator."""
-        return self.session.request("game/HD_LockEquipEffect",
-                                    {"uid": str(equip_uid), "effect": int(effect)})
+        """Lock an exclusive equip's effect (GAME_HD_LockEquipEffect). Free itself;
+        every later recast then costs +1 fixator. The reply carries no data, so
+        mirror the engine (``equip.lockEffect = effect``) into our state."""
+        reply = self.session.request("game/HD_LockEquipEffect",
+                                     {"uid": str(equip_uid), "effect": int(effect)})
+        raw = self._state.raw if isinstance(self._state.raw, dict) else {}
+        for e in (raw.get("player") or {}).get("equips") or []:
+            if isinstance(e, dict) and str(e.get("uid")) == str(equip_uid):
+                e["lockEffect"] = int(effect)
+        return reply
 
     # ---- army reads ----------------------------------------------------- #
     def get_player_armys(self) -> list[dict]:
