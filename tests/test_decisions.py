@@ -38,7 +38,7 @@ def test_equip_decision_desc_has_stats():
     assert opts[6001]["name"] == "Rìu Chiến"
     assert opts[6001]["desc"] == "ST 1–5 · Máu 20–40 · Có 20–40% gây 150–180% ST Bạo"
     # armor: no attack, no effect text, specialized note
-    assert opts[6002]["desc"] == "Máu 20–70 · (chuyên dụng)"
+    assert opts[6002]["desc"] == "Máu 20–70 · (chuyên dụng cho Lính Trường Thương)"
 
 
 def test_equip_decision_desc_handles_multi_effect():
@@ -86,3 +86,12 @@ def test_policy_track_name_desc_and_unknown_fallback():
     assert ds[0].options[0]["desc"] == "Sản lượng cơ bản mỗi giờ tăng {0}"
     assert ds[0].options[1]["name"] == "#99"  # unknown id -> fallback
     assert ds[0].options[1]["desc"] == ""     # unknown id -> no desc
+
+
+def test_exclusive_option_shows_its_pawn_and_this_match_pool():
+    st = _state(equip={"e10": {"selectIds": [6002], "id": 0, "resetCount": 0, "lv": 10}})
+    ds = pending_decisions(st, FakeConfig(), pools={6002: [3]})
+    (o,) = ds[0].options
+    assert "Lính Trường Thương" in o["desc"]                 # the pawn it's for
+    assert "trận này" in o["desc"] and "ST Bạo" in o["desc"]  # this match's effect pool
+    assert o["exclusive"] is True and o["pool"] == [3]

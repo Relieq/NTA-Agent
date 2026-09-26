@@ -137,7 +137,10 @@ def test_forge_view_lists_common_equips_with_quality_and_target():
     rows = forge_view([_eq(effects=((3, 165, 30),), recast=2), _eq("9001_1", 9001)],
                       base_of, eff_row, {"6001_1": {"threshold": 0.8, "budget": 12}},
                       name_of=names.get, effect_text=texts.get)
-    assert [r["uid"] for r in rows] == ["6001_1"]              # specialized hidden
+    # exclusive (pawn-locked) equips are listed too since 2026-09-26, flagged as such
+    assert [r["uid"] for r in rows] == ["6001_1", "9001_1"]
+    assert [r["exclusive"] for r in rows] == [False, True]
+    rows = [r for r in rows if not r["exclusive"]]
     r = rows[0]
     assert r["name"] == "Rìu Chiến" and r["quality"] == 0.5 and r["recast_count"] == 2
     assert r["target"] == {"threshold": 0.8, "budget": 12} and r["iron_cost"] == 3
