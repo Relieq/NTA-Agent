@@ -31,12 +31,11 @@ def test_army_strike_target_validated_and_kept():
     assert len(st) == 2                                       # entry w/o pawn_id dropped
 
 
-def test_occupy_policy_order_accepted_and_validated():
-    # A valid order policy passes through; an invalid one is dropped.
+def test_occupy_policy_order_is_not_a_brain_lever():
+    # user 2026-09-27: which army leads is decided per battle by the sim ("auto");
+    # the brain must not force a global order (it flipped tank_first/dps_first).
     out = sanitize_edits({"occupy": {"policy": {"order": "tank_first"}}}, _prof(), set())
-    assert out["occupy"]["policy"] == {"order": "tank_first"}
-    out2 = sanitize_edits({"occupy": {"policy": {"order": "bogus"}}}, _prof(), set())
-    assert "policy" not in out2.get("occupy", {})
+    assert "policy" not in out.get("occupy", {})
 
 
 def test_army_only_real_uids_and_nonneg_counts():

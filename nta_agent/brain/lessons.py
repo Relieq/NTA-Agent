@@ -64,11 +64,11 @@ def match_lessons(lessons, situation: dict) -> list[Lesson]:
         if lz.status == "retired" or (lz.trigger or {}).get("kind") != kind:
             continue
         match = (lz.trigger or {}).get("match") or {}
-        if "monster_id" in match and int(match["monster_id"]) not in monster_ids:
+        if match.get("monster_id") is not None and int(match["monster_id"]) not in monster_ids:
             continue
-        if "resource" in match and match["resource"] != situation.get("resource"):
+        if match.get("resource") is not None and match["resource"] != situation.get("resource"):
             continue
-        if "goal" in match and match["goal"] != situation.get("goal"):
+        if match.get("goal") is not None and match["goal"] != situation.get("goal"):
             continue
         out.append(lz)
     return out
@@ -106,8 +106,14 @@ class LessonStore:
         """Add a new lesson or, if one with the same trigger exists, refresh it.
 
         ``data`` is a plain dict (as produced by guard.sanitize_lessons). Returns the
-        lesson id (existing one on a dedup hit)."""
+        lesson id (existing one on a dedup hit), or "" when every cited failure was
+        already dismissed by the player (a retired lesson cites it): re-proposing a
+        retired lesson from the same evidence must not bring it back."""
         now = time.time()
+        dismissed = {ev for le in self._lessons if le.status == "retired" for ev in le.evidence}
+        ev_in = list(data.get("evidence") or [])
+        if ev_in and all(ev in dismissed for ev in ev_in):
+            return ""
         existing = self._find(data.get("trigger") or {})
         if existing is not None:
             existing.last_seen = now

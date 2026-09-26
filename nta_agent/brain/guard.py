@@ -39,7 +39,8 @@ def _formation(f: dict, valid: set) -> dict:
     return out
 
 
-def sanitize_edits(edits: dict, profile, valid_army_uids, valid_build_ids=None) -> dict:
+def sanitize_edits(edits: dict, profile, valid_army_uids, valid_build_ids=None, *,
+                   allow_order: bool = False) -> dict:
     valid = {str(u) for u in (valid_army_uids or ())}
     out: dict = {}
 
@@ -53,7 +54,9 @@ def sanitize_edits(edits: dict, profile, valid_army_uids, valid_build_ids=None) 
         if "expansion" in occ_in and str(occ_in["expansion"]) in _EXPANSION:
             occ["expansion"] = str(occ_in["expansion"])
         pol_in = occ_in.get("policy")
-        if (isinstance(pol_in, dict) and "order" in pol_in
+        # the global lead order is the player's (default "auto" = the sim decides per
+        # battle, user 2026-09-27); only a situation-matched lesson may carry one
+        if (allow_order and isinstance(pol_in, dict) and "order" in pol_in
                 and str(pol_in["order"]) in _OCCUPY_ORDER):
             occ["policy"] = {"order": str(pol_in["order"])}
         loot_in = occ_in.get("loot")
@@ -219,7 +222,8 @@ def _safe_lever_edits(lever, valid_army_uids, valid_build_ids) -> dict:
     only auto-apply the SAME safe levers the brain may edit. army.* (incl.
     strike_target) is dropped: a strike group needs the player's confirmation."""
     dummy = types.SimpleNamespace(occupy={"max_loss": 0}, army={})
-    clean = sanitize_edits(lever, dummy, valid_army_uids, valid_build_ids=valid_build_ids)
+    clean = sanitize_edits(lever, dummy, valid_army_uids, valid_build_ids=valid_build_ids,
+                           allow_order=True)
     clean.pop("build", None)
     clean.pop("advice", None)
     clean.pop("notes", None)
@@ -229,6 +233,20 @@ def _safe_lever_edits(lever, valid_army_uids, valid_build_ids) -> dict:
         if not clean["occupy"]:
             clean.pop("occupy")
     return clean
+
+
+def _order_grounded(order: str, evidence, ledger) -> bool:
+    """A lesson prescribing a lead order must agree with what its cited losses'
+    counterfactuals (the sim's best order) say: at least half of those that have
+    one. Evidence without counterfactuals can not contradict it."""
+    rows = getattr(ledger, "all", None)
+    if rows is None:
+        return True
+    ev = set(evidence)
+    bests = [((r.context or {}).get("counterfactual") or {}).get("best_order")
+             for r in rows() if r.id in ev]
+    bests = [b for b in bests if b]
+    return not bests or 2 * sum(1 for b in bests if b == order) >= len(bests)
 
 
 def sanitize_lessons(edits, ledger, valid_army_uids, valid_build_ids=None) -> list:
@@ -249,7 +267,7 @@ def sanitize_lessons(edits, ledger, valid_army_uids, valid_build_ids=None) -> li
             continue  # grounded-only: no real evidence -> not a lesson
         trig = le.get("trigger") or {}
         match = {k: v for k, v in (trig.get("match") or {}).items()
-                 if k in _LESSON_TRIGGER_KEYS}
+                 if k in _LESSON_TRIGGER_KEYS and v not in (None, "")}
         trigger = {"kind": str(trig.get("kind", ""))}
         if match:
             trigger["match"] = match
@@ -261,6 +279,15 @@ def sanitize_lessons(edits, ledger, valid_army_uids, valid_build_ids=None) -> li
             resolution = {"advice": adv.strip()[:200]}
         elif isinstance(res_in.get("lever_edits"), dict):
             lever = _safe_lever_edits(res_in["lever_edits"], valid_army_uids, valid_build_ids)
+            order = ((lever.get("occupy") or {}).get("policy") or {}).get("order")
+            if order:
+                if not _order_grounded(order, evidence, ledger):
+                    continue  # contradicts its own evidence (live 2026-09-27) -> no lesson
+                if not match:
+                    # a broad lesson applies globally — never the lead order
+                    lever["occupy"].pop("policy", None)
+                    if not lever["occupy"]:
+                        lever.pop("occupy")
             if lever:
                 resolution = {"lever_edits": lever}
         if resolution is None:            # human-owned-only or empty -> advise instead

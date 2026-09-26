@@ -291,10 +291,12 @@ def test_broad_lesson_is_applied_globally(tmp_path):
                        llm_propose=lambda dg, p: {"lessons": [{
                            "trigger": {"kind": "battle_loss"},   # no match -> broad
                            "diagnosis": "we out-level rarely; lead tanks",
-                           "resolution": {"lever_edits": {"occupy": {"policy": {"order": "tank_first"}}}},
+                           "resolution": {"lever_edits": {"occupy": {
+                               "expansion": "spiral", "policy": {"order": "tank_first"}}}},
                            "evidence": [eid]}], "rationale": "learn"})
     svc.tick(_state())
-    assert prof.occupy["policy"]["order"] == "tank_first"         # broad -> global
+    assert prof.occupy["expansion"] == "spiral"                   # broad -> global
+    assert prof.occupy["policy"]["order"] == "auto"   # but never the global lead order
 
 
 def test_hallucinated_lesson_without_evidence_is_dropped(tmp_path):
