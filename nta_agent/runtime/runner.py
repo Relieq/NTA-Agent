@@ -259,7 +259,8 @@ def run(cfg: RuntimeConfig, *, ticks: int = 0, session=None, engine=None) -> Non
             from nta_agent.runtime import forge_targets as _ft
             rule.on_event = log.append
             rule.targets_source = lambda: _ft.load(cfg.forge_targets_path)
-            rule.spend_fn = lambda uid, iron: _ft.spend(cfg.forge_targets_path, uid, iron)
+            rule.spend_fn = lambda uid, iron, fixator=0: _ft.spend(cfg.forge_targets_path, uid,
+                                                                   iron, fixator=fixator)
         elif getattr(rule, "name", "") == "build_order":
             from nta_agent.runtime import fort_queue as _fq
             rule.pending_forts_source = lambda: _fq.load(cfg.pending_forts_path)

@@ -605,6 +605,12 @@ def set_forge_target(cfg, body: dict) -> dict:
         return {"ok": False, "error": "ngân sách không hợp lệ"}
     if budget < 0:
         return {"ok": False, "error": "ngân sách ≥ 0"}
+    try:  # exclusive equips: per-item fixator budget (optional)
+        fix_budget = int(body.get("fixator_budget") or 0)
+    except (TypeError, ValueError):
+        return {"ok": False, "error": "ngân sách máy cố định không hợp lệ"}
+    if fix_budget < 0:
+        return {"ok": False, "error": "ngân sách máy cố định ≥ 0"}
     if "mins" in body:
         # The rollable range of each effect number (from the agent's forge view): a
         # minimum above the best roll can never be met — the agent would burn the whole
@@ -641,7 +647,8 @@ def set_forge_target(cfg, body: dict) -> dict:
             mins[str(k)] = fv
         if not mins:
             return {"ok": False, "error": "đặt ít nhất một mức tối thiểu"}
-        forge_targets.set_target(cfg.forge_targets_path, uid, 1.0, budget, mins=mins)
+        forge_targets.set_target(cfg.forge_targets_path, uid, 1.0, budget, mins=mins,
+                                 fixator_budget=fix_budget)
         return {"ok": True}
     try:
         pct = float(body.get("threshold_pct"))

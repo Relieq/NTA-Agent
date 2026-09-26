@@ -2292,7 +2292,9 @@ class Forge:
     profile: object = None
     on_event: object = None
     targets_source: object = None  # callable -> {equip_uid: {threshold, budget}}
-    spend_fn: object = None        # spend_fn(uid, iron): debit that item's iron budget
+    spend_fn: object = None        # spend_fn(uid, iron, fixator=0): debit the item's budgets
+    pools_source: object = None    # callable -> {exclusive equipId: [effectType]} (per match)
+    _held: set = field(default_factory=set)  # exclusive uids halted (fixator cost mismatch)
     _cooldown: int = 0
     _pending: str = ""   # equip uid to forge
     _recast: object = None  # RecastDecision when _pending is a recast
@@ -2323,6 +2325,8 @@ class Forge:
         player = (state.raw or {}).get("player") or {}
         if player.get("currForgeEquip"):
             return False  # a forge is already running
+        if player.get("currSmeltEquip"):
+            return False  # smelting blocks forging (ecode.500237)
         from nta_agent.execution.forge import affordable, craft_candidates, equip_id
         equips = player.get("equips") or []
         # live EquipInfo may omit `id` -> derive from uid, or a crafted equip looks
@@ -2331,11 +2335,12 @@ class Forge:
         cands = craft_candidates(
             player.get("equipSlots") or {},
             lambda i: cfg.table("equipBase").get(i),
-            crafted)  # normal forge_cost: room_type 1 is NOT the engine's isNoviceMode
+            crafted, exclusive=True)  # an exclusive in a slot = the player's choice  # normal forge_cost: room_type 1 is NOT the engine's isNoviceMode
                       # (the tutorial sandbox) — live craft took forge_time 349s, not 200s
         res = {"cereal": state.resources.cereal, "timber": state.resources.timber,
                "stone": state.resources.stone, "iron": state.resources.iron,
-               "gold": state.resources.gold}
+               "gold": state.resources.gold,
+               "fixator": int(getattr(state.resources, "fixator", 0) or 0)}
         for c in cands:
             if affordable(c["cost"], res):
                 self._pending, self._recast = c["uid"], None
@@ -2349,16 +2354,37 @@ class Forge:
             targets = self.targets_source() or {}
         except Exception:
             targets = {}
+        targets = {u: t for u, t in targets.items() if str(u) not in self._held}
+        pools = {}
+        if self.pools_source is not None:
+            try:
+                pools = self.pools_source() or {}
+            except Exception:
+                pools = {}
         from nta_agent.execution.forge import next_recast
         d = next_recast(equips, lambda i: cfg.table("equipBase").get(i),
-                        lambda t: cfg.table("equipEffect").get(t), targets, res)
+                        lambda t: cfg.table("equipEffect").get(t), targets, res, pools=pools)
         if d is None:
             return False
         self._pending, self._recast = d.uid, d
         if self.on_event:
-            self.on_event("forge_recast", {"uid": d.uid, "quality": round(d.quality, 3),
-                                           "unmet": d.unmet, "iron": d.iron, "free": d.free})
+            if d.kind == "lock":
+                self.on_event("forge_lock", {"uid": d.uid, "effect": d.lock_effect,
+                                             "unmet": d.unmet})
+            else:
+                self.on_event("forge_recast", {"uid": d.uid, "quality": round(d.quality, 3),
+                                               "unmet": d.unmet, "iron": d.iron, "free": d.free,
+                                               "fixator": d.fixator})
         return True
+
+    @staticmethod
+    def _fixators_paid(reply) -> int | None:
+        """Fixators a ForgeEquip reply says were charged (CType 14), None if unknown."""
+        cost = (reply or {}).get("cost")
+        if not isinstance(cost, list):
+            return None
+        return sum(int(c.get("count", 0) or 0) for c in cost
+                   if isinstance(c, dict) and int(c.get("type", 0) or 0) == 14)
 
     def act(self, actions: Actions) -> None:
         uid, self._pending = self._pending, ""
@@ -2366,9 +2392,24 @@ class Forge:
         if not uid:
             return
         try:
-            actions.forge_equip(uid)
-            if recast is not None and recast.iron and self.spend_fn is not None:
-                self.spend_fn(uid, recast.iron)  # debit this item's iron budget
+            if recast is not None and recast.kind == "lock":
+                # a setting, no cost: from now on recasts keep this line (+1 fixator each)
+                actions.lock_equip_effect(uid, recast.lock_effect)
+                return
+            reply = actions.forge_equip(uid)
+            if recast is not None and (recast.iron or recast.fixator) and self.spend_fn is not None:
+                if recast.fixator:
+                    self.spend_fn(uid, recast.iron, recast.fixator)  # debit iron + fixators
+                else:
+                    self.spend_fn(uid, recast.iron)                  # debit this item's iron
+            paid = self._fixators_paid(reply) if recast is not None else None
+            if recast is not None and paid is not None and paid != recast.fixator:
+                # our fixator estimate (client formula) disagrees with the server: stop
+                # recasting this equip and say so, rather than burn fixators blindly
+                self._held.add(uid)
+                if self.on_event:
+                    self.on_event("forge_fixator_mismatch", {"uid": uid, "expected": recast.fixator,
+                                                             "paid": paid})
             # A forge takes time and its in-progress state isn't synced to us, so
             # wait it out instead of re-forging (which would hit ecode.500058).
             self._cooldown = self.forge_cooldown

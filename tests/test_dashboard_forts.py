@@ -59,7 +59,7 @@ def test_forge_view_and_target_update(tmp_path):
     r = set_forge_target(cfg, {"uid": "6001_1", "threshold_pct": 80, "budget": 30})
     assert r["ok"] is True
     v = read_forge_view(cfg)
-    assert v["equips"][0]["target"] == {"threshold": 0.8, "budget": 30}
+    assert v["equips"][0]["target"] == {"threshold": 0.8, "budget": 30, "fixator_budget": 0}
     # validation + removal
     assert set_forge_target(cfg, {"uid": "", "threshold_pct": 80, "budget": 1})["ok"] is False
     assert set_forge_target(cfg, {"uid": "6001_1", "threshold_pct": 150, "budget": 1})["ok"] is False

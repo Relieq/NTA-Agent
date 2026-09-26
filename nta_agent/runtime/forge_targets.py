@@ -23,7 +23,9 @@ def load(path) -> dict:
     for uid, cfg in d.items():
         if isinstance(cfg, dict):
             t = {"threshold": float(cfg.get("threshold", 1.0) or 0.0),
-                 "budget": int(cfg.get("budget", 0) or 0)}
+                 "budget": int(cfg.get("budget", 0) or 0),
+                 # exclusive equips: fixators the agent may spend on THAT equip
+                 "fixator_budget": int(cfg.get("fixator_budget", 0) or 0)}
             mins = cfg.get("mins")
             if isinstance(mins, dict):
                 t["mins"] = {str(k): float(v) for k, v in mins.items()
@@ -37,10 +39,12 @@ def _save(path, d) -> None:
     Path(path).write_text(json.dumps(d, ensure_ascii=False), encoding="utf-8")
 
 
-def set_target(path, uid, threshold, budget, mins: dict | None = None) -> dict:
+def set_target(path, uid, threshold, budget, mins: dict | None = None,
+               fixator_budget: int = 0) -> dict:
     """Add/replace a main equip's target (user action)."""
     d = load(path)
-    d[str(uid)] = {"threshold": max(0.0, min(1.0, float(threshold))), "budget": int(budget)}
+    d[str(uid)] = {"threshold": max(0.0, min(1.0, float(threshold))), "budget": int(budget),
+                   "fixator_budget": max(0, int(fixator_budget or 0))}
     if mins:
         d[str(uid)]["mins"] = {str(k): float(v) for k, v in mins.items()}
     _save(path, d)
@@ -54,10 +58,14 @@ def remove(path, uid) -> dict:
     return d
 
 
-def spend(path, uid, amount) -> dict:
-    """Decrement an item's remaining budget after the agent spends iron on it."""
+def spend(path, uid, amount, fixator: int = 0) -> dict:
+    """Decrement an item's remaining budgets after the agent spends iron (and, for
+    exclusive equips, fixators) on it."""
     d = load(path)
     if str(uid) in d:
         d[str(uid)]["budget"] = max(0, d[str(uid)]["budget"] - int(amount))
+        if fixator:
+            d[str(uid)]["fixator_budget"] = max(0, d[str(uid)].get("fixator_budget", 0)
+                                                - int(fixator))
         _save(path, d)
     return d
