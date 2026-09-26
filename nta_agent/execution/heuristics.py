@@ -1915,10 +1915,11 @@ class BufferLeveling:
 
         from nta_agent.execution.army_health import leveling_pawn_uids
         from nta_agent.execution.buffer_plan import demand, level_step
+        queued = leveling_pawn_uids(state)  # finished entries aged out (sequential queue)
         queue = [q for q in (((state.raw or {}).get("player") or {})
                              .get("pawnLevelingQueues") or [])
-                 if isinstance(q, dict) and int(q.get("index", 0) or 0) == main]
-        queued = leveling_pawn_uids(state)
+                 if isinstance(q, dict) and int(q.get("index", 0) or 0) == main
+                 and str(q.get("puid")) in queued]
         # The queue in state lags a PawnLving reply: remember what we sent (until its
         # level-up time passes) so it isn't picked again (ecode.500079 + back-off).
         now = _time.time()
