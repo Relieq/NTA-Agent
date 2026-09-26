@@ -157,6 +157,12 @@ class FortBuild:
                 if self.on_event:
                     self.on_event("fort_wait", {"index": idx, "reason": "resources"})
                 return
+            if ecode == "500041":   # "Đang xây": already being built -> done here, not an error
+                if self.remove_fn is not None:
+                    self.remove_fn(idx)
+                if self.on_event:
+                    self.on_event("fort_building", {"index": idx})
+                return
             # permanent (bad cell / cap / already there) -> drop so it never jams
             if self.remove_fn is not None:
                 self.remove_fn(idx)

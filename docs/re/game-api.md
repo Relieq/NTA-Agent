@@ -110,7 +110,8 @@ Mô hình chi phí rương/loot: `execution/treasure_model.py`, cơ chế: [trea
 | `HD_CreateCity` | ✅ | `{index, id}` | Tạo **thành/Cứ Điểm** (fort, build 2102, `ui=BuildCity`, type 2) tại ô sở hữu. `actions.create_city`; lệnh `build_fort` dùng cái này (KHÔNG phải AddAreaBuild). |
 | `HD_UpAreaBuild` | ✅ | `{index, uid?}` | Nâng cấp công trình. `actions.upgrade_build`. |
 | `HD_MoveAreaBuild` | ❓ | — | Di dời công trình. |
-| `HD_CancelBT` / `HD_InDoneBt` / `HD_GetBTCityQueues` | ❓ | — | Huỷ / hoàn tất tức thì / đọc hàng đợi xây (BuildTask). |
+| `HD_CancelBT` / `HD_InDoneBt` | ❓ | — | Huỷ / hoàn tất tức thì hàng đợi xây (BuildTask). |
+| `HD_GetBTCityQueues` | ✅ | `{}` → `{btCityQueues:[{index,id,needTime,surplusTime}]}` (ms) | Công trình kiểu thành **đang xây** (Cứ Điểm 2102). `actions.get_bt_city_queues`; FortService ghi `forts.json.building`. `HD_CreateCity` lên ô đang xây → ecode.500041 "Đang xây". |
 | `HD_BuyAddOutput` | ❓ | — | Mua tăng sản lượng. |
 | `HD_ReCreateMainCity` | ✅ | `{lang}` | **Tái lập thành chính sau khi bị chiếm** (verify live 2026-09-23): server tự chọn vị trí mới, trả `{playerInfo}` → bắt đầu lại (landCount=4 khối 2×2, 3 công trình lv1, tài nguyên 700, binh chủng về ô mở khoá đầu). Lỗi `NOT_CITY_INDEX` có thể xảy ra. QUYẾT ĐỊNH CỦA NGƯỜI CHƠI. |
 | `HD_GetFallMainCityIndexs` | ❓ | `{}` | `{fallMainCityIndexs}` — các thành chính đã rơi (engine vẽ đổ nát). |

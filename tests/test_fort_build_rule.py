@@ -51,3 +51,14 @@ def test_drops_on_permanent_error():
 
 def test_no_pending_does_not_apply():
     assert _rule([]).applies(None, Acts()) is False
+
+
+def test_already_under_construction_is_not_an_error():
+    # ecode.500041 "Đang xây": the fort is already being built -> drop it quietly
+    events = []
+    r = _rule([79772], on_event=lambda k, d=None: events.append((k, d)))
+    acts = Acts(raise_ecode="500041")
+    r.applies(None, acts)
+    r.act(acts)
+    assert r._removed == [79772]
+    assert events == [("fort_building", {"index": 79772})]

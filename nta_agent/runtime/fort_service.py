@@ -81,6 +81,21 @@ class FortService:
             fort_set.update(int(f.get("index", 0)) for f in
                             (player.get("fortAutoSupports") or []) if isinstance(f, dict))
             fort_indices = sorted(fort_set)
+            # Forts under construction: sent (so no longer in pending_forts) but not a
+            # city yet — without this the dashboard showed nothing for ~30 min.
+            building = []
+            getq = getattr(self.actions, "get_bt_city_queues", None)
+            if callable(getq):
+                try:
+                    for q in getq() or []:
+                        i = int(q.get("index", 0) or 0)
+                        if i in owned and i not in fort_set and int(q.get("id", 0) or 0) == FORT_BUILD_ID:
+                            building.append({"x": i % self.map_width, "y": i // self.map_width,
+                                             "index": i, "id": FORT_BUILD_ID,
+                                             "surplus_s": int(q.get("surplusTime", 0) or 0) // 1000,
+                                             "need_s": int(q.get("needTime", 0) or 0) // 1000})
+                except Exception as e:  # optional: never block the scan
+                    sys.stderr.write(f"[fort] build queue read failed: {e}\n")
             decisions = fort_decisions.load(self.cfg.fort_decisions_path)
             enemy = set(m.get("enemy_cells", ())) | set((m.get("enemy_cities") or {}).keys())
             recs, accepted = plan_forts(main, owned, fort_indices, decisions,
@@ -117,7 +132,9 @@ class FortService:
                        "accepted": accepted_coords, "rejected": rejected_coords,
                        "enemy_cells": enemy_cells, "enemy_cities": enemy_cities,
                        "frontier": frontier, "recommendations": recs,
-                       "fort_zone": zone_coords, "fort_count": len(fort_indices),
+                       "fort_zone": zone_coords,
+                       "fort_count": len(fort_indices) + len(building),  # building counts to the cap
+                       "building": building,
                        "forts": fort_coords, "fort_cap": cap,
                        "threats": threat["threats"][:50],
                        "threat_summary": threat["summary"],

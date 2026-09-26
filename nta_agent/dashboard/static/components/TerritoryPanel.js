@@ -18,7 +18,8 @@ export default {
  setup(){
   const canvas=ref(null), tip=ref(null), sel=ref(null);
   let scale=16, originX=0, originY=0, fitted=false, hover=null;
-  let data={main:0, mw:MAPW, owned:[], accepted:[], forts:[], garr:[], zone:[], fortCount:0, fortCap:0, armyCells:{}};
+  let data={main:0, mw:MAPW, owned:[], accepted:[], forts:[], garr:[], zone:[], fortCount:0, fortCap:0, armyCells:{},
+            building:[], pending:[]};
   const dig=ref({state:"idle"});
   let digBuf=2; try{ const v=parseInt(localStorage.getItem("nta.digBuffer")); if(v>=0&&v<=6) digBuf=v; }catch(e){}
   const digBuffer=ref(digBuf);
@@ -48,6 +49,8 @@ export default {
    const mx=data.main%data.mw, my=Math.floor(data.main/data.mw);
    [[mx,my],[mx+1,my],[mx,my+1],[mx+1,my+1]].forEach(([x,y])=>put(x,y,"thành chính"));
    data.forts.forEach(([x,y])=>put(x,y,"Cứ Điểm"));
+   data.building.forEach(b=>put(b.x,b.y,"Cứ Điểm đang xây"));
+   data.pending.forEach(p=>put(p.x,p.y,"Cứ Điểm chờ xây"));
    data.zone.forEach(([x,y])=>put(x,y,"gợi ý Cứ Điểm"));
    data.garr.forEach(([x,y])=>put(x,y,"quân trú"));
    data.owned.forEach(([x,y])=>put(x,y,"đã chiếm"));
@@ -204,6 +207,15 @@ export default {
      if(scale>=14){ ctx.font=Math.min(scale-3,16)+"px system-ui"; ctx.textAlign="center"; ctx.textBaseline="middle";
       ctx.fillText("🎯", sX(t[0])+scale/2, sY(t[1])+scale/2); } }
    }
+   // Forts under construction (faded purple + 🏗) and waiting to be built (dashed purple).
+   ctx.globalAlpha=0.55;
+   data.building.forEach(b=>{ if(!inView(b.x,b.y)) return; box(b.x,b.y,"#8957e5");
+    if(scale>=16){ ctx.font=Math.min(scale-3,16)+"px system-ui"; ctx.textAlign="center"; ctx.textBaseline="middle";
+     ctx.fillText("🏗", sX(b.x)+scale/2, sY(b.y)+scale/2); } });
+   ctx.globalAlpha=1;
+   ctx.strokeStyle="#8957e5"; ctx.lineWidth=2; ctx.setLineDash([3,2]);
+   data.pending.forEach(p=>{ if(inView(p.x,p.y)) ctx.strokeRect(sX(p.x)+2,sY(p.y)+2,scale-4,scale-4); });
+   ctx.setLineDash([]);
    if(hover && inView(hover.x,hover.y)){ ctx.strokeStyle="#58a6ff"; ctx.lineWidth=2;
     ctx.strokeRect(sX(hover.x)+1,sY(hover.y)+1,scale-2,scale-2); }
    ctx.restore();
@@ -235,7 +247,8 @@ export default {
     forts:f.forts||[],   // built Cứ Điểm from the chunk city decode (authoritative)
     garr:(t.garrisons||[]).map(i=>[i%mw, Math.floor(i/mw)]),
     enemy:f.enemy_cells||[], enemyCities:f.enemy_cities||[], frontier:f.frontier||[],
-    zone:f.fort_zone||[], fortCount:f.fort_count||0, fortCap:f.fort_cap||0, armyCells };
+    zone:f.fort_zone||[], fortCount:f.fort_count||0, fortCap:f.fort_cap||0, armyCells,
+    building:f.building||[], pending:f.pending||[] };
    zoneSet=new Set(data.zone.map(([x,y])=>x+","+y));
    buildStateMap();
    const cv=canvas.value;
@@ -360,7 +373,7 @@ export default {
    <span><b style="color:#199e70">■</b> ô đã chiếm (liền lãnh địa)</span>
    <span><b style="color:#e3b341">▢</b> ô đã chiếm nhưng RỜI (không nối với thành)</span>
    <span><b style="color:#39d0d8">⬡</b> bao lãnh địa (hull nối biên vùng liền chứa thành)</span>
-   <span>🏯 <b style="color:#8957e5">■</b> Cứ Điểm đã xây (viền vàng)</span>
+   <span>🏯 <b style="color:#8957e5">■</b> Cứ Điểm đã xây (viền vàng) · 🏗 đang xây · <b style="color:#8957e5">▢</b> chờ xây</span>
    <span><b style="color:#d95926">▨</b> vùng gợi ý xây Cứ Điểm — bấm 1 ô để agent xây</span>
    <span>quân (số=lính): <b style="color:#c3c2b7">▢</b>rảnh <b style="color:#58a6ff">▢</b>hành quân <b style="color:#da3633">▢</b>đang đánh</span>
    <span><b style="color:#da3633">■</b> ô địch</span>
