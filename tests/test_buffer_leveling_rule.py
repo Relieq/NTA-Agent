@@ -298,3 +298,19 @@ def test_setup_armies_are_reserved_until_setup_is_done(tmp_path):
         _tick(rule, _state(), acts)
     assert buffers.load(tmp_path / "buffers.json")["setup_done"] is True
     assert rule.buffer_uids() == {"D5"}                       # D5 is the buffer now; D1 freed
+
+
+def test_does_not_requeue_a_pawn_it_just_sent(tmp_path):
+    # live 2026-09-26: the queue in state lags the PawnLving reply -> the same pawn was
+    # picked again -> ecode.500079 + a minute's back-off per slot
+    rule = _rule(tmp_path)
+    buf = {"uid": "B", "name": "Nâng Cấp 1", "index": MAIN, "state": 0,
+           "pawns": [_imp(f"b{k}") for k in range(9)]}
+    acts = FakeActions(_group() + [buf])
+    buffers.save(tmp_path / "buffers.json", {
+        "proposal": {"buffers": [{"name": "Nâng Cấp 1", "base_uid": "B", "types": {"3305": 9},
+                                  "merge": [], "recruit": {}}], "dismiss": []},
+        "approved": True, "setup_done": True, "buffers": {}})
+    for _ in range(3):
+        _tick(rule, _state(), acts)          # queue in state stays empty (stale)
+    assert acts.calls == [("level", "B", "b0"), ("level", "B", "b1"), ("level", "B", "b2")]
