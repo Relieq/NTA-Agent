@@ -46,3 +46,29 @@ def test_cap_evicts_oldest(tmp_path):
     for m in (1, 2, 3):
         st.upsert(_lesson(trigger={"kind": "battle_loss", "match": {"monster_id": m}}))
     assert len(st.all()) == 2
+
+
+
+def test_null_constraint_does_not_crash_matching():
+    from nta_agent.brain.lessons import match_lessons
+    le = {"id": "x", "trigger": {"kind": "battle_loss", "match": {"monster_id": None}},
+          "resolution": {}, "status": "active"}
+    assert [m.id for m in match_lessons([le], {"kind": "battle_loss", "monster_ids": [4201]})] == ["x"]
+
+
+def test_evidence_dismissed_by_a_retired_lesson_is_not_relearned(tmp_path):
+    # the player retired a lesson; the brain re-proposing it from the SAME failures
+    # must neither create a new lesson nor revive the retired one
+    from nta_agent.brain.lessons import LessonStore
+    st = LessonStore(tmp_path / "l.json")
+    lid = st.upsert({"trigger": {"kind": "battle_loss"}, "diagnosis": "d",
+                     "resolution": {"advice": "a"}, "evidence": ["e1", "e2"]})
+    st.retire(lid)
+    assert st.upsert({"trigger": {"kind": "battle_loss"}, "diagnosis": "d",
+                      "resolution": {"advice": "a"}, "evidence": ["e2", "e1"]}) == ""
+    assert st.upsert({"trigger": {"kind": "battle_loss", "match": {"monster_id": 1}},
+                      "diagnosis": "d", "resolution": {"advice": "a"}, "evidence": ["e1"]}) == ""
+    assert st.active() == []
+    # a NEW failure is real new evidence -> may be learned
+    assert st.upsert({"trigger": {"kind": "battle_loss"}, "diagnosis": "d",
+                      "resolution": {"advice": "a"}, "evidence": ["e3"]}) != ""
