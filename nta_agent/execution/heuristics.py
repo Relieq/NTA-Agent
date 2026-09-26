@@ -1627,6 +1627,7 @@ class BufferLeveling:
     _away: set = field(default_factory=set)
     _buffers: set = field(default_factory=set)
     _setup_reserved: set = field(default_factory=set)
+    _sent: dict = field(default_factory=dict)  # pawn uid -> (sent at, lv, lv_time s)
 
     # ---- helpers --------------------------------------------------------------
     def _rows(self):
@@ -1895,14 +1896,25 @@ class BufferLeveling:
         return True
 
     def _plan_level(self, state, proposal, armies, group_armies, main, target, actions) -> bool:
+        import time as _time
+
         from nta_agent.execution.army_health import leveling_pawn_uids
         from nta_agent.execution.buffer_plan import demand, level_step
         queue = [q for q in (((state.raw or {}).get("player") or {})
                              .get("pawnLevelingQueues") or [])
                  if isinstance(q, dict) and int(q.get("index", 0) or 0) == main]
-        if len(queue) >= self.queue_cap:
-            return False
         queued = leveling_pawn_uids(state)
+        # The queue in state lags a PawnLving reply: remember what we sent (until its
+        # level-up time passes) so it isn't picked again (ecode.500079 + back-off).
+        now = _time.time()
+        lv_of = {str(p["uid"]): int(p.get("lv", 0) or 0)
+                 for a in armies for p in a.get("pawns") or []}
+        self._sent = {u: v for u, v in self._sent.items()
+                      if now - v[0] < v[2] + 60 and lv_of.get(u, v[1]) <= v[1]}
+        in_flight = set(self._sent) - queued
+        if len(queue) + len(in_flight) >= self.queue_cap:
+            return False
+        queued = queued | set(self._sent)
         books = int(state.resources.exp_book or 0)
         barracks = self._barracks_lv(state)
         weak_types = set(demand(group_armies, target))
@@ -1921,13 +1933,19 @@ class BufferLeveling:
                 step = level_step(self._rows(), int(p["id"]), lv)
                 if step is None or step["barracks_lv"] > barracks or step["books"] > books:
                     continue
-                cands.append((lv, str(p["uid"]), str(a["uid"])))
+                cands.append((lv, str(p["uid"]), str(a["uid"]), step["time_s"]))
         if not cands:
             return False
-        _lv, pawn, army = min(cands)
+        lv0, pawn, army, secs = min(cands)
 
         def run():
-            actions.pawn_lving(main, army, pawn)
+            try:
+                actions.pawn_lving(main, army, pawn)
+            except Exception as e:
+                if "500079" in str(e):  # already queued: remember it, then report
+                    self._sent[pawn] = (_time.time(), lv0, secs)
+                raise
+            self._sent[pawn] = (_time.time(), lv0, secs)
             self._emit("buffer_level", {"army": army, "pawn": pawn})
         self._pending = ("level", run)
         return True
