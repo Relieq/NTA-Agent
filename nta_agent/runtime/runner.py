@@ -261,6 +261,8 @@ def run(cfg: RuntimeConfig, *, ticks: int = 0, session=None, engine=None) -> Non
             rule.targets_source = lambda: _ft.load(cfg.forge_targets_path)
             rule.spend_fn = lambda uid, iron, fixator=0: _ft.spend(cfg.forge_targets_path, uid,
                                                                    iron, fixator=fixator)
+            from nta_agent.runtime import world_random as _wrm
+            rule.pools_source = lambda: _wrm.load(cfg.world_random_path)
         elif getattr(rule, "name", "") == "build_order":
             from nta_agent.runtime import fort_queue as _fq
             rule.pending_forts_source = lambda: _fq.load(cfg.pending_forts_path)
@@ -273,7 +275,14 @@ def run(cfg: RuntimeConfig, *, ticks: int = 0, session=None, engine=None) -> Non
             errlog.log(getattr(fn, "__name__", "service"), "service_error", e)
 
     from nta_agent.execution.profile import reload_into
+    from nta_agent.runtime import world_random as _wr
     from nta_agent.runtime.new_game import check_new_game
+    _wr_state = {"fetched": False}
+
+    def _refresh_world_random():
+        _wr.refresh(agent.actions, cfg.world_random_path,
+                    every_s=0 if not _wr_state["fetched"] else 6 * 3600)
+        _wr_state["fetched"] = True
 
     def _write_forge_view(state):  # recast panel rows for the dashboard
         if config is None:
@@ -291,9 +300,12 @@ def run(cfg: RuntimeConfig, *, ticks: int = 0, session=None, engine=None) -> Non
                           lambda t: config.table("equipEffect").get(t),
                           _ft.load(cfg.forge_targets_path),
                           name_of=lambda i: _vi(f"name_{i}"),
-                          effect_text=lambda t: _vi(f"effect_{t}"))
+                          effect_text=lambda t: _vi(f"effect_{t}"),
+                          pools=_wr.load(cfg.world_random_path))
         out = {"equips": rows, "busy": player.get("currForgeEquip") or None,
-               "iron": state.resources.iron}
+               "smelting": player.get("currSmeltEquip") or None,
+               "iron": state.resources.iron,
+               "fixator": int(getattr(state.resources, "fixator", 0) or 0)}
         p = cfg.forge_view_path
         p.parent.mkdir(parents=True, exist_ok=True)
         p.write_text(json.dumps(out, ensure_ascii=False), encoding="utf-8")
@@ -311,6 +323,9 @@ def run(cfg: RuntimeConfig, *, ticks: int = 0, session=None, engine=None) -> Non
         _safe(alerts.tick, state)  # observe-only: runs even when paused/captured
         # dig: previews only read map chunks; the digging itself is OccupyCell's
         _safe(dig.tick, state)
+        # this match's exclusive effect pools: fetched on the first tick of every run
+        # (a new match after a restart), then every 6 h
+        _safe(_refresh_world_random)
         _safe(_write_forge_view, state)
         # pick up dashboard edits + stop the brain from clobbering them (shared obj)
         _safe(reload_into, profile, cfg.profile_path)
