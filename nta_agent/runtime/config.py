@@ -126,6 +126,10 @@ class RuntimeConfig:
         return self.log_dir / "dig.json"              # agent -> dashboard (preview/active/...)
 
     @property
+    def spare_advice_path(self) -> Path:
+        return self.log_dir / "spare_advice.json"     # spare armies: ok / stuck warning
+
+    @property
     def buffers_path(self) -> Path:
         return self.log_dir / "buffers.json"          # buffer-leveling proposal + phases
 

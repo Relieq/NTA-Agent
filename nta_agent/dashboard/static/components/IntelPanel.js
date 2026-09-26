@@ -43,6 +43,14 @@ export default {
    </div>
   </template>
 
+  <div v-if="r.spares && r.spares.status==='stuck'" style="margin-top:10px;border-left:3px solid #e3b341;padding-left:8px">
+   <b>⚠ Đội lẻ không đánh được</b>: {{ (r.spares.armies||[]).join(', ') }} — gộp lại vẫn không đánh sạch
+   được ô biên nào theo mọi thứ tự.
+   <div class="muted" style="font-size:12px">Thành phần:
+    <span v-for="(n,k) in (r.spares.composition||{})" :key="k"> {{ n }}× {{ k }}</span></div>
+   <div class="muted" style="font-size:12px">Chat với brain để chỉnh đội hình (dồn/chiêu mộ/nâng cấp các đội này).</div>
+  </div>
+
   <template v-if="(r.brain_advice||[]).length">
    <h3 style="margin:12px 0 6px">Cố vấn từ bộ não 🧠</h3>
    <ul style="margin:0;padding-left:18px">

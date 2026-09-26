@@ -43,3 +43,22 @@ def test_digest_carries_leveling_needs():
                            leveling={"groups": []}, build={}, revive={}, forge={})
     dg = digest(st, prof, [], leveling={"proposal": {"books_needed": 90}, "approved": False})
     assert dg["leveling"]["proposal"]["books_needed"] == 90
+
+
+def test_intel_carries_the_spare_armies_warning(tmp_path):
+    from nta_agent.dashboard.server import read_intel
+    cfg = _cfg(tmp_path)
+    assert read_intel(cfg)["spares"] is None
+    cfg.spare_advice_path.write_text(json.dumps({"status": "stuck", "armies": ["D6", "D7"],
+                                                 "composition": {"3201@lv1": 18}}), encoding="utf-8")
+    assert read_intel(cfg)["spares"]["status"] == "stuck"
+
+
+def test_digest_carries_spares():
+    st = SimpleNamespace(resources=SimpleNamespace(cereal=0, timber=0, stone=0, iron=0, gold=0,
+                                                   stamina=0, exp_book=0, up_scroll=0, fixator=0),
+                         main_city_index=0, raw={})
+    prof = SimpleNamespace(army={"group": []}, occupy={}, logistics={}, notes=[],
+                           leveling={"groups": []}, build={}, revive={}, forge={})
+    dg = digest(st, prof, [], spares={"status": "stuck", "armies": ["D6"]})
+    assert dg["spares"]["armies"] == ["D6"]

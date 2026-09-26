@@ -213,7 +213,12 @@ def handle_chat(cfg, message, *, history=None, propose=None):
     except Exception:
         valid_build = None
     names = _pawn_names(cfg)
-    dg = digest(_chat_state(), profile, armies)
+    try:  # spare armies the agent couldn't use -> the player is asking about them
+        spares = json.loads(Path(cfg.spare_advice_path).read_text(encoding="utf-8"))
+    except (OSError, ValueError):
+        spares = None
+    dg = digest(_chat_state(), profile, armies,
+                spares=spares if isinstance(spares, dict) and spares.get("status") == "stuck" else None)
     # Better INPUT: label each army's troops by pawn NAME so the LLM can match a
     # description ("đội rìu khiên") to the right uid without knowing pawn ids.
     for row in dg.get("armies", []):
@@ -673,8 +678,13 @@ def read_intel(cfg) -> dict:
         advice = json.loads(Path(cfg.brain_advice_path).read_text(encoding="utf-8"))
     except (OSError, ValueError):
         advice = []
-    return build_report(read_state(cfg.snapshot_path), read_forts_view(cfg),
-                        brain_advice=advice)
+    report = build_report(read_state(cfg.snapshot_path), read_forts_view(cfg),
+                          brain_advice=advice)
+    try:  # spare armies: ok / stuck (SpareArmies rule)
+        report["spares"] = json.loads(Path(cfg.spare_advice_path).read_text(encoding="utf-8"))
+    except (OSError, ValueError):
+        report["spares"] = None
+    return report
 
 
 def recompute_forts(cfg) -> dict:
