@@ -56,6 +56,10 @@ Ra lệnh bằng tiếng Việt, ví dụ _"Tạo nhóm 5 đội gồm 1 đội 
 Đặt **mức tối thiểu cho từng chỉ số hiệu ứng** (có hiện khoảng roll được, ví dụ 150–180%)
 và **ngân sách sắt** cho mỗi món. Agent rèn lại tới khi đạt, hoặc dừng khi hết ngân sách.
 
+**Trang bị chuyên dụng:** bạn chọn món ở ô 10/18 (thấy luôn danh sách hiệu ứng random **của trận này**).
+Khi một dòng mong muốn đạt mức, agent **khoá** dòng đó rồi dùng **máy cố định** (ngân sách riêng) để rèn dòng còn lại.
+**Dung luyện** do bạn tự chọn món phụ, xem trước rồi xác nhận — agent chỉ gửi đúng lệnh đó.
+
 ### 🗺 Lãnh thổ và Cứ Điểm
 <img src="docs/images/territory.png" alt="Bản đồ lãnh thổ" width="760">
 

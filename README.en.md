@@ -61,6 +61,10 @@ Set a **minimum for each effect stat** (the rollable range is shown, e.g. 150–
 **iron budget** per item. The agent re-forges until every minimum is met, or stops when the
 budget runs out.
 
+**Exclusive equipment:** you pick it at slots 10/18 (with **this match's** random effect pool shown).
+Once a wanted line meets its minimums the agent **locks** it and spends **fixators** (own budget) re-forging
+the other line. **Smelting** stays yours: choose the vice equips, preview, confirm — the agent only sends that.
+
 ### 🗺 Territory and forts
 <img src="docs/images/territory.png" alt="Territory map" width="760">
 
