@@ -243,12 +243,15 @@ class DigService:
         if not main or not uid:
             return
         focus = self._focus_chunks(main, target)
-        m = self._scan(self.actions, main, uid, map_width=W, focus=focus)
+        from nta_agent.execution.alliance import ally_uids
+        allies = ally_uids(self.actions, state)
+        m = self._scan(self.actions, main, uid, map_width=W, focus=focus,
+                       **({"allies": allies} if allies else {}))
         owned = set(m.get("owned") or ())
-        others = set(m.get("enemy_cells") or ()) | set((m.get("enemy_cities") or {}).keys())
-        # every other player counts as 'enemy' (kept at arm's length): chunks carry
-        # no alliance info, so an ally's border is treated with the same caution
-        enemy = others
+        # hostile players are kept at arm's length (buffer); alliance members' land is
+        # just not ours to dig through (blocked, no buffer)
+        enemy = set(m.get("enemy_cells") or ()) | set((m.get("enemy_cities") or {}).keys())
+        others = enemy | set(m.get("ally_cells") or ()) | set((m.get("ally_cities") or {}).keys())
         world = self.world()
         if world.name is None:
             world.detect(owned)

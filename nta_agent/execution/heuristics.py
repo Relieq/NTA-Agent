@@ -659,8 +659,10 @@ class OccupyCell:
         # armies only if the chunk scan fails or yields no frontier.
         cands = []
         try:
+            from nta_agent.execution.alliance import ally_uids
             from nta_agent.execution.territory import scan_map
-            frontier = scan_map(actions, state.main_city_index, state.user.uid).get("frontier")
+            frontier = scan_map(actions, state.main_city_index, state.user.uid,
+                                allies=ally_uids(actions, state)).get("frontier")
             if frontier:
                 cands = discover_frontier(get_area, frontier, state.user.uid)
         except Exception:

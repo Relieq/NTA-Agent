@@ -67,7 +67,10 @@ class FortService:
             if not main or not uid:
                 return
 
-            m = self._scan(self.actions, main, uid, map_width=self.map_width)
+            from nta_agent.execution.alliance import ally_uids
+            allies = ally_uids(self.actions, state)  # alliance members: not enemies
+            m = self._scan(self.actions, main, uid, map_width=self.map_width,
+                           **({"allies": allies} if allies else {}))
             owned = m["owned"]
 
             # Detect built forts from the AUTHORITATIVE map-chunk city decode:
@@ -110,6 +113,9 @@ class FortService:
             enemy_cities = [{"x": i % mw, "y": i // mw, "type": t}
                             for i, t in (m.get("enemy_cities") or {}).items()]
             frontier = sorted([i % mw, i // mw] for i in m.get("frontier", ()))
+            ally_cells = sorted([i % mw, i // mw] for i in m.get("ally_cells", ()))
+            ally_cities = [{"x": i % mw, "y": i // mw, "type": t}
+                           for i, t in (m.get("ally_cities") or {}).items()]
             # Recommended ZONE (user picks one owned cell in it to build a fort) —
             # replaces per-cell rec spam + accept/reject.
             from nta_agent.execution.fort_advisor import fort_zone
@@ -132,6 +138,7 @@ class FortService:
                        "accepted": accepted_coords, "rejected": rejected_coords,
                        "enemy_cells": enemy_cells, "enemy_cities": enemy_cities,
                        "frontier": frontier, "recommendations": recs,
+                       "ally_cells": ally_cells, "ally_cities": ally_cities,
                        "fort_zone": zone_coords,
                        "fort_count": len(fort_indices) + len(building),  # building counts to the cap
                        "building": building,
