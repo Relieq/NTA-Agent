@@ -79,6 +79,7 @@ class FakeActions:
         return self.armies
     def occupy_cell(self, target, armies, **kw):
         self.calls.append(("occupy", target, [a["uid"] for a in armies]))
+        self.kw = kw
         return {}
 
 
@@ -541,3 +542,35 @@ def test_occupy_bridge_failure_falls_back_to_direct_attack():
     rule.act(Acts())
     assert calls == [("occupy", target)]                 # fell back to a direct attack
     assert any(k == "bridge_skip" for k, _ in events)     # surfaced the skipped relay
+
+
+def test_multi_army_same_cell_marches_at_the_same_speed():
+    # CLAUDE.md 1-tile: isSameSpeed=true -> every army arrives together (the slowest's
+    # march time), which is what the sim assumes for a same-cell group. Without it a
+    # slower army (speed 46 vs 62) joined late as its own wave (live loss 69580).
+    center = 182 * W + 526
+    st = GameState(source="api"); st.user.uid = "me"; st.main_city_index = center
+    st.resources.stamina = 10
+    areas = {center: _cell(owner="me", city=1001),
+             center - 1: _cell(owner="", pawns=[50])}
+    cung = {"index": center, "uid": "cung", "pawns": [{"id": 3305}, {"id": 3305}]}
+    tank = {"index": center, "uid": "tank", "pawns": [{"id": 3101}, {"id": 3101}]}
+    act = FakeActions(areas=areas, armies=[tank, cung])
+    rule = OccupyCell(radius=1, use_sim=True, sim=OrderSensitiveSim(), predictor=BattlePredictor())
+    assert rule.applies(st, act) is True
+    rule.act(act)
+    assert act.calls[0][2] == ["cung", "tank"]
+    assert act.kw.get("same_speed") is True
+
+
+def test_single_army_does_not_force_same_speed():
+    center = 182 * W + 526
+    st = GameState(source="api"); st.user.uid = "me"; st.main_city_index = center
+    st.resources.stamina = 10
+    areas = {center: _cell(owner="me", city=1001),
+             center - 1: _cell(owner="", pawns=[50])}
+    act = FakeActions(areas=areas, armies=[{"index": center, "uid": "A", "pawns": [{"id": 3101}]}])
+    rule = OccupyCell(radius=1)
+    assert rule.applies(st, act) is True
+    rule.act(act)
+    assert act.calls[0][2] == ["A"] and not act.kw.get("same_speed")

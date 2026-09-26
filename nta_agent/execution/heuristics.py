@@ -1079,7 +1079,13 @@ class OccupyCell:
                             "target": target, "target_xy": [target % w, target // w]})
         self._optimize_formations(actions, armies, target)
         try:
-            actions.occupy_cell(target, armies)
+            if len(armies) > 1 and len({int(a.get("index", 0) or 0) for a in armies}) == 1:
+                # 1-tile (CLAUDE.md): same-cell group -> isSameSpeed, all arrive together
+                # at the slowest's march time — what the sim assumes for this group.
+                # Without it a slower army joined late as its own wave (loss at 69580).
+                actions.occupy_cell(target, armies, same_speed=True)
+            else:
+                actions.occupy_cell(target, armies)
         except Exception as e:
             self._cooldown = self.fail_cooldown
             ecode = str(e).split("ecode.")[-1][:6] if "ecode." in str(e) else ""
