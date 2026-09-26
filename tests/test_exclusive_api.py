@@ -47,3 +47,13 @@ def test_smelt_equip_ret_notify_clears_busy_and_upserts():
     p = st.raw["player"]
     assert not p.get("currSmeltEquip")
     assert len(p["equips"]) == 1 and len(p["equips"][0]["attrs"]) == 2
+
+
+def test_lock_marks_the_equip_locked_in_state():
+    # the server replies data=null; without mirroring lockEffect the Forge rule would
+    # see "not locked" next tick and send the lock again forever, never recasting
+    acts, s, st = _acts("game/HD_LockEquipEffect", {})
+    st.raw["player"]["equips"] = [{"uid": "6117_10", "attrs": [], "lockEffect": 0}]
+    acts.lock_equip_effect("6117_10", 9)
+    assert s.calls == [("game/HD_LockEquipEffect", {"uid": "6117_10", "effect": 9})]
+    assert st.raw["player"]["equips"][0]["lockEffect"] == 9
