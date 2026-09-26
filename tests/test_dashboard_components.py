@@ -36,7 +36,7 @@ def test_stat_tile_and_resource_tiles():
 def test_state_panels_read_state_and_are_mounted():
     assert "/api/state" in _c("ResourcePanel.js")
     assert "hàng đợi" in _c("CityPanel.js")           # queue label
-    assert "Đội hành quân" in _c("MiscPanel.js")
+    assert "Đội hành quân" in _c("MiscPanel.js") and "/api/armies" in _c("MiscPanel.js")
     app = _app()
     for comp in ("ResourcePanel", "CityPanel", "MiscPanel"):
         assert comp in app
