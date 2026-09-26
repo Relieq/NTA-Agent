@@ -58,8 +58,8 @@ def test_new_lossy_record_is_recorded_with_replay_and_counterfactual(tmp_path):
     acts = Acts([_rec("old", 1, dead=5)], {"b1": {"frames": [1], "uid": "b1"}})
     obs = LossObserver(acts, led, Bridge(), player_uid="1000000000", poll_every=1)
     obs.tick(St(injured=0))                 # baseline: "old" predates us -> ignored
-    acts.records.append(_rec("b1", 2, dead=2, index=73165))
-    obs.tick(St(injured=2))
+    acts.records.append(_rec("b1", 2, dead=1, index=73165))   # replay agrees (1 dead)
+    obs.tick(St(injured=1))
     ev = led.recent(5, kind="battle_loss")
     assert len(ev) == 1
     ctx = ev[0].context
@@ -118,3 +118,18 @@ def test_unmatched_injury_rise_is_recorded_after_a_few_scans(tmp_path):
     assert len(ev) == 1 and ev[0].context["self_dead"] == 3 and ev[0].context["unmatched"]
     obs.tick(St(injured=3))
     assert len(led.recent(5, kind="battle_loss")) == 1
+
+
+def test_game_death_count_wins_over_a_replay_that_undercounts(tmp_path):
+    # live 2026-09-25: the game listed deaths (deadInfo) but our replay said 0 ->
+    # losses logged as "self_dead 0" and their counterfactuals fed a wrong lesson.
+    # Keep the game's count; a replay that disagrees is not trusted for "what if".
+    led = FailureLedger(tmp_path / "f.json")
+    acts = Acts([], {"b1": {"frames": [1], "uid": "b1"}})
+    obs = LossObserver(acts, led, Bridge(), player_uid="1000000000", poll_every=1)
+    obs.tick(St(injured=0))
+    acts.records.append(_rec("b1", 2, dead=2, index=73165))   # game: 2 dead, replay: 1
+    obs.tick(St(injured=2))
+    ctx = led.recent(5, kind="battle_loss")[0].context
+    assert ctx["self_dead"] == 2 and ctx["replay_dead"] == 1
+    assert "counterfactual" not in ctx

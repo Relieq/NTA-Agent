@@ -80,11 +80,18 @@ class LossObserver:
         record = self.actions.get_battle_record(uid)
         if record and record.get("frames") and self.bridge is not None:
             summ = summarize_record(self.bridge, record)
+            faithful = True
             if summ:
-                ctx["self_dead"] = summ.get("summary", {}).get("self_dead", listed_dead)
+                # the game's own count (deadInfo) is authoritative; a replay that
+                # disagrees (live: 0 vs 1) is kept for reference but not trusted for
+                # the "what if" order below
+                replay_dead = summ.get("summary", {}).get("self_dead", listed_dead)
+                if replay_dead != listed_dead:
+                    ctx["replay_dead"] = replay_dead
+                    faithful = False
                 ctx["enemy_ids"] = summ.get("enemy_ids", [])
                 ctx["aoe"] = bool(summ.get("aoe"))
-            cf = best_counterfactual_order(self.bridge, record)
+            cf = best_counterfactual_order(self.bridge, record) if faithful else None
             if cf:
                 ctx["counterfactual"] = cf
         eid = self.ledger.record("battle_loss", ctx)
