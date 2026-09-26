@@ -587,6 +587,89 @@ def read_forge_view(cfg) -> dict:
             "smelting": data.get("smelting"), "fixator": data.get("fixator", 0)}
 
 
+def _smelt_raw(cfg) -> dict:
+    try:
+        return json.loads(Path(cfg.smelt_view_path).read_text(encoding="utf-8"))
+    except (OSError, ValueError):
+        return {}
+
+
+def read_smelt_view(cfg) -> dict:
+    """Smelting tab (agent-written smelt.json), without the raw EquipInfo."""
+    data = _smelt_raw(cfg)
+    return {k: v for k, v in data.items() if k != "raw"} or {"mains": [], "slots": 0}
+
+
+def _smelt_pick(data: dict, body: dict):
+    """(main row, [vice candidate rows], error) for a {main_uid, vice_ids} choice."""
+    uid = str((body or {}).get("main_uid") or "")
+    main = next((m for m in data.get("mains") or [] if m.get("uid") == uid), None)
+    if main is None:
+        return None, [], "không thấy trang bị chuyên dụng này"
+    try:
+        ids = [int(i) for i in (body or {}).get("vice_ids") or []]
+    except (TypeError, ValueError):
+        return main, [], "món phụ không hợp lệ"
+    by_id = {int(c["id"]): c for c in main.get("candidates") or []}
+    if len(set(ids)) != len(ids):
+        return main, [], "một món phụ chỉ chọn một lần"
+    missing = [i for i in ids if i not in by_id]
+    if missing:
+        return main, [], f"món không dung luyện được vào món này: {missing}"
+    return main, [by_id[i] for i in ids], ""
+
+
+def smelt_preview_for(cfg, body: dict) -> dict:
+    """What smelting ``vice_ids`` into ``main_uid`` would give (no game call)."""
+    from nta_agent.execution.exclusive import smelt_preview
+    from nta_agent.runtime import world_random
+    data = _smelt_raw(cfg)
+    main, vices, err = _smelt_pick(data, body)
+    if err:
+        return {"ok": False, "error": err}
+    raw = data.get("raw") or {}
+    pool = world_random.load(cfg.world_random_path).get(int(main["id"])) or main.get("pool") or []
+    p = smelt_preview(raw.get(main["uid"]) or {},
+                      [(int(v["id"]), raw.get(v["uid"]) or {}) for v in vices], pool)
+    texts = {(int(v["id"]), int(x["type"])): x.get("text") for v in vices for x in v["effects"]}
+    for a in p["added"]:
+        a["text"] = texts.get((a["from"], a["type"])) or f"hiệu ứng #{a['type']}"
+        a["in_pool"] = a["type"] in pool
+    return {"ok": True, **p}
+
+
+def queue_smelt(cfg, body: dict) -> dict:
+    """Validate a confirmed smelt / restore from the dashboard and queue it for the
+    agent (the agent NEVER smelts or restores on its own)."""
+    data = _smelt_raw(cfg)
+    action = (body or {}).get("action")
+    if data.get("smelting"):
+        return {"ok": False, "error": "đang dung luyện — chờ xong đã"}
+    if data.get("forging"):
+        return {"ok": False, "error": "đang rèn — không dung luyện được lúc này"}
+    main, vices, err = _smelt_pick(data, {**(body or {}),
+                                          "vice_ids": (body or {}).get("vice_ids") or []})
+    if err:
+        return {"ok": False, "error": err}
+    if action == "restore_smelt":
+        if not main.get("smelted_from"):
+            return {"ok": False, "error": "món này chưa dung luyện gì"}
+        cid = append_command(cfg.commands_path, {"action": "restore_smelt",
+                                                 "main_uid": main["uid"]})
+        return {"ok": True, "id": cid}
+    if action != "smelt":
+        return {"ok": False, "error": "bad action"}
+    if not vices:
+        return {"ok": False, "error": "chọn ít nhất một món phụ"}
+    if len(vices) > int(data.get("slots") or 0):
+        return {"ok": False, "error": f"Tiệm Rèn mới mở {int(data.get('slots') or 0)} ô dung luyện"}
+    if int(data.get("fixator") or 0) < len(vices):
+        return {"ok": False, "error": f"cần {len(vices)} máy cố định"}
+    cid = append_command(cfg.commands_path, {"action": "smelt", "main_uid": main["uid"],
+                                             "vice_ids": [int(v["id"]) for v in vices]})
+    return {"ok": True, "id": cid}
+
+
 def set_forge_target(cfg, body: dict) -> dict:
     """Set/remove one equip's recast target. Either per-stat minimums
     ``{uid, budget, mins: {"<effectType>.value"|"<effectType>.odds": min}}`` (blank =
@@ -840,6 +923,8 @@ class Handler(BaseHTTPRequestHandler):
             self._json(200, read_alerts(cfg))
         elif parsed.path == "/api/forge":
             self._json(200, read_forge_view(cfg))
+        elif parsed.path == "/api/smelt":
+            self._json(200, read_smelt_view(cfg))
         elif parsed.path == "/api/agent/status":
             self._json(200, self.server.supervisor.status())
         elif parsed.path == "/api/setup":
@@ -967,6 +1052,18 @@ class Handler(BaseHTTPRequestHandler):
             from nta_agent.runtime import fort_decisions
             fort_decisions.update(cfg.fort_decisions_path, idx, decision)
             self._json(200, recompute_forts(cfg))
+            return
+        if parsed.path in ("/api/smelt/preview", "/api/smelt/command"):
+            try:
+                length = int(self.headers.get("Content-Length", "0"))
+                body = json.loads(self.rfile.read(length) or b"{}")
+            except (ValueError, TypeError):
+                self._json(400, {"ok": False, "error": "bad json"})
+                return
+            body = body if isinstance(body, dict) else {}
+            r = (smelt_preview_for(cfg, body) if parsed.path.endswith("preview")
+                 else queue_smelt(cfg, body))
+            self._json(200 if r["ok"] else 400, r)
             return
         if parsed.path == "/api/forge/target":
             try:

@@ -41,9 +41,11 @@ def test_smelt_slots_by_smithy_level():
 
 
 def test_vice_candidates_are_common_equips_not_smelted_elsewhere():
-    base = {6005: {"exclusive_pawn": ""}, 6006: {"exclusive_pawn": ""},
+    base = {6005: {"exclusive_pawn": "", "smelt_type": 1}, 6006: {"exclusive_pawn": "", "smelt_type": 1},
+            6001: {"exclusive_pawn": "", "smelt_type": 0},                 # not smeltable
             6101: {"exclusive_pawn": 3101}, 6102: {"exclusive_pawn": 3202}}.get
     equips = [_eq("6005_1", [(8, 40, 0)]), _eq("6006_3", [(15, 9, 0)]),
+              _eq("6001_2", [(8, 40, 0)]),
               _eq("6101_10", [(21, 5, 0)]),
               _eq("6102_18", [(3, 1, 1), (8, 40, 0, 6006)])]            # 6006 already in 6102
     ids = [c["id"] for c in vice_candidates(equips, base, main_uid="6101_10")]
@@ -60,5 +62,30 @@ def test_smelt_preview_lists_added_effects_and_future_fixators():
     assert [a["type"] for a in p["added"]] == [8, 77]
     assert p["fixator_per_recast"] == 1          # 8 is in this match's pool, 77 is not
     assert p["unchanged"] is False
+    assert p["fixator_cost"] == 2                # the smelt itself: 1 fixator per vice
+    withstat = {"uid": "6005_1", "attrs": [{"attr": [0, 1, 41]}, {"attr": [2, 8, 40, 0]}]}
+    assert smelt_preview(main, [(6005, withstat)], POOL)["stats"] == {"hp": 21, "attack": 0}
     same = smelt_preview(_eq("x", [(21, 5, 0), (8, 40, 0, 6005)]), [(6005, vices[0])], POOL)
     assert same["unchanged"] is True
+
+
+def test_smelt_view_lists_mains_candidates_slots_and_busy():
+    from nta_agent.execution.exclusive import smelt_view
+    base = {6005: {"exclusive_pawn": "", "smelt_type": 1},
+            6101: {"exclusive_pawn": "3101"}}.get
+    player = {"equips": [_eq("6101_10", [(21, 5, 0), (8, 30, 0, 6005)]),
+                         _eq("6005_1", [(8, 40, 0)])],
+              "currSmeltEquip": None, "fixator": 4}
+    v = smelt_view(player, 14, base, name_of=lambda i: f"N{i}",
+                   effect_text=lambda t: "E{0}", pools={6101: [21, 8]},
+                   pawn_name=lambda p: "Lính " + str(p))
+    assert v["slots"] == 1 and v["smithy_lv"] == 14 and v["need_lv"] == [14, 20]
+    assert v["smelting"] is None
+    (m,) = v["mains"]
+    assert m["uid"] == "6101_10" and m["name"] == "N6101" and m["pawn_name"] == "Lính 3101"
+    assert m["smelted_from"] == [6005] and m["pool"] == [21, 8]
+    assert [(e["type"], e["smelted"]) for e in m["effects"]] == [(21, False), (8, True)]
+    assert m["effects"][0]["text"] == "E5"
+    assert [c["id"] for c in m["candidates"]] == [6005]
+    assert m["candidates"][0]["name"] == "N6005" and m["candidates"][0]["in_pool"] is True
+    assert v["raw"]["6005_1"]["uid"] == "6005_1"    # for the server-side preview

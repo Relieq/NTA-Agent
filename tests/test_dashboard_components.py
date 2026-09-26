@@ -186,3 +186,12 @@ def test_forge_panel_exclusive_controls():
     assert "lock_effect" in fp and "🔒" in fp                   # locked line marker
     assert "smelted" in fp and "dung luyện" in fp               # smelted line marker
     assert "pool_known" in fp and "blocked" in fp and "pawn_name" in fp
+
+
+def test_smelt_panel_player_confirms():
+    sp = _c("SmeltPanel.js")
+    assert "/api/smelt" in sp and "/api/smelt/preview" in sp and "/api/smelt/command" in sp
+    assert "restore_smelt" in sp and "Xác nhận dung luyện" in sp and "window.confirm" in sp
+    assert "fixator_per_recast" in sp and "fixator_cost" in sp
+    app = _c("App.js")
+    assert "<SmeltPanel/>" in app

@@ -313,8 +313,21 @@ class Actions:
         return reply
 
     def restore_smelt_equip(self, uid: str) -> dict:
-        """Undo a smelt: the exclusive back to before it (GAME_HD_RestoreSmeltEquip)."""
-        return self.session.request("game/HD_RestoreSmeltEquip", {"uid": str(uid)})
+        """Undo a smelt: the exclusive back to before it (GAME_HD_RestoreSmeltEquip,
+        engine param ``mainUid``). The reply's ``equip`` replaces ours right away."""
+        reply = self.session.request("game/HD_RestoreSmeltEquip", {"mainUid": str(uid)})
+        eq = reply.get("equip")
+        if isinstance(eq, dict) and eq.get("uid"):
+            raw = self._state.raw if isinstance(self._state.raw, dict) else {}
+            self._state.raw = raw
+            equips = raw.setdefault("player", {}).setdefault("equips", [])
+            for i, e in enumerate(equips):
+                if isinstance(e, dict) and str(e.get("uid")) == str(eq["uid"]):
+                    equips[i] = eq
+                    break
+            else:
+                equips.append(eq)
+        return reply
 
     def lock_equip_effect(self, equip_uid: str, effect: int) -> dict:
         """Lock an equip effect (GAME_HD_LockEquipEffect). Costs fixator."""

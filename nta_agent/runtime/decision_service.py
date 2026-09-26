@@ -106,6 +106,14 @@ class DecisionService:
             from nta_agent.runtime.fort_service import FORT_BUILD_ID
             self.actions.create_city(int(cmd["index"]), FORT_BUILD_ID)
             return
+        if action == "smelt":
+            # confirmed by the player on the dashboard (never on the agent's own)
+            self.actions.smelting_equip(str(cmd["main_uid"]),
+                                        [int(i) for i in cmd.get("vice_ids") or []])
+            return
+        if action == "restore_smelt":
+            self.actions.restore_smelt_equip(str(cmd["main_uid"]))
+            return
         if action == "rename_army":
             # Chat/dashboard rename: queued until the army is idle, then sent with its
             # current index (a one-shot send failed on busy/marching armies).
@@ -147,7 +155,7 @@ class DecisionService:
                 detail = {"id": cmd.get("id"), "action": cmd.get("action"),
                           "track": cmd.get("track"), "lv": cmd.get("lv"),
                           "ceri_id": cmd.get("ceri_id"), "equip_uid": cmd.get("equip_uid"),
-                          "pawn_id": cmd.get("pawn_id"),
+                          "pawn_id": cmd.get("pawn_id"), "main_uid": cmd.get("main_uid"),
                           "error": str(e), "reason": ecode_reason(self.config, str(e))}
                 detail = {k: v for k, v in detail.items() if v is not None and v != ""}
                 self._on_event("decision_error", detail)

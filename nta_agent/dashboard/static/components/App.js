@@ -7,6 +7,7 @@ import ArmiesPanel from "./ArmiesPanel.js";
 import DecisionsPanel from "./DecisionsPanel.js";
 import EquipmentPanel from "./EquipmentPanel.js";
 import ForgePanel from "./ForgePanel.js";
+import SmeltPanel from "./SmeltPanel.js";
 import TerritoryPanel from "./TerritoryPanel.js";
 import FortsPanel from "./FortsPanel.js";
 import BuildOrderPanel from "./BuildOrderPanel.js";
@@ -32,7 +33,7 @@ const TABS=[
 function loadTab(){ try{ return localStorage.getItem("nta.tab")||"overview"; }catch(e){ return "overview"; } }
 export default {
  components:{ StatusHeader, Sidebar, ResourcePanel, CityPanel, MiscPanel, ArmiesPanel,
-  DecisionsPanel, EquipmentPanel, ForgePanel, TerritoryPanel, FortsPanel, BuildOrderPanel, BrainChatPanel, EventsPanel, IntelPanel, LevelingConfigPanel, FarmGroupPanel, LearningPanel, SetupPanel, SettingsPanel },
+  DecisionsPanel, EquipmentPanel, ForgePanel, SmeltPanel, TerritoryPanel, FortsPanel, BuildOrderPanel, BrainChatPanel, EventsPanel, IntelPanel, LevelingConfigPanel, FarmGroupPanel, LearningPanel, SetupPanel, SettingsPanel },
  setup(){
   const activeTab=ref(loadTab());
   function select(id){ activeTab.value=id; try{ localStorage.setItem("nta.tab", id); }catch(e){} }
@@ -48,7 +49,7 @@ export default {
     <div v-if="activeTab==='overview'" class="grid">
      <ResourcePanel/><CityPanel/><MiscPanel/></div>
     <div v-if="activeTab==='army'" class="grid">
-     <ArmiesPanel/><FarmGroupPanel/><LevelingConfigPanel/><DecisionsPanel/><EquipmentPanel/><ForgePanel/></div>
+     <ArmiesPanel/><FarmGroupPanel/><LevelingConfigPanel/><DecisionsPanel/><EquipmentPanel/><ForgePanel/><SmeltPanel/></div>
     <div v-show="activeTab==='territory'" class="grid">
      <TerritoryPanel/><FortsPanel/></div>
     <div v-if="activeTab==='intel'" class="grid">

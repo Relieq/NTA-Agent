@@ -28,10 +28,13 @@ def test_smelting_sends_main_uid_and_vice_ids_and_marks_busy():
     assert st.raw["player"]["currSmeltEquip"]["uid"] == "6101_10"
 
 
-def test_restore_smelt():
-    acts, s, _ = _acts("game/HD_RestoreSmeltEquip", {})
+def test_restore_smelt_sends_main_uid_and_replaces_the_equip():
+    acts, s, st = _acts("game/HD_RestoreSmeltEquip",
+                        {"equip": {"uid": "6101_10", "attrs": [{"attr": [2, 21, 5, 0]}]}})
+    st.raw["player"]["equips"] = [{"uid": "6101_10", "attrs": [{"attr": [2, 3, 9, 0, 6005]}]}]
     acts.restore_smelt_equip("6101_10")
-    assert s.calls == [("game/HD_RestoreSmeltEquip", {"uid": "6101_10"})]
+    assert s.calls == [("game/HD_RestoreSmeltEquip", {"mainUid": "6101_10"})]
+    assert st.raw["player"]["equips"] == [{"uid": "6101_10", "attrs": [{"attr": [2, 21, 5, 0]}]}]
 
 
 def test_smelt_equip_ret_notify_clears_busy_and_upserts():

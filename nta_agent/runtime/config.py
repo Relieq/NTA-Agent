@@ -126,6 +126,10 @@ class RuntimeConfig:
         return self.log_dir / "dig.json"              # agent -> dashboard (preview/active/...)
 
     @property
+    def smelt_view_path(self) -> Path:
+        return self.log_dir / "smelt.json"            # smelting tab (agent -> dashboard)
+
+    @property
     def world_random_path(self) -> Path:
         return self.log_dir / "world_random.json"     # per-match exclusive effect pools
 

@@ -315,6 +315,28 @@ def run(cfg: RuntimeConfig, *, ticks: int = 0, session=None, engine=None) -> Non
         p.parent.mkdir(parents=True, exist_ok=True)
         p.write_text(json.dumps(out, ensure_ascii=False), encoding="utf-8")
 
+    def _write_smelt_view(state):  # smelting tab: the player picks, the agent only sends
+        if config is None:
+            return
+        from nta_agent.execution.exclusive import SMITHY_ID, smelt_view
+        text = config.table("equipText")
+        ptext = config.table("pawnText")
+        player = (state.raw or {}).get("player") or {}
+
+        def _vi(tbl, key):
+            row = tbl.get(key) or {}
+            return row.get("vi") or row.get("en")
+        smithy = max((int(b.lv) for b in (state.builds or []) if int(b.id) == SMITHY_ID), default=0)
+        out = smelt_view(player, smithy, lambda i: config.table("equipBase").get(i),
+                         name_of=lambda i: _vi(text, f"name_{i}"),
+                         effect_text=lambda t: _vi(text, f"effect_{t}"),
+                         pools=_wr.load(cfg.world_random_path),
+                         pawn_name=lambda p: _vi(ptext, f"name_{p}"))
+        out["fixator"] = int(getattr(state.resources, "fixator", 0) or 0)
+        p = cfg.smelt_view_path
+        p.parent.mkdir(parents=True, exist_ok=True)
+        p.write_text(json.dumps(out, ensure_ascii=False), encoding="utf-8")
+
     def _write_health():  # F1: connection-health telemetry for the dashboard
         p = cfg.health_path
         p.parent.mkdir(parents=True, exist_ok=True)
@@ -332,6 +354,7 @@ def run(cfg: RuntimeConfig, *, ticks: int = 0, session=None, engine=None) -> Non
         # (a new match after a restart), then every 6 h
         _safe(_refresh_world_random)
         _safe(_write_forge_view, state)
+        _safe(_write_smelt_view, state)
         # pick up dashboard edits + stop the brain from clobbering them (shared obj)
         _safe(reload_into, profile, cfg.profile_path)
         # a NEW main city (re-created after capture) = new game: drop stale uid/cell state
