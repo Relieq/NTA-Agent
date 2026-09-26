@@ -81,7 +81,7 @@ export default {
     <tr v-for="p in (e.possible||[])" :key="p.type">
      <td style="padding-right:10px">{{ p.label }}<span v-if="e.lock_effect===p.type" title="dòng đã khoá"> 🔒</span></td>
      <td style="padding-right:10px">
-      <span v-if="p.current">{{ p.current.value }}{{ p.suffix }}<span v-if="p.odds_range.length"> · {{ p.current.odds }}%</span><span v-if="smelted(e,p.type)" class="muted"> (dung luyện)</span></span>
+      <span v-if="p.current"><template v-if="p.value_range.length">{{ p.current.value }}{{ p.suffix }}</template><span v-if="p.odds_range.length">{{ p.value_range.length ? " · " : "" }}{{ p.current.odds }}%</span><span v-if="smelted(e,p.type)" class="muted"> (dung luyện)</span></span>
       <span v-else class="muted">chưa có</span></td>
      <td style="padding-right:10px"><template v-if="p.value_range.length">
       <input type="number" style="width:64px" :min="p.value_range[0]" :max="p.value_range[1]"

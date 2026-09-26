@@ -56,7 +56,7 @@ export default {
    <div v-if="!v.slots" class="muted" style="font-size:12px;margin-top:4px">Tiệm Rèn cần Lv{{ v.need_lv[0] }} để dung luyện.</div>
    <div v-else style="display:flex;gap:8px;align-items:center;flex-wrap:wrap;margin-top:4px;font-size:13px">
     <label v-for="(x,i) in sel(m)" :key="i">Ô {{ i+1 }}
-     <select v-model="sel(m)[i]" @change="clearPrev(m)">
+     <select v-model="sel(m)[i]" @change="clearPrev(m)" style="max-width:640px;background:var(--panel, #161b22);color:inherit;border:1px solid var(--border, #30363d)">
       <option value="">— trống —</option>
       <option v-for="c in m.candidates" :key="c.uid" :value="String(c.id)"
        :disabled="sel(m).some((y,j)=>j!==i && y===String(c.id))">
