@@ -177,6 +177,11 @@ def from_entry_rst(rst: dict[str, Any], user: dict[str, Any] | None = None) -> G
         apply_user(state, user)
     elif player.get("uid"):
         state.user = User(uid=str(player["uid"]), raw=player)
+    if isinstance(player.get("pawnLevelingQueues"), list):
+        # when the (sequential) leveling queue was read — lets leveling_pawn_uids age
+        # out pawns that finished since login (without it they looked queued forever)
+        import time as _time
+        player["_pawnLevelingQueuesAt"] = _time.time()
     return state
 
 

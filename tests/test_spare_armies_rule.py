@@ -82,6 +82,7 @@ def test_warns_once_when_even_together_they_cannot_win(tmp_path):
     spares = [_a("D6", [3201] * 9), _a("D7", [3201] * 9)]
     events = []
     rule = _rule(tmp_path, predict=lambda st, armies: None)     # no clean target anywhere
+    rule.stuck_after_s = 0                                      # unused long enough
     rule.on_event = lambda k, d=None: events.append(k)
     acts = Acts([G1] + spares)
     _tick(rule, acts)
@@ -98,3 +99,27 @@ def test_clean_target_clears_the_warning(tmp_path):
     _tick(rule, Acts([G1] + spares))
     adv = json.loads((tmp_path / "spares.json").read_text(encoding="utf-8"))
     assert adv["status"] == "ok" and adv["target"] == 5
+
+
+def test_colocated_spares_in_the_field_are_not_dragged_home(tmp_path):
+    # after an attack the spares stand together on the captured cell: sort/attack
+    # from there instead of marching home every time
+    field = MAIN + 30
+    acts = Acts([G1, _a("D6", [3201] * 9, index=field), _a("D7", [3201] * 9, index=field)])
+    _tick(_rule(tmp_path, predict=lambda st, a: {"target": 1, "loss": 0}), acts)
+    assert acts.calls == []
+
+
+def test_no_stuck_warning_while_spares_are_being_used(tmp_path):
+    events = []
+    rule = _rule(tmp_path, predict=lambda st, a: None)
+    rule.stuck_after_s = 1800
+    rule.on_event = lambda k, d=None: events.append(k)
+    busy = Acts([G1, _a("D6", [3201] * 9, state=2), _a("D7", [3201] * 9)])  # D6 fighting
+    _tick(rule, busy)
+    idle = Acts([G1, _a("D6", [3201] * 9), _a("D7", [3201] * 9)])
+    _tick(rule, idle)                          # just used -> no warning yet
+    assert "spare_stuck" not in events
+    rule._last_used -= 1801                    # idle for 30 min+
+    _tick(rule, idle)
+    assert events.count("spare_stuck") == 1
