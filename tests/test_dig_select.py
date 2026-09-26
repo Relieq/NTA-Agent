@@ -209,3 +209,9 @@ def test_member_away_and_the_rest_would_lose_pawns_waits_without_hard():
     lossy = lambda p: SimpleNamespace(win=True, loss_percent=4.0)
     assert r._dig_select(CANDS, plans_for, lossy, CELL, all_armies=armies) is None
     assert r.hard == []
+
+
+def test_buffer_armies_are_never_sent_to_occupy_by_name():
+    from nta_agent.execution.heuristics import OccupyCell as OC
+    assert OC._is_buffer_army({"name": "Nâng Cấp 1"}) is True
+    assert OC._is_buffer_army({"name": "Đội 2"}) is False

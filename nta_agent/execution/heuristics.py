@@ -480,6 +480,11 @@ class OccupyCell:
                 best = plan
         return best
 
+    @staticmethod
+    def _is_buffer_army(army) -> bool:
+        """An agent-managed leveling buffer ("Nâng Cấp N") — never sent to occupy."""
+        return str((army or {}).get("name", "")).startswith("Nâng Cấp")
+
     def _away_uids(self) -> set[str]:
         if self.away_source is None:
             return set()
@@ -703,7 +708,8 @@ class OccupyCell:
                 except Exception:
                     locked = set()
             avail = [a for a in self._select_idle(actions, i, locked)
-                     if str(a.get("uid")) not in reserved and str(a.get("uid")) not in off_limits]
+                     if str(a.get("uid")) not in reserved and str(a.get("uid")) not in off_limits
+                     and not self._is_buffer_army(a)]
             grp = []
             if self.profile is not None:
                 from nta_agent.execution.profile import active_formation
@@ -1727,8 +1733,17 @@ class BufferLeveling:
 
     def buffer_uids(self) -> set[str]:
         """Armies occupy must leave alone: the buffers, and — during setup — the
-        armies the approved plan draws from."""
-        return set(self._buffers) | set(self._setup_reserved)
+        armies the approved plan draws from. Also read from buffers.json so it holds
+        right after a restart (OccupyCell runs before this rule in a tick)."""
+        out = set(self._buffers) | set(self._setup_reserved)
+        if self.state_path is not None:
+            from nta_agent.runtime import buffers as bstate
+            st = bstate.load(self.state_path)
+            if st.get("approved"):
+                out |= {str(b.get("base_uid")) for b in (st.get("proposal") or {}).get("buffers") or []
+                        if b.get("base_uid")}
+                out |= {str(u) for u in (st.get("buffers") or {})}
+        return out
 
     def _plan_travel(self, state, proposal, armies, group_armies, main, target, actions, st):
         """Per buffer: leveling -> travel (to an owned cell next to its target main

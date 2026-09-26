@@ -314,3 +314,11 @@ def test_does_not_requeue_a_pawn_it_just_sent(tmp_path):
     for _ in range(3):
         _tick(rule, _state(), acts)          # queue in state stays empty (stale)
     assert acts.calls == [("level", "B", "b0"), ("level", "B", "b1"), ("level", "B", "b2")]
+
+
+def test_buffer_uids_known_right_after_a_restart(tmp_path):
+    # a fresh rule (agent restart) must already report the approved buffer before it
+    # has run a tick — OccupyCell runs first in the tick
+    _setup_done(tmp_path)
+    fresh = BufferLeveling(profile=_prof(), state_path=tmp_path / "buffers.json", rows=ROWS)
+    assert "B" in fresh.buffer_uids()
