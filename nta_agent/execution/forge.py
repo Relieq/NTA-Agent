@@ -43,13 +43,14 @@ def affordable(cost: dict, resources: dict) -> bool:
     return all(int(resources.get(k, 0) or 0) >= v for k, v in cost.items())
 
 
-def craft_candidates(equip_slots, base_of, crafted_ids, *, novice=False):
+def craft_candidates(equip_slots, base_of, crafted_ids, *, novice=False, exclusive=False):
     """Unlocked equip slots to CRAFT (materialize) via the first forge.
 
     ``equip_slots``: ``player.equipSlots`` = ``{slotKey: {"id":?, "lv":n, ...}}``.
     A slot with a chosen ``id`` whose equip is COMMON and not yet in ``crafted_ids``
     yields a craft: uid ``"<id>_<lv>"`` (engine EquipSlotObj.uid = id_lv), with its
-    forge cost. Specialized (pawn-locked) equips are left for the human."""
+    forge cost. Exclusive (pawn-locked) equips only with ``exclusive=True`` — the
+    player chose it on the dashboard (2026-09-26 spec); otherwise left alone."""
     out = []
     for slot in (equip_slots or {}).values():
         if not isinstance(slot, dict):
@@ -58,7 +59,7 @@ def craft_candidates(equip_slots, base_of, crafted_ids, *, novice=False):
         if not eid or eid in crafted_ids:
             continue
         base = base_of(eid) or {}
-        if not is_common(base):
+        if not is_common(base) and not exclusive:
             continue
         cost_key = "forge_cost_novice" if novice else "forge_cost"
         cost = parse_cost(base.get(cost_key) or base.get("forge_cost"))
@@ -182,9 +183,25 @@ class RecastDecision:
     iron: int          # iron charged to the item's budget (0 when free)
     free: bool
     unmet: list = None  # which criteria the current roll misses ("3.odds", "quality")
+    kind: str = "recast"   # "recast" | "lock" (exclusive: lock a satisfied wanted line first)
+    lock_effect: int = 0   # the effect type to lock when kind == "lock"
+    fixator: int = 0       # fixators this recast costs (lock + smelted lines in the pool)
 
 
-def next_recast(equips, base_of, effect_row, targets, resources, *, busy=False):
+def _satisfied_lines(equip, mins) -> list[int]:
+    """Natural (not smelted) effect types whose EVERY set minimum is met."""
+    from nta_agent.execution.exclusive import natural_effects
+    nat = {x["type"]: x for x in natural_effects(equip)}
+    out = []
+    for t, cur in nat.items():
+        keys = [(k, lo) for k, lo in (mins or {}).items() if str(k).partition(".")[0] == str(t)]
+        if keys and all(cur.get(str(k).partition(".")[2], -1) >= float(lo) for k, lo in keys):
+            out.append(t)
+    return out
+
+
+def next_recast(equips, base_of, effect_row, targets, resources, *, busy=False,
+                pools=None, smelting=False):
     """The next RECAST toward a user target, or None.
 
     ``equips``: raw EquipInfo dicts (player.equips). ``targets``: ``{uid:
@@ -192,20 +209,42 @@ def next_recast(equips, base_of, effect_row, targets, resources, *, busy=False):
     ``forge_cost`` (timber/stone/iron…) unless ``nextForgeFree``; only the IRON part
     counts against the item's budget. Stops (None for that item) once its effect
     quality reaches the threshold — no RestoreForge, so the good roll is kept."""
-    if busy or not targets:
+    if busy or smelting or not targets:  # no forge while smelting (ecode.500237)
         return None
+    from nta_agent.execution.exclusive import fixator_per_recast, is_exclusive, natural_effects
     by_uid = {str(e.get("uid")): e for e in (equips or []) if isinstance(e, dict)}
     for uid, cfg in targets.items():
         e = by_uid.get(str(uid))
         if e is None:
             continue
-        base = base_of(equip_id(e)) or {}
-        if not is_common(base):
+        eid = equip_id(e)
+        base = base_of(eid) or {}
+        excl = is_exclusive(base)
+        if not is_common(base) and not excl:
             continue
+        pool = (pools or {}).get(eid) if excl else None
+        if excl and not pool:
+            continue  # no per-match pool known -> can not judge an exclusive equip
         unmet = unmet_stats(e, cfg, effect_row)
         if not unmet:
             continue  # target reached -> keep this roll
         q = effect_quality(e, effect_row) or 0.0
+        fixator = 0
+        if excl:
+            ok = _satisfied_lines(e, cfg.get("mins") or {})
+            lock = int(e.get("lockEffect") or 0)
+            if lock and lock in {x["type"] for x in natural_effects(e)}:
+                if lock not in ok:
+                    continue  # locked on an unwanted line: every recast would waste fixators
+            elif ok:
+                # a wanted line is in: lock it first (a setting, no cost), then pay
+                # fixators to roll the other line (user 2026-09-26)
+                return RecastDecision(uid=str(uid), quality=q, cost={}, iron=0, free=False,
+                                      unmet=unmet, kind="lock", lock_effect=ok[0])
+            fixator = fixator_per_recast(e, pool)
+            if fixator and (fixator > int(cfg.get("fixator_budget", 0) or 0)
+                            or fixator > int((resources or {}).get("fixator", 0) or 0)):
+                continue
         free = bool(e.get("nextForgeFree"))
         cost = {} if free else parse_cost(base.get("forge_cost"))
         iron = int(cost.get("iron", 0))
@@ -213,11 +252,12 @@ def next_recast(equips, base_of, effect_row, targets, resources, *, busy=False):
                          or not affordable(cost, resources)):
             continue
         return RecastDecision(uid=str(uid), quality=q, cost=cost, iron=iron, free=free,
-                              unmet=unmet)
+                              unmet=unmet, fixator=fixator)
     return None
 
 
-def forge_view(equips, base_of, effect_row, targets, *, name_of=None, effect_text=None):
+def forge_view(equips, base_of, effect_row, targets, *, name_of=None, effect_text=None,
+               pools=None):
     """Dashboard rows for the recast panel: every COMMON equip with its current
     effect rolls (filled text + ranges), effect quality, recast count, per-recast
     iron cost and the user's target. Pure; lookups injected."""
@@ -228,8 +268,11 @@ def forge_view(equips, base_of, effect_row, targets, *, name_of=None, effect_tex
             continue
         eid = equip_id(e)
         base = base_of(eid) or {}
-        if not is_common(base):
+        from nta_agent.execution.exclusive import fixator_per_recast, is_exclusive, smelted_types
+        excl = is_exclusive(base)
+        if not is_common(base) and not excl:
             continue
+        smelted = smelted_types(e)
         effs = []
         for eff in parse_attrs(e)["effects"]:
             row = effect_row(eff["type"]) or {}
@@ -240,14 +283,17 @@ def forge_view(equips, base_of, effect_row, targets, *, name_of=None, effect_tex
             effs.append({"type": eff["type"], "value": eff["value"], "odds": eff["odds"],
                          "value_range": list(parse_range(row.get("value", "")) or []),
                          "odds_range": list(parse_range(row.get("odds", "")) or []),
-                         "text": text})
+                         "text": text, "smelted": eff["type"] in smelted})
         q = effect_quality(e, effect_row)
         uid = str(e.get("uid"))
         # every effect this equip CAN roll (equipBase.effect "a|b|..."), so the user can
         # set per-stat minimums even for one not rolled right now
         cur = effect_values(e)
         possible = []
-        for tok in str(base.get("effect", "") or "").split("|"):
+        # exclusive: this MATCH pool (HD_GetWorldRandomInfo), never equipBase.effect
+        toks = ([str(t) for t in (pools or {}).get(eid) or []] if excl
+                else str(base.get("effect", "") or "").split("|"))
+        for tok in toks:
             tok = tok.strip()
             if not tok.lstrip("-").isdigit() or not int(tok):
                 continue
@@ -268,5 +314,23 @@ def forge_view(equips, base_of, effect_row, targets, *, name_of=None, effect_tex
                      "recast_count": int(e.get("recastCount", 0) or 0),
                      "next_free": bool(e.get("nextForgeFree")),
                      "iron_cost": int(parse_cost(base.get("forge_cost")).get("iron", 0)),
-                     "target": target, "met": bool(target) and not unmet, "unmet": unmet})
+                     "target": target, "met": bool(target) and not unmet, "unmet": unmet,
+                     "exclusive": excl,
+                     "pawn_id": int(base.get("exclusive_pawn") or 0) if excl else 0,
+                     "lock_effect": int(e.get("lockEffect") or 0) if excl else 0,
+                     "fixator_per_recast": (fixator_per_recast(e, (pools or {}).get(eid) or [])
+                                            if excl else 0),
+                     "pool_known": bool((pools or {}).get(eid)) if excl else True,
+                     "blocked": _blocked(e, target) if excl else ""})
     return rows
+
+
+def _blocked(equip, target) -> str:
+    """Why the agent will not recast this exclusive equip (shown on the dashboard)."""
+    from nta_agent.execution.exclusive import natural_effects
+    lock = int((equip or {}).get("lockEffect") or 0)
+    if not target or not lock or lock not in {x["type"] for x in natural_effects(equip)}:
+        return ""
+    if lock not in _satisfied_lines(equip, (target or {}).get("mins") or {}):
+        return "đang khoá một dòng không mong muốn — đổi/bỏ khoá trong game"
+    return ""
