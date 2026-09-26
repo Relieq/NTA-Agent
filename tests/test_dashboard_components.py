@@ -168,3 +168,8 @@ def test_forts_under_construction_are_shown():
     assert "building" in fp and "Đang xây" in fp and "surplus_s" in fp
     terr = _c("TerritoryPanel.js")
     assert "Cứ Điểm đang xây" in terr and "🏗" in terr and "Cứ Điểm chờ xây" in terr
+
+
+def test_intel_panel_shows_the_spare_armies_warning():
+    ip = _c("IntelPanel.js")
+    assert "r.spares" in ip and "Đội lẻ" in ip

@@ -307,6 +307,7 @@ class OccupyCell:
     dig_live_source: object = None  # callable -> bool: a dig is on (reserve its group)
     away_source: object = None      # callable -> uids stepping over to swap with a buffer
     buffer_source: object = None    # callable -> buffer army uids (never sent to occupy)
+    spare_reserved_source: object = None  # callable -> spares being gathered/sorted
     contest_range: int = 1     # a winnable candidate within this of an enemy is contested
     _pending: object = None    # (armies_list, target_index)
     _rally: object = None       # (armies_to_move, city, for_target) — consolidate then attack
@@ -686,6 +687,11 @@ class OccupyCell:
         cand_by_index = {c.index: c for c in cands}
         reserved: set[str] = set()  # filled after the dig step: only the dig uses its group
         off_limits = self._away_uids()  # buffers + armies away swapping: never occupy with them
+        if self.spare_reserved_source is not None:  # spares being gathered/sorted
+            try:
+                off_limits |= {str(u) for u in (self.spare_reserved_source() or ())}
+            except Exception:
+                pass
         if self.buffer_source is not None:
             try:
                 off_limits |= {str(u) for u in (self.buffer_source() or ())}
@@ -714,9 +720,15 @@ class OccupyCell:
             if self.profile is not None:
                 from nta_agent.execution.profile import active_formation
                 grp = active_formation(self.profile).get("group") or []
+            pools = [avail]
             if grp:
-                chosen = [a for a in avail if str(a.get("uid")) in {str(x) for x in grp}]
-                avail = chosen or avail
+                gs = {str(x) for x in grp}
+                chosen = [a for a in avail if str(a.get("uid")) in gs]
+                # the farm group plans on its own; the spare armies get their OWN
+                # plans too (never mixed with the group in one attack) — user
+                # 2026-09-26: spares that can win should be used, not left idle
+                others = [a for a in avail if str(a.get("uid")) not in gs]
+                pools = [chosen, others] if chosen else [avail]
             # Only combine CO-LOCATED armies: the sim models the engine's wave
             # schedule from per-army marchTime, but we feed marchTime=0, so it
             # assumes the same-origin schedule (lead at frame 0, others a frame+
@@ -731,7 +743,8 @@ class OccupyCell:
             # (a monster-specific lesson applies only when facing that monster).
             order_policy = self._recall_order(cand_by_index.get(i), order_policy)
             return [Plan(armies=order, target=i, label=label, prediction=None)
-                    for label, order in colocated_orders(avail, order_policy)]
+                    for pool in pools if pool
+                    for label, order in colocated_orders(pool, order_policy)]
 
         def predict(plan):
             c = cand_by_index[plan.target]
@@ -1982,6 +1995,145 @@ class BufferLeveling:
 
 
 @dataclass
+class SpareArmies:
+    """The spare armies (outside the farm group, buffers and locked ones): gather
+    them at the main city, sort their pawns into pure single-type armies (mixed only
+    when armies run out — user 2026-09-26), then let OccupyCell use them. If even
+    together no attack order wins a frontier cell within ``max_loss``, write a
+    warning (``advice_path``) for the dashboard + brain, once per composition.
+    """
+    name: str = "spare_armies"
+    profile: object = None
+    advice_path: object = None      # spare_advice.json (runner: cfg.spare_advice_path)
+    predict: object = None          # (state, armies) -> {"target", "loss"} | None
+    excluded_source: object = None  # callable -> uids owned by other features
+    on_event: object = None
+    check_every: int = 3
+    eval_every: int = 40            # ticks between "can they win anything?" checks
+    fail_cooldown: int = 12
+    _cooldown: int = 0
+    _pending: object = None
+    _reserved: set = field(default_factory=set)
+    _since_eval: int = 10**9
+    _last_sig: object = None
+
+    def reserved_uids(self) -> set[str]:
+        """Spares being gathered/sorted — occupy must not send them off mid-way."""
+        return set(self._reserved)
+
+    def _spares(self, armies) -> list[dict]:
+        grp: set[str] = set()
+        if self.profile is not None:
+            try:
+                from nta_agent.execution.profile import active_formation
+                grp = {str(u) for u in (active_formation(self.profile).get("group") or [])}
+            except Exception:
+                grp = set()
+        excl: set[str] = set()
+        if self.excluded_source is not None:
+            try:
+                excl = {str(u) for u in (self.excluded_source() or ())}
+            except Exception:
+                excl = set()
+        return [a for a in armies if (a.get("pawns") or [])
+                and str(a.get("uid")) not in grp and str(a.get("uid")) not in excl
+                and not str(a.get("name", "")).startswith("Nâng Cấp")]
+
+    def applies(self, state: GameState, actions: Actions) -> bool:
+        if self._cooldown > 0:
+            self._cooldown -= 1
+            return False
+        if not state.main_city_index:
+            return False
+        self._cooldown = self.check_every
+        self._since_eval += self.check_every
+        from nta_agent.execution.army_health import is_idle
+        from nta_agent.execution.spare_plan import purity_ops
+        main = int(state.main_city_index)
+        spares = self._spares(actions.get_player_armys())
+        self._reserved = set()
+        if len(spares) == 0:
+            return False
+        away = [a for a in spares if int(a.get("index", 0) or 0) != main]
+        home = [a for a in spares if int(a.get("index", 0) or 0) == main and is_idle(a)]
+        if away:
+            self._reserved = {str(a["uid"]) for a in spares}
+            walk = [{"uid": str(a["uid"]), "index": int(a["index"])} for a in away if is_idle(a)]
+            if walk:
+                self._pending = ("gather", lambda: actions.move_cell_army(walk, main))
+                self._emit("spare_gather", {"armies": [a.get("name") for a in away if is_idle(a)]})
+                return True
+            return False  # the rest are still marching home
+        ops = purity_ops(home) if len(home) == len(spares) else []
+        if ops:
+            self._reserved = {str(a["uid"]) for a in spares}
+            op = ops[0]
+            if op[0] == "move":
+                _, src, pawn, dst = op
+                self._pending = ("sort", lambda: actions.change_pawn_army(main, src, pawn, dst))
+            else:
+                _, a, pa, b, pb = op
+                self._pending = ("sort", lambda: actions.exchange_pawn_army(main, a, pa, pb,
+                                                                            army_uid2=b))
+            return True
+        if len(home) < len(spares):
+            return False
+        sig = tuple(sorted((str(a["uid"]), tuple(sorted(int(p["id"]) for p in a["pawns"])))
+                           for a in spares))
+        if sig == self._last_sig and self._since_eval < self.eval_every:
+            return False
+        self._since_eval = 0
+        found = self.predict(state, home) if self.predict is not None else None
+        names = [a.get("name") or a.get("uid") for a in spares]
+        if found:
+            self._write({"status": "ok", "armies": names, "target": found.get("target"),
+                         "loss": found.get("loss")})
+        elif sig != self._last_sig:
+            comp = {}
+            for a in spares:
+                for p in a["pawns"]:
+                    k = f"{int(p['id'])}@lv{int(p.get('lv', 0) or 0)}"
+                    comp[k] = comp.get(k, 0) + 1
+            self._write({"status": "stuck", "armies": names, "composition": comp,
+                         "reason": "gộp lại vẫn không đánh sạch được ô biên nào theo mọi thứ tự"})
+            self._emit("spare_stuck", {"armies": names})
+        self._last_sig = sig
+        return False
+
+    def _write(self, data: dict) -> None:
+        if self.advice_path is None:
+            return
+        import json as _json
+        import os as _os
+        import time as _time
+        from pathlib import Path as _Path
+        p = _Path(self.advice_path)
+        p.parent.mkdir(parents=True, exist_ok=True)
+        tmp = p.with_suffix(p.suffix + ".tmp")
+        tmp.write_text(_json.dumps({**data, "at": _time.time()}, ensure_ascii=False),
+                       encoding="utf-8")
+        _os.replace(tmp, p)
+
+    def _emit(self, kind, detail):
+        if self.on_event:
+            self.on_event(kind, detail)
+
+    def act(self, actions: Actions) -> None:
+        pend, self._pending = self._pending, None
+        if pend is None:
+            return
+        label, fn = pend
+        try:
+            fn()
+        except Exception as e:
+            ecode = str(e).split("ecode.")[-1][:6] if "ecode." in str(e) else ""
+            self._cooldown = self.fail_cooldown
+            self._emit("spare_error", {"stage": label, "ecode": ecode, "msg": str(e)[:120]})
+            if ecode not in ("500020", "500080", "500036", "500037", "500017"):
+                raise
+
+
+@dataclass
 class Logistics:
     """Consolidate under-strength field armies + bring them home to recruit, then
     let the brain redeploy the topped-up ones (profile.logistics.redeploy).
@@ -2501,5 +2653,6 @@ class RuleEngine:
                           OccupyCell(use_sim=True, profile=profile, radius=4),
                           ClaimTreasures(), ReviveInjured(profile=profile),
                           Leveling(profile=profile), BufferLeveling(profile=profile),
+                          SpareArmies(profile=profile),
                           Forge(profile=profile),
                           Logistics(profile=profile), ClaimTasks()])
