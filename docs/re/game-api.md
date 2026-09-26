@@ -143,7 +143,10 @@ Mô hình chi phí rương/loot: `execution/treasure_model.py`, cơ chế: [trea
 |---|---|---|---|
 | `HD_ForgeEquip` | 🔶 | `{uid}` | Rèn/recast trang bị → attrs ngẫu nhiên mới; tốn **sắt** (`forgeCost`) trừ khi có lượt **free (CHỈ từ policy** `FREE_RECAST_COUNT`, `getfreeForgeSurplusCount`). Reply: `equip`(attrs mới), `iron`, `nextForgeFree`, `recastCount`. |
 | `HD_RestoreForge` | 🔶 | `{uid}` | Hoàn lại attr trước (giữ bản tốt hơn sau recast tệ). Reply: `iron`, `equip`. |
-| `HD_LockEquipEffect` | 🔶 | `{uid, effect}` | Khóa 1 hiệu ứng (effect index) — tốn **fixator** (Máy Cố Định, `getSmeltNeedFixatorCount`). |
+| `HD_LockEquipEffect` | 🔶 | `{uid, effect}` | Khoá 1 dòng hiệu ứng (**loại** hiệu ứng) của món **chuyên dụng**; không khoá lúc đang rèn. Rèn lại có khoá giữ nguyên dòng đó (giá trị+tỉ lệ) và tốn thêm 1 **fixator**/lần. |
+| `HD_GetWorldRandomInfo` | ✅ | `{}` → `{exclusiveMap{equipId:{arr:[effectType]}}, pawnCostMap}` | Danh sách hiệu ứng random của món chuyên dụng **theo từng trận** (không phải `equipBase.effect`). `actions.get_world_random_info`. |
+| `HD_SmeltingEquip` | 🔶 | `{mainUid, viceIds:[equipId]}` → `{currSmeltEquip, fixator}` | Dung luyện: món chính chuyên dụng giữ mọi thuộc tính + thêm hiệu ứng món phụ (tối đa 2 ô, Tiệm Rèn Lv14/20); xong qua notify 64 SMELT_EQUIP_RET. Chỉ chạy khi người chơi xác nhận trên dashboard. |
+| `HD_RestoreSmeltEquip` | 🔶 | `{uid}` | Khôi phục món chuyên dụng về trước khi dung luyện. Chỉ khi người chơi xác nhận. |
 | `HD_InDoneForge` | ❓ | `{}` | Hoàn tất rèn tức thì. |
 | `HD_SmeltingEquip` / `HD_RestoreSmeltEquip` | ❓ | — | Nung/hoàn nung trang bị. |
 

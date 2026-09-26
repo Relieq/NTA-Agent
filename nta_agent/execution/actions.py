@@ -286,6 +286,36 @@ class Actions:
                     e["nextForgeFree"] = bool(reply["nextForgeFree"])
         return reply
 
+    def get_world_random_info(self) -> dict:
+        """This match's random config (GAME_HD_GetWorldRandomInfo): the effect pool of
+        each EXCLUSIVE equip (``exclusiveMap{equipId: {arr}}`` — per match, not
+        equipBase.effect) and ``pawnCostMap``. Flattened to
+        ``{"exclusive": {id: [effectType]}, "pawn_cost": {id: n}}``."""
+        reply = self.session.request("game/HD_GetWorldRandomInfo", {})
+        ex = {}
+        for k, v in (reply.get("exclusiveMap") or {}).items():
+            arr = v.get("arr") if isinstance(v, dict) else v
+            ex[int(k)] = [int(x) for x in (arr or [])]
+        cost = {int(k): int(v or 0) for k, v in (reply.get("pawnCostMap") or {}).items()}
+        return {"exclusive": ex, "pawn_cost": cost}
+
+    def smelting_equip(self, main_uid: str, vice_ids: list[int]) -> dict:
+        """Smelt common equips' effects into an exclusive one (GAME_HD_SmeltingEquip).
+        Timed: the reply's ``currSmeltEquip`` marks it busy until notify 64."""
+        reply = self.session.request("game/HD_SmeltingEquip",
+                                     {"mainUid": str(main_uid),
+                                      "viceIds": [int(i) for i in vice_ids]})
+        cur = reply.get("currSmeltEquip")
+        if cur:
+            raw = self._state.raw if isinstance(self._state.raw, dict) else {}
+            self._state.raw = raw
+            raw.setdefault("player", {})["currSmeltEquip"] = cur
+        return reply
+
+    def restore_smelt_equip(self, uid: str) -> dict:
+        """Undo a smelt: the exclusive back to before it (GAME_HD_RestoreSmeltEquip)."""
+        return self.session.request("game/HD_RestoreSmeltEquip", {"uid": str(uid)})
+
     def lock_equip_effect(self, equip_uid: str, effect: int) -> dict:
         """Lock an equip effect (GAME_HD_LockEquipEffect). Costs fixator."""
         return self.session.request("game/HD_LockEquipEffect",
