@@ -34,18 +34,34 @@ def is_idle(army: dict) -> bool:
     return int((army or {}).get("state", 0) or 0) == 0
 
 
-def leveling_pawn_uids(state) -> set[str]:
+def leveling_pawn_uids(state, now: float | None = None) -> set[str]:
     """Pawn uids being leveled. Their army sits in the drill ground: its ``state``
     stays 0 but it can't move (MoveCellArmy ecode.500080).
 
     Live shape (verified 2026-09-25): ``player.pawnLevelingQueues`` = a LIST of
     ``{uid, index, auid, puid, id, lv, needTime, surplusTime}``. The older
     ``pawnLvingQueues`` {pawnUIDMap, map} shape is still accepted."""
+    import time as _time
     player = (getattr(state, "raw", None) or {}).get("player") or {}
     uids: set[str] = set()
+    # The queue runs ONE pawn at a time per city (engine putPawnLvingQueue: only the
+    # head has a start time). When we know when the list was read, drop the entries
+    # that must have finished since: head needs surplusTime, the rest needTime each.
+    at = player.get("_pawnLevelingQueuesAt")
+    now = _time.time() if now is None else now
+    ends: dict[int, float] = {}
     for item in player.get("pawnLevelingQueues") or []:
-        if isinstance(item, dict) and item.get("puid"):
-            uids.add(str(item["puid"]))
+        if not (isinstance(item, dict) and item.get("puid")):
+            continue
+        if at is not None:
+            idx = int(item.get("index", 0) or 0)
+            first = idx not in ends
+            dur = int((item.get("surplusTime") if first else item.get("needTime"))
+                      or item.get("needTime") or 0) / 1000
+            ends[idx] = (at if first else ends[idx]) + dur
+            if ends[idx] <= now:
+                continue
+        uids.add(str(item["puid"]))
     q = player.get("pawnLvingQueues")
     if isinstance(q, dict):
         uids |= {str(u) for u in (q.get("pawnUIDMap") or {})}

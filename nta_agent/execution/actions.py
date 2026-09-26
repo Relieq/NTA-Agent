@@ -38,14 +38,32 @@ class Actions:
         return mc.index if mc else 0
 
     # ---- resource economy ------------------------------------------------ #
-    def _apply_result(self, reply: dict) -> None:
-        """Keep GameState current from an action reply (output + build queue)."""
+    def _apply_result(self, reply: dict, queue: str | None = None) -> None:
+        """Keep GameState current from an action reply (output + the right queue).
+
+        ``queues`` means different things per reply: the BUILD queue for build
+        actions, the drill queue for DrillPawn, the pawn-leveling queue for
+        PawnLving. Only ``queue="build"`` may set ``state.build_queue`` (drill /
+        leveling replies used to overwrite it — phantom builds, 2026-09-26)."""
         from nta_agent.state.store import apply_update_output
         out = reply.get("output")
         if isinstance(out, dict):
             apply_update_output(self._state, out)
-        if "queues" in reply and isinstance(reply["queues"], list):
-            self._state.build_queue = reply["queues"]
+        qs = reply.get("queues")
+        if not isinstance(qs, list):
+            return
+        if queue == "build":
+            self._state.build_queue = qs
+        elif queue == "leveling":
+            import time as _time
+            raw = self._state.raw if isinstance(self._state.raw, dict) else {}
+            self._state.raw = raw
+            player = raw.setdefault("player", {})
+            idxs = {int(q.get("index", 0) or 0) for q in qs if isinstance(q, dict)}
+            keep = [q for q in (player.get("pawnLevelingQueues") or [])
+                    if isinstance(q, dict) and int(q.get("index", 0) or 0) not in idxs]
+            player["pawnLevelingQueues"] = keep + list(qs)
+            player["_pawnLevelingQueuesAt"] = _time.time()
 
     def collect_city_output(self, index: int | None = None) -> dict:
         """Claim accumulated output from a city (default: the main city).
@@ -70,7 +88,7 @@ class Actions:
         if uid:
             params["uid"] = uid
         reply = self.session.request("game/HD_UpAreaBuild", params)
-        self._apply_result(reply)
+        self._apply_result(reply, queue="build")
         return reply
 
     def add_build(self, index: int, build_id: int) -> dict:
@@ -427,7 +445,7 @@ class Actions:
         the army (LVING). Reply carries updated queues + army."""
         reply = self.session.request("game/HD_PawnLving", {
             "index": int(index), "auid": str(army_uid), "puid": str(pawn_uid)})
-        self._apply_result(reply)
+        self._apply_result(reply, queue="leveling")
         return reply
 
     def move_cell_army(
