@@ -37,6 +37,34 @@ def _compatible(config, equip_id: int, pawn_id: int) -> bool:
     return str(pawn_id) in [p.strip() for p in parts]
 
 
+def effect_lines(config, equip: dict) -> list[dict]:
+    """The effect lines the equip actually rolled, readable: ``[{text, smelted,
+    locked}]`` (attr ``[2, type, value, odds, smeltId]``; equipText.effect_<type>
+    with {0}=value+suffix, {1}=odds%)."""
+    out = []
+    lock = int((equip or {}).get("lockEffect") or 0)
+    for a in (equip or {}).get("attrs") or []:
+        arr = a.get("attr") if isinstance(a, dict) else a
+        if not isinstance(arr, (list, tuple)) or len(arr) < 3 or int(arr[0] or 0) != 2:
+            continue
+        typ, val = int(arr[1] or 0), int(arr[2] or 0)
+        odds = int(arr[3] or 0) if len(arr) > 3 else 0
+        smelted = len(arr) > 4 and bool(arr[4])
+        row = config.table("equipText").get(f"effect_{typ}") or {}
+        tmpl = _MARKUP.sub("", row.get("vi") or row.get("en") or "")
+        sfx = str((config.table("equipEffect").get(typ) or {}).get("suffix") or "")
+        text = (tmpl.replace("{0}", f"{val}{sfx}").replace("{1}", f"{odds}%")
+                if tmpl else f"hiệu ứng #{typ}")
+        out.append({"text": text.strip(), "smelted": smelted,
+                    "locked": bool(lock) and lock == typ and not smelted})
+    return out
+
+
+def _is_exclusive(config, equip_id: int) -> bool:
+    row = config.table("equipBase").get(equip_id) or {}
+    return bool(str(row.get("exclusive_pawn") or "").strip())
+
+
 def _equip_id(e: dict) -> int:
     """Equip type id. Live equips carry only uid (e.g. "6005_1") — derive from it
     when the ``id`` field is absent."""
@@ -70,10 +98,13 @@ def pawn_equipment(state, config) -> list[dict]:
         cur_id = _equip_id(cur) if cur else 0
         options = [
             {"uid": e["uid"], "id": _equip_id(e), "name": equip_name(config, _equip_id(e)),
-             "desc": equip_effect(config, _equip_id(e))}
+             "desc": equip_effect(config, _equip_id(e)),
+             "exclusive": _is_exclusive(config, _equip_id(e)),
+             "lines": effect_lines(config, e)}
             for e in equips
             if isinstance(e, dict) and _compatible(config, _equip_id(e), pid)
         ]
+        options.sort(key=lambda o: not o["exclusive"])  # this troop's exclusive first
         rows.append({
             "pawn_id": pid,
             "pawn_name": pawn_name(config, pid),
