@@ -124,9 +124,11 @@ export default {
     ctx.strokeStyle="#0b1320"; ctx.lineWidth=1; ctx.strokeRect(sX(x)+1.5,sY(y)+1.5,scale-3,scale-3); } });
    data.ally.forEach(([x,y])=>{ if(inView(x,y)){ box(x,y,"#2f81f7");        // ô đồng minh (lam)
     ctx.strokeStyle="#0b1320"; ctx.lineWidth=1; ctx.strokeRect(sX(x)+1.5,sY(y)+1.5,scale-3,scale-3); } });
-   data.allyCities.forEach(c=>{ if(inView(c.x,c.y)){ ctx.strokeStyle="#cfe3ff"; ctx.lineWidth=2;
+   // city byte (game city.byte_id): 1 thành chính, 2 Cứ Điểm; 3-5 are resource buildings -> not outlined
+   const walled=(c)=> c.type==null || c.type===1 || c.type===2;
+   data.allyCities.forEach(c=>{ if(walled(c) && inView(c.x,c.y)){ ctx.strokeStyle="#cfe3ff"; ctx.lineWidth=2;
     ctx.strokeRect(sX(c.x)+3,sY(c.y)+3,scale-6,scale-6); } });             // thành đồng minh
-   data.enemyCities.forEach(c=>{ if(inView(c.x,c.y)){ ctx.strokeStyle="#0b1320"; ctx.lineWidth=2;
+   data.enemyCities.forEach(c=>{ if(walled(c) && inView(c.x,c.y)){ ctx.strokeStyle="#0b1320"; ctx.lineWidth=2;
     ctx.strokeRect(sX(c.x)+3,sY(c.y)+3,scale-6,scale-6); } });             // thành/fort địch
    // troop markers: ring coloured by activity + pawn-count badge (idle steel /
    // hành quân xanh / đang đánh đỏ). Drawn as a ring+halo'd number so it reads on
