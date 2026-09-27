@@ -125,10 +125,19 @@ class GameSession:
         except ApiError as e:
             if TOKEN_INVALID not in str(e):
                 raise
-            # spent/invalid token: try to refresh (e.g. app OAuth over ADB) once
-            if self.token_refresher and self.token_refresher():
-                return self._try_login(None, timeout=timeout)
-            raise TokenChainBroken(str(e)) from e
+            # spent/invalid token: refresh (the game's own token first, then app
+            # OAuth over ADB) — up to twice, since the first candidate may be spent
+            err = e
+            for _ in range(2):
+                if not (self.token_refresher and self.token_refresher()):
+                    break
+                try:
+                    return self._try_login(None, timeout=timeout)
+                except ApiError as e2:
+                    if TOKEN_INVALID not in str(e2):
+                        raise
+                    err = e2
+            raise TokenChainBroken(str(err)) from err
 
     def _try_login(self, account_token: str | None, *, timeout: float = 15) -> dict:
         if account_token is None:
