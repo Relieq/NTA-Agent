@@ -195,3 +195,11 @@ def test_smelt_panel_player_confirms():
     assert "fixator_per_recast" in sp and "fixator_cost" in sp
     app = _c("App.js")
     assert "<SmeltPanel/>" in app
+
+
+def test_forge_panel_compact_with_filter_and_wish_list():
+    fp = _c("ForgePanel.js")
+    assert "nta.forge.filter" in fp and "localStorage" in fp          # remembered filter
+    assert "Chuyên dụng" in fp and "Đã đạt" in fp and "Tìm tên" in fp   # groups + search
+    assert "toggle(e)" in fp and "open[e.uid]" in fp                   # collapsible rows
+    assert "Thêm hiệu ứng mong muốn" in fp and "dropWish" in fp        # wish list editor
