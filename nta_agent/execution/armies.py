@@ -18,6 +18,9 @@ def army_view(armys: list[dict], config) -> list[dict]:
         for p in a.get("pawns") or []:
             equip = p.get("equip") or {}
             eid = equip.get("id") if isinstance(equip, dict) else None
+            if not eid and isinstance(equip, dict):  # live EquipInfo: uid "<id>_<lv>" only
+                head = str(equip.get("uid") or "").split("_")[0]
+                eid = int(head) if head.isdigit() else None
             pawns.append({
                 "uid": p.get("uid", ""),
                 "id": int(p.get("id", 0) or 0),

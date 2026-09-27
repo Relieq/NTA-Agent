@@ -37,3 +37,10 @@ def test_unknown_state_and_names_fall_back():
                      FakeConfig())
     assert rows[0]["state_label"] == "9"
     assert rows[0]["pawns"][0]["name"] == "#9999" and rows[0]["pawns"][0]["equip_name"] == "#8888"
+
+
+def test_equip_name_from_uid_when_live_equip_has_no_id():
+    from nta_agent.execution.armies import army_view
+    rows = army_view([{"uid": "A", "pawns": [{"uid": "p", "id": 3101, "equip": {"uid": "6001_1"}}]}],
+                     FakeConfig())
+    assert rows[0]["pawns"][0]["equip_name"] == "Kiếm Sắt"

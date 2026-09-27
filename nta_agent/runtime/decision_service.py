@@ -43,6 +43,43 @@ class DecisionService:
         from nta_agent.runtime.rename_queue import RenameQueue
         self.renames = RenameQueue(getattr(cfg, "pending_renames_path", None)
                                    or Path(cfg.commands_path).with_name("pending_renames.json"))
+        # {pawn_id: equip_uid} the player chose on the dashboard: kept so armies that
+        # were marching (the game only equips idle armies) get it once they are idle
+        self._equip_sync_path = Path(cfg.commands_path).with_name("equip_sync.json")
+
+    def _equip_choices(self) -> dict:
+        try:
+            return {str(k): str(v) for k, v in
+                    json.loads(self._equip_sync_path.read_text(encoding="utf-8")).items()}
+        except (OSError, ValueError, AttributeError):
+            return {}
+
+    def _sync_equips(self, armies) -> None:
+        """Equip every IDLE army's pawns of a chosen type that still wear something
+        else: one ChangePawnAttr per army (syncEquip 2 = that army), keeping the
+        pawn's own attack speed (the engine sets it from the request)."""
+        choices = self._equip_choices()
+        if not choices:
+            return
+        for a in armies or []:
+            if int(a.get("state", 0) or 0) != 0:
+                continue  # marching / fighting: the game would skip or refuse it
+            for pid, uid in choices.items():
+                p = next((q for q in a.get("pawns") or []
+                          if str(int(q.get("id", 0) or 0)) == pid
+                          and str(((q.get("equip") or {}) if isinstance(q.get("equip"), dict)
+                                   else {}).get("uid") or "") != uid), None)
+                if p is None:
+                    continue
+                try:
+                    self.actions.change_pawn_attr(
+                        int(a.get("index", 0) or 0), str(a.get("uid")), str(p.get("uid")), uid,
+                        sync_equip=2, skin_id=0, attack_speed=int(p.get("attackSpeed", 0) or 0))
+                    self._on_event("equip_sync", {"army": a.get("name") or a.get("uid"),
+                                                  "pawn_id": int(pid), "equip_uid": uid})
+                except Exception as e:  # e.g. the army started a battle meanwhile
+                    self._on_event("equip_sync_error", {"army": a.get("name") or a.get("uid"),
+                                                        "error": str(e)[:160]})
 
     def _write_decisions(self, state) -> None:
         from nta_agent.runtime import world_random
@@ -63,7 +100,9 @@ class DecisionService:
         os.replace(tmp, path)
 
     def _write_armies(self) -> None:
-        data = army_view(self.actions.get_player_armys(), self.config)
+        armies = self.actions.get_player_armys()
+        self._sync_equips(armies)
+        data = army_view(armies, self.config)
         path = Path(self.cfg.armies_path)
         path.parent.mkdir(parents=True, exist_ok=True)
         tmp = path.with_suffix(path.suffix + ".tmp")
@@ -85,19 +124,14 @@ class DecisionService:
             atk = int(cmd.get("attack_speed", 0) or 0)
             # 1) config = default for pawns drilled later
             self.actions.change_pawn_equip(pawn_id, equip_uid, skin_id, atk)
-            # 2) also equip pawns already on the field — the config alone doesn't
-            # touch them. sync_equip=1 applies to EVERY pawn of this type across
-            # non-marching armies, so one call on any such pawn suffices.
-            for a in self.actions.get_player_armys():
-                if int(a.get("state", 0) or 0) == 1:  # marching: can't change attr
-                    continue
-                p = next((q for q in (a.get("pawns") or [])
-                          if int(q.get("id", 0) or 0) == pawn_id), None)
-                if p:
-                    self.actions.change_pawn_attr(
-                        int(a.get("index", 0) or 0), str(a.get("uid")), str(p.get("uid")),
-                        equip_uid, sync_equip=1, skin_id=skin_id, attack_speed=atk)
-                    break
+            # 2) remember the choice, then equip the pawns already on the field. The
+            # game only equips idle armies (and syncEquip 1 only those in the SAME
+            # cell), so each idle army is done now and the rest when they are idle.
+            choices = self._equip_choices()
+            choices[str(pawn_id)] = str(equip_uid)
+            self._equip_sync_path.parent.mkdir(parents=True, exist_ok=True)
+            self._equip_sync_path.write_text(json.dumps(choices), encoding="utf-8")
+            self._sync_equips(self.actions.get_player_armys())
             return
         if action == "build_fort":
             # User picked an owned cell in the fort zone -> build a Cứ Điểm there.
