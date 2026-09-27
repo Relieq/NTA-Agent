@@ -19,6 +19,8 @@ from nta_agent import settings as user_settings
 _ADB_CANDIDATES = [
     Path(r"D:\LDPlayer\LDPlayer9\adb.exe"),
     Path(r"C:\LDPlayer\LDPlayer9\adb.exe"),
+    Path(r"D:\LDPlayer\LDPlayer14\adb.exe"),   # LDPlayer 14 (issue #79)
+    Path(r"C:\LDPlayer\LDPlayer14\adb.exe"),
     Path(r"C:\Program Files\BlueStacks_nxt\HD-Adb.exe"),
 ]
 _BLUESTACKS_CONF = Path(r"C:\ProgramData\BlueStacks_nxt\bluestacks.conf")

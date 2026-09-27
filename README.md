@@ -124,6 +124,8 @@ App tự tìm `adb.exe` của LDPlayer (thường ở `D:\LDPlayer\LDPlayer9\adb
 
 - Mở LDPlayer.
 - Vào **Cài đặt LDPlayer → Khác → Gỡ lỗi ADB** và chọn **Mở kết nối cục bộ**.
+- **LDPlayer 14** không có mục này: **tắt** giả lập, mở `LDPlayer14\vms\config\leidian0.config`,
+  sửa `"basicSettings.adbDebug": 0` thành `1`, lưu rồi bật lại giả lập.
 - Nếu mở nhiều máy ảo, nhập đúng thiết bị (ví dụ `emulator-5554`) vào ô **Thiết bị ADB**.
 
 <a id="buoc-3-root"></a>
