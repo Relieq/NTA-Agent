@@ -79,8 +79,11 @@ class FortService:
             # auto-support toggle registered (empty for a freshly built fort), so
             # relying on it left forts invisible. Union the two to be safe.
             cities = m.get("cities") or {}
+            from nta_agent.execution.mapchunk import CITY_FORT
+            # ONLY byte 2 is a Cứ Điểm; 3/4/5 are resource buildings (live 2026-09-27
+            # they were counted and drawn as forts)
             fort_set = {int(i) for i, t in cities.items()
-                        if int(t) != 1 and int(i) != main}
+                        if int(t) == CITY_FORT and int(i) != main}
             fort_set.update(int(f.get("index", 0)) for f in
                             (player.get("fortAutoSupports") or []) if isinstance(f, dict))
             fort_indices = sorted(fort_set)

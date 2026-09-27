@@ -62,7 +62,9 @@ def detect_incursions(owned, enemy_cells, enemy_cities=None, main=0, map_width=6
     A threat = an enemy cell that is inside/on the convex hull of ``owned`` OR is
     4-adjacent to an owned cell. Returns ``{"threats": [...], "summary": {...}}``.
     """
-    enemy_cities = enemy_cities or {}
+    from nta_agent.execution.mapchunk import CITY_WALLED
+    # only a main city / Cứ Điểm is an enemy CITY — not a farm/mill/quarry
+    enemy_cities = {i: t for i, t in (enemy_cities or {}).items() if int(t) in CITY_WALLED}
     owned_set = {int(c) for c in owned}
     pts = [(c % map_width, c // map_width) for c in owned_set]
     hull = convex_hull(pts)
@@ -111,9 +113,11 @@ def approach_summary(enemy_cells, enemy_cities, main: int, map_width: int = 600,
     more of them (a static neighbour stays quiet, so a crowded server doesn't spam).
     """
     mx, my = main % map_width, main // map_width
-    cities = dict(enemy_cities or {})
+    from nta_agent.execution.mapchunk import CITY_WALLED
+    everything = {int(i) for i in (enemy_cells or ())} | {int(i) for i in (enemy_cities or {})}
+    cities = {int(i) for i, t in (enemy_cities or {}).items() if int(t) in CITY_WALLED}
     near = []
-    for e in {int(i) for i in (enemy_cells or ())} | {int(i) for i in cities}:
+    for e in everything:
         x, y = e % map_width, e // map_width
         d = _dist_to_block(x, y, mx, my)
         if d <= radius:

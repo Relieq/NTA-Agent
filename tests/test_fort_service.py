@@ -259,3 +259,22 @@ def test_allied_cells_are_listed_apart_and_not_threats(tmp_path):
     assert seen["allies"] == {"friend"}
     assert data["ally_cells"] == [[102, 100]] and data["enemy_cells"] == []
     assert data["threat_summary"]["count"] == 0
+
+
+def test_resource_buildings_are_not_forts(tmp_path):
+    # map-chunk city byte = city.byte_id: 1 main (1001), 2 Cứ Điểm (2102),
+    # 3/4/5 farm/timber/quarry (2201/2202/2203). Live 2026-09-27: resource
+    # buildings were counted and drawn as forts (every type != 1 was a "fort").
+    main = 100 * 600 + 100
+    fort = 105 * 600 + 103
+    farm, mill, quarry = 101 * 600 + 101, 102 * 600 + 102, 103 * 600 + 103
+    owned = {main, fort, farm, mill, quarry}
+
+    def scan(actions, main, uid, map_width=600, focus=None):
+        return {"owned": set(owned), "cities": {main: 1, fort: 2, farm: 3, mill: 4, quarry: 5},
+                "enemy_cells": set(), "enemy_cities": {}, "frontier": set()}
+
+    cfg, svc = _make(tmp_path, scan=scan, max_count_fn=lambda bid: 3)
+    svc.tick(_state(land_count=5, main=main, forts=[]))
+    data = json.loads(cfg.forts_path.read_text(encoding="utf-8"))
+    assert data["fort_count"] == 1 and data["forts"] == [[103, 105]]

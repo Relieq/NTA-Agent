@@ -62,3 +62,11 @@ def test_enemy_city_flagged_and_ranked_first():
     out = detect_incursions(owned, enemy, cities, main=idx(10, 10), map_width=W)
     assert out["summary"]["has_enemy_city"] is True
     assert out["threats"][0]["is_city"] is True  # city ranked first
+
+
+def test_enemy_resource_building_is_not_an_enemy_city():
+    owned = {idx(x, y) for x in range(10, 14) for y in range(10, 14)}
+    enemy = {idx(14, 11)}
+    out = detect_incursions(owned, enemy, {idx(14, 11): 3}, main=idx(10, 10), map_width=W)  # a farm
+    assert out["summary"]["has_enemy_city"] is False
+    assert out["threats"][0]["is_city"] is False

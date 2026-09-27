@@ -125,6 +125,13 @@ def _dec_indexs2(data: bytes, ox: int, oy: int, map_width: int) -> list[int]:
     return out
 
 
+# The cities byte is the game's ``city.byte_id`` (engine: cityId = city[byte_id].id):
+CITY_MAIN = 1         # 1001 Thành chính
+CITY_FORT = 2         # 2102 Cứ Điểm
+CITY_RESOURCE = {3, 4, 5}   # 2201/2202/2203 ruộng / xưởng gỗ / mỏ đá (resource buildings)
+CITY_WALLED = {CITY_MAIN, CITY_FORT}  # real cities (garrison, attack/defend as a city)
+
+
 def _dec_cities(data: bytes, ox: int, oy: int, map_width: int) -> dict[int, int]:
     """Repeated (dx:7, dy:7, cityType:8) -> {index: cityType}."""
     br = _BitReader(data)
