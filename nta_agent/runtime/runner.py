@@ -267,6 +267,12 @@ def run(cfg: RuntimeConfig, *, ticks: int = 0, session=None, engine=None) -> Non
             from nta_agent.runtime import fort_queue as _fq
             rule.pending_forts_source = lambda: _fq.load(cfg.pending_forts_path)
             rule.on_event = log.append   # build_rejected (#82)
+    _forge_rule = next((r for r in _rules if getattr(r, "name", "") == "forge"), None)
+    if _forge_rule is not None:
+        for _r in _rules:
+            if getattr(_r, "name", "") == "build_order":
+                # builds yield to an unlocked equip waiting to be crafted (2026-09-27)
+                _r.craft_pending_source = lambda: list(_forge_rule.craft_waiting)
 
     def _safe(fn, *a):
         try:
@@ -308,7 +314,10 @@ def run(cfg: RuntimeConfig, *, ticks: int = 0, session=None, engine=None) -> Non
             if r.get("pawn_id"):
                 row = ptext.get(f"name_{r['pawn_id']}") or {}
                 r["pawn_name"] = row.get("vi") or row.get("en") or str(r["pawn_id"])
+        waiting = [{**w, "name": _vi(f"name_{w['id']}") or f"#{w['id']}"}
+                   for w in (getattr(_forge_rule, "craft_waiting", None) or [])]
         out = {"equips": rows, "busy": player.get("currForgeEquip") or None,
+               "craft_waiting": waiting,
                "smelting": player.get("currSmeltEquip") or None,
                "iron": state.resources.iron,
                "fixator": int(getattr(state.resources, "fixator", 0) or 0)}

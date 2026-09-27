@@ -188,3 +188,32 @@ def test_craft_uses_normal_forge_cost_even_in_room_type_1():
     st = _state({"1": {"id": 6005, "lv": 1}}, iron=2, room=1)
     rule = Forge(config=FakeConfig(base), profile=SimpleNamespace(forge={"enabled": True}))
     assert rule.applies(st, FakeActions()) is True        # 2 iron is enough
+
+
+# ---- 2026-09-27: an unlocked equip never got crafted (timber/stone went to builds) --
+BASE2 = {6005: {"id": 6005, "exclusive_pawn": "", "forge_cost": "2,0,357|3,0,357|9,0,2"}}
+
+
+def test_a_craft_short_of_timber_is_reported_as_waiting():
+    st = _state({"1": {"id": 6005, "lv": 1}}, iron=10)
+    st.resources.timber, st.resources.stone = 110, 176
+    rule = Forge(config=FakeConfig(BASE2), profile=SimpleNamespace(forge={"enabled": True}))
+    assert rule.applies(st, FakeActions()) is False
+    assert rule.craft_waiting == [{"uid": "6005_1", "id": 6005,
+                                   "missing": {"timber": 247, "stone": 181}}]
+    st.resources.timber = st.resources.stone = 400
+    assert rule.applies(st, FakeActions()) is True and rule.craft_waiting == []
+
+
+def test_build_order_yields_to_a_craft_waiting_for_build_resources():
+    from nta_agent.data.config import GameConfig
+    from nta_agent.execution.heuristics import BuildOrder
+    from nta_agent.state.schema import Building
+    from tests.test_build_order import Acts
+    from tests.test_build_order import _state as bstate
+    st = bstate([Building(id=2001, lv=10, uid="m", index=109726)])
+    waiting = [{"uid": "6005_1", "id": 6005, "missing": {"timber": 247}}]
+    rule = BuildOrder(sequence=[2016], config=GameConfig.load(), craft_pending_source=lambda: waiting)
+    assert rule.applies(st, Acts()) is False
+    waiting[:] = [{"uid": "6005_1", "id": 6005, "missing": {"iron": 1}}]   # iron: no clash
+    assert rule.applies(st, Acts()) is True

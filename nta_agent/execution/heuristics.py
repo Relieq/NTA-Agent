@@ -195,6 +195,7 @@ class BuildOrder:
     config: object | None = None
     profile: object = None   # tactics profile: build.order / build.skip
     pending_forts_source: object = None  # callable -> queued fort cells (yield to them)
+    craft_pending_source: object = None  # callable -> Forge.craft_waiting (yield to them)
     queue_cooldown: int = 24  # back off when the build queue is busy (~2min)
     on_event: object = None   # on_event(kind, detail): rejected builds are reported (#82)
     _pending: object = None  # BuildAction chosen in applies()
@@ -228,6 +229,16 @@ class BuildOrder:
         if self.pending_forts_source is not None:
             try:
                 if list(self.pending_forts_source() or []):
+                    return False
+            except Exception:
+                pass
+        # An unlocked equip waiting to be CRAFTED for want of timber/stone/cereal has
+        # priority too: builds spent those first and the craft never happened (live
+        # 2026-09-27). Crafts are cheap (~300 each), so this is a short yield.
+        if self.craft_pending_source is not None:
+            try:
+                if any(set(w.get("missing") or {}) & {"timber", "stone", "cereal"}
+                       for w in (self.craft_pending_source() or [])):
                     return False
             except Exception:
                 pass
@@ -2405,6 +2416,9 @@ class Forge:
     spend_fn: object = None        # spend_fn(uid, iron, fixator=0): debit the item's budgets
     pools_source: object = None    # callable -> {exclusive equipId: [effectType]} (per match)
     _held: set = field(default_factory=set)  # exclusive uids halted (fixator cost mismatch)
+    # crafts of unlocked equips still short of resources: [{uid, id, missing}] — shown
+    # on the dashboard and read by BuildOrder, which yields to them (2026-09-27)
+    craft_waiting: list = field(default_factory=list)
     _cooldown: int = 0
     _pending: str = ""   # equip uid to forge
     _recast: object = None  # RecastDecision when _pending is a recast
@@ -2451,12 +2465,19 @@ class Forge:
                "stone": state.resources.stone, "iron": state.resources.iron,
                "gold": state.resources.gold,
                "fixator": int(getattr(state.resources, "fixator", 0) or 0)}
+        waiting = []
         for c in cands:
             if affordable(c["cost"], res):
                 self._pending, self._recast = c["uid"], None
+                self.craft_waiting = []
                 if self.on_event:
                     self.on_event("forge", {"uid": c["uid"], "id": c["id"], "cost": c["cost"]})
                 return True
+            waiting.append({"uid": c["uid"], "id": c["id"],
+                            "missing": {k: int(v) - int(res.get(k, 0) or 0)
+                                        for k, v in c["cost"].items()
+                                        if int(v) > int(res.get(k, 0) or 0)}})
+        self.craft_waiting = waiting
         # 2) recast user-targeted equips toward their effect-quality threshold
         if self.targets_source is None:
             return False

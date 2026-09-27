@@ -105,6 +105,10 @@ export default {
    <button @click="help=!help" title="Cách agent rèn lại" style="padding:0 7px">?</button>
    <span class="muted" style="font-size:12px;margin-left:auto">Sắt <b>{{ v.iron }}</b> · Máy cố định <b>{{ v.fixator }}</b>
     <span v-if="v.busy"> · ⏳ đang rèn</span><span v-if="v.smelting" style="color:#d29922"> · ⏳ đang dung luyện</span></span></div>
+  <div v-if="(v.craft_waiting||[]).length" style="font-size:12px;margin:6px 0;color:#d29922">
+   ⏳ Chờ chế tạo (agent ưu tiên, tạm nhường xây dựng):
+   <span v-for="(w,i) in v.craft_waiting" :key="w.uid">{{ i ? " · " : "" }}<b>{{ w.name }}</b> thiếu
+    {{ Object.entries(w.missing||{}).map(([k,n])=>n+" "+({timber:"gỗ",stone:"đá",iron:"sắt",cereal:"lương",gold:"vàng"}[k]||k)).join(", ") }}</span></div>
   <div v-if="help" class="muted" style="font-size:12px;margin:6px 0">
    Chọn các <b>hiệu ứng mong muốn</b> và mức tối thiểu (giá trị / tỉ lệ). Agent dừng khi <b>mọi hàng ngẫu nhiên</b> của món
    (2 hàng với món chuyên dụng, 1 hàng với món thường) đều là hiệu ứng trong danh sách và đạt mức — hiệu ứng nào cũng được.
