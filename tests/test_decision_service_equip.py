@@ -23,6 +23,7 @@ class FakeActions:
     def change_pawn_attr(self, index, army_uid, pawn_uid, equip_uid, *,
                          sync_equip=1, skin_id=0, attack_speed=0):
         self.attr_calls.append((index, army_uid, pawn_uid, equip_uid, sync_equip))
+        self.attr_speeds = getattr(self, "attr_speeds", []) + [attack_speed]
         return {}
 
 
@@ -67,5 +68,36 @@ def test_equip_command_also_equips_existing_pawns(tmp_path):
                                        "equip_uid": "e1", "skin_id": 0, "attack_speed": 6})
     svc.tick(_state())
     assert act.calls == [(3101, "e1", 0, 6)]            # config set
-    # existing pawns equipped via one sync_equip=1 call (applies to all of the type)
-    assert act.attr_calls == [(5, "A", "p1", "e1", 1)]
+    # the idle army's pawns of that type equipped via one per-army call (sync 2)
+    assert act.attr_calls == [(5, "A", "p1", "e1", 2)]
+
+
+
+def test_marching_armies_are_equipped_once_they_are_idle(tmp_path):
+    # live 2026-09-27: the game only equips non-marching armies in the chosen army's
+    # cell; the 4 marching Cường Nỏ armies kept their old gear. Remember the choice
+    # and equip each army when it is idle; keep every pawn's own attack speed
+    # (the old call sent 0 and reset a pawn from 5 to 0).
+    cfg = _cfg(tmp_path)
+    idle = {"uid": "A", "index": 5, "state": 0,
+            "pawns": [{"uid": "p1", "id": 3101, "attackSpeed": 5, "equip": {"uid": "old"}}]}
+    away = {"uid": "B", "index": 9, "state": 1,
+            "pawns": [{"uid": "p2", "id": 3101, "attackSpeed": 7, "equip": {"uid": "old"}}]}
+    act = FakeActions([idle, away])
+    svc = DecisionService(act, FakeConfig(), cfg, armies_every=1)
+    append_command(cfg.commands_path, {"action": "equip", "pawn_id": 3101,
+                                       "equip_uid": "e1", "skin_id": 0, "attack_speed": 6})
+    svc.tick(_state())
+    assert act.attr_calls == [(5, "A", "p1", "e1", 2)] and act.attr_speeds == [5]
+    idle["pawns"][0]["equip"] = {"uid": "e1"}          # A now wears it
+    away["state"] = 0                                    # B came home
+    svc.tick(_state())
+    assert act.attr_calls[1:] == [(9, "B", "p2", "e1", 2)] and act.attr_speeds[1:] == [7]
+    away["pawns"][0]["equip"] = {"uid": "e1"}
+    svc.tick(_state())
+    assert len(act.attr_calls) == 2                      # everyone equipped -> nothing more
+    # the choice survives a restart (a new service instance)
+    away["pawns"][0]["equip"] = {"uid": "old"}
+    act2 = FakeActions([idle, away])
+    DecisionService(act2, FakeConfig(), cfg, armies_every=1).tick(_state())
+    assert act2.attr_calls == [(9, "B", "p2", "e1", 2)]

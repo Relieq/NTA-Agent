@@ -57,3 +57,13 @@ def test_lock_marks_the_equip_locked_in_state():
     acts.lock_equip_effect("6117_10", 9)
     assert s.calls == [("game/HD_LockEquipEffect", {"uid": "6117_10", "effect": 9})]
     assert st.raw["player"]["equips"][0]["lockEffect"] == 9
+
+
+
+def test_config_equip_is_mirrored_into_state():
+    # the server replies {} — without this the dashboard kept showing the old gear
+    acts, _s, st = _acts("game/HD_ChangeConfigPawnEquip", {})
+    st.raw["player"]["configPawnMap"] = {"3305": {"equipUid": "6005_1", "skinId": 0, "attackSpeed": 5}}
+    acts.change_pawn_equip(3305, "6117_10", 0, 5)
+    assert st.raw["player"]["configPawnMap"]["3305"] == {"equipUid": "6117_10", "skinId": 0,
+                                                         "attackSpeed": 5}

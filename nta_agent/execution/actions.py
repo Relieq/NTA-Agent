@@ -250,11 +250,20 @@ class Actions:
 
         This is the default applied to pawns drilled AFTER it — existing pawns keep
         their gear. Use ``change_pawn_attr(..., sync_equip=1)`` to also equip the
-        pawns already on the field."""
-        return self.session.request("game/HD_ChangeConfigPawnEquip", {
+        pawns already on the field. The server replies {}; mirror the engine
+        (``configPawnMap[id] = {...}``) so the dashboard shows the new gear."""
+        reply = self.session.request("game/HD_ChangeConfigPawnEquip", {
             "id": int(pawn_id), "equipUid": str(equip_uid),
             "skinId": int(skin_id), "attackSpeed": int(attack_speed),
         })
+        raw = self._state.raw if isinstance(self._state.raw, dict) else {}
+        self._state.raw = raw
+        player = raw.setdefault("player", {})
+        if not isinstance(player.get("configPawnMap"), dict):
+            player["configPawnMap"] = {}
+        player["configPawnMap"][str(int(pawn_id))] = {
+            "equipUid": str(equip_uid), "skinId": int(skin_id), "attackSpeed": int(attack_speed)}
+        return reply
 
     def change_pawn_attr(self, index: int, army_uid: str, pawn_uid: str,
                          equip_uid: str, *, sync_equip: int = 1,
