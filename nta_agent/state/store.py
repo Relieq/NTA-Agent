@@ -319,6 +319,14 @@ def apply_player_update(state: GameState, item: dict[str, Any]) -> None:
     if item.get("type") == 6:
         q = item.get("data_6")
         state.build_queue = list(q) if isinstance(q, list) else []
+    # UPDATE_POLICY_SLOT (85) / UPDATE_EQUIP_SLOT (86) / UPDATE_PAWN_SLOT (87): the
+    # whole ceri slot map {lv: CeriSlotInfo} (engine update*Slots replaces it). A new
+    # "pick 1 of 3" offered mid-session arrives here; ignoring these meant offers only
+    # showed after a restart (live 2026-09-27).
+    for t, key in ((85, "policySlots"), (86, "equipSlots"), (87, "pawnSlots")):
+        slots = item.get(f"data_{t}")
+        if item.get("type") == t and isinstance(slots, dict):
+            state.raw.setdefault("player", {})[key] = dict(slots)
     # A single building at its new level (build complete / upgraded).
     bld = item.get("data_5")
     if isinstance(bld, dict):
