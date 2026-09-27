@@ -327,6 +327,44 @@ def apply_player_update(state: GameState, item: dict[str, Any]) -> None:
         slots = item.get(f"data_{t}")
         if item.get("type") == t and isinstance(slots, dict):
             state.raw.setdefault("player", {})[key] = dict(slots)
+    t = item.get("type")
+    player = state.raw.setdefault("player", {}) if isinstance(state.raw, dict) else {}
+    # PAWN_INJURY_ADD (83) / REMOVE (84): the dead-pawn list the revive rule reads
+    if t == 83 and isinstance(item.get("data_83"), dict):
+        inj = player.setdefault("injuryPawns", [])
+        if not any(str(p.get("uid")) == str(item["data_83"].get("uid")) for p in inj):
+            inj.append(dict(item["data_83"]))
+    if t == 84 and item.get("data_84"):
+        player["injuryPawns"] = [p for p in player.get("injuryPawns") or []
+                                 if str(p.get("uid")) != str(item["data_84"])]
+    # UPDATE_TASKS (55): progress by id; unknown guide/other tasks are appended
+    # (the client adds none to todayTasks) — TaskClaim read stale progress before
+    if t == 55 and isinstance(item.get("data_55"), dict):
+        for key in ("guideTasks", "todayTasks", "otherTasks"):
+            have = player.setdefault(key, [])
+            for task in item["data_55"].get(key) or []:
+                cur = next((x for x in have if x.get("id") == task.get("id")), None)
+                if cur is not None:
+                    cur["progress"] = task.get("progress", cur.get("progress"))
+                elif key != "todayTasks":
+                    have.append(dict(task))
+    # UPDATE_TODAY_INFO (52): the daily reset — today's tasks replaced wholesale
+    if t == 52 and isinstance(item.get("data_52"), dict):
+        player["todayTasks"] = list(item["data_52"].get("todayTasks") or [])
+        for k in ("todayOccupyCellCount", "todayReplacementCount", "cellTondenCount"):
+            if k in item["data_52"]:
+                player[k] = item["data_52"][k]
+    # PAWN_LEVELING_QUEUE (40): the whole leveling queue (empty = drained)
+    if t == 40:
+        import time as _time
+        q = item.get("data_40")
+        player["pawnLevelingQueues"] = list(q) if isinstance(q, list) else []
+        player["_pawnLevelingQueuesAt"] = _time.time()
+    # EXTRA_BT_QUEUE (95): paid build slots -> 2 + extra (as at login)
+    if t == 95:
+        n = int(item.get("data_95") or 0)
+        player["extraBTQueueCount"] = n
+        state.build_queue_slots = 2 + n
     # A single building at its new level (build complete / upgraded).
     bld = item.get("data_5")
     if isinstance(bld, dict):

@@ -29,3 +29,46 @@ def test_policy_and_equip_slot_notifies_replace_their_maps():
     player = st.raw["player"]
     assert player["policySlots"] == {5: {"lv": 5, "selectIds": [1, 2, 3]}}
     assert player["equipSlots"] == {10: {"lv": 10, "id": 6117}}
+
+
+# ---- the rest of the ignored player notifies (audit 2026-09-27) ----------------
+def _st():
+    return from_entry_rst({"player": {"uid": "1", "injuryPawns": [{"uid": "a", "id": 3305}],
+                                      "guideTasks": [{"id": 1, "progress": 0}],
+                                      "todayTasks": [{"id": 9, "progress": 1}],
+                                      "otherTasks": [], "extraBTQueueCount": 0,
+                                      "pawnLevelingQueues": [{"puid": "old"}]}})
+
+
+def test_injury_add_and_remove():
+    st = _st()
+    apply_notify(st, {"list": [{"type": 83, "data_83": {"uid": "b", "id": 3206}}]})
+    apply_notify(st, {"list": [{"type": 83, "data_83": {"uid": "b", "id": 3206}}]})  # dup
+    apply_notify(st, {"list": [{"type": 84, "data_84": "a"}]})
+    assert [p["uid"] for p in st.raw["player"]["injuryPawns"]] == ["b"]
+
+
+def test_task_progress_and_new_tasks():
+    st = _st()
+    apply_notify(st, {"list": [{"type": 55, "data_55": {
+        "guideTasks": [{"id": 1, "progress": 3}, {"id": 2, "progress": 0}],
+        "todayTasks": [{"id": 9, "progress": 2}, {"id": 99, "progress": 1}]}}]})
+    p = st.raw["player"]
+    assert p["guideTasks"] == [{"id": 1, "progress": 3}, {"id": 2, "progress": 0}]
+    assert p["todayTasks"] == [{"id": 9, "progress": 2}]     # client adds no unknown today task
+
+
+def test_today_reset_replaces_today_tasks():
+    st = _st()
+    apply_notify(st, {"list": [{"type": 52, "data_52": {"todayTasks": [{"id": 10, "progress": 0}],
+                                                         "todayOccupyCellCount": 0}}]})
+    assert st.raw["player"]["todayTasks"] == [{"id": 10, "progress": 0}]
+
+
+def test_leveling_queue_replaced_and_extra_build_slot():
+    st = _st()
+    apply_notify(st, {"list": [{"type": 40, "data_40": []}]})          # queue drained
+    apply_notify(st, {"list": [{"type": 95, "data_95": 1}]})
+    assert st.raw["player"]["pawnLevelingQueues"] == []
+    assert st.raw["player"]["_pawnLevelingQueuesAt"] > 0
+    assert st.build_queue_slots == 3
