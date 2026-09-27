@@ -93,9 +93,30 @@ class Actions:
 
     def add_build(self, index: int, build_id: int) -> dict:
         """Construct a new IN-CITY building (type 1); server auto-places it
-        (GAME_HD_AddAreaBuild). Fort/Cứ Điểm (ui=BuildCity) uses create_city instead."""
-        return self.session.request("game/HD_AddAreaBuild",
-                                    {"index": int(index), "id": int(build_id)})
+        (GAME_HD_AddAreaBuild). Fort/Cứ Điểm (ui=BuildCity) uses create_city instead.
+        The reply ``{build, queues, output}`` is applied at once (issue #82: without
+        it the planner re-picked the same id and hit ecode.500013 every cycle)."""
+        reply = self.session.request("game/HD_AddAreaBuild",
+                                     {"index": int(index), "id": int(build_id)})
+        self._apply_result(reply, queue="build")
+        if isinstance(reply.get("build"), dict):
+            from nta_agent.state.store import _apply_build_update
+            _apply_build_update(self._state, reply["build"], add=True)
+        return reply
+
+    def resync_city_builds(self, index: int | None = None) -> None:
+        """Replace our buildings of a city with the server's (GAME_HD_GetAreaInfo)
+        — after a build rejection that says our state is out of sync (#82)."""
+        from nta_agent.state.store import _building
+        idx = int(index if index is not None else self.main_city_index())
+        area = (self.get_area(idx) or {}).get("data") or {}
+        builds = area.get("builds")
+        if not isinstance(builds, list):
+            return
+        keep = [b for b in self._state.builds if int(b.index) != idx]
+        fresh = [_building({**b, "index": b.get("index") or idx})
+                 for b in builds if isinstance(b, dict)]
+        self._state.builds = keep + fresh
 
     def create_city(self, index: int, build_id: int) -> dict:
         """Create a city-type structure at an owned cell — used for a Cứ Điểm / fort

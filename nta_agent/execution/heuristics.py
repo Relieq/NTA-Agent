@@ -190,6 +190,7 @@ class BuildOrder:
     profile: object = None   # tactics profile: build.order / build.skip
     pending_forts_source: object = None  # callable -> queued fort cells (yield to them)
     queue_cooldown: int = 24  # back off when the build queue is busy (~2min)
+    on_event: object = None   # on_event(kind, detail): rejected builds are reported (#82)
     _pending: object = None  # BuildAction chosen in applies()
     _city: int = 0           # main-city index for construction
     _cooldown: int = 0        # global back-off (queue full / already queued)
@@ -263,9 +264,25 @@ class BuildOrder:
             else:
                 actions.upgrade_build(action.build.index, uid=action.build.uid)
         except Exception as e:
+            ecode = str(e).split("ecode.")[-1][:6] if "ecode." in str(e) else ""
+            what = ({"kind": "construct", "build_id": action.build_id}
+                    if action.kind == "construct"
+                    else {"kind": "upgrade", "build_id": action.build.id,
+                          "uid": action.build.uid})
+            # A queue-busy / duplicate rejection means our state disagrees with the
+            # server (issue #82): say so, and resync the buildings from the server.
+            if ecode in ("500013", "500014", "500034"):
+                if self.on_event:
+                    self.on_event("build_rejected", {**what, "ecode": ecode})
+                resync = getattr(actions, "resync_city_builds", None)
+                if callable(resync):
+                    try:
+                        resync()
+                    except Exception:
+                        pass
             # Queue busy (full / already-queued) is GLOBAL, not this step's fault —
-            # back off quietly for the whole queue rather than blocking one id and
-            # churning the rest against the same full queue.
+            # back off for the whole queue rather than blocking one id and churning
+            # the rest against the same full queue.
             if any(q in str(e) for q in self.QUEUE_ECODES):
                 self._cooldown = self.queue_cooldown
                 return
@@ -275,7 +292,8 @@ class BuildOrder:
                 self._blocked.add(("construct", action.build_id))
             else:
                 self._blocked.add((action.build.uid, action.up.level))
-            raise
+            # name the step so errors.jsonl says what was refused (#82)
+            raise RuntimeError(f"{e} [{what['kind']} build_id={what['build_id']}]") from e
 
 
 @dataclass

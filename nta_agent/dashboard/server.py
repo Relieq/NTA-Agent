@@ -745,6 +745,36 @@ def set_forge_target(cfg, body: dict) -> dict:
     return {"ok": True}
 
 
+_BUILD_ECODE = {"500013": "đã có trong hàng đợi xây", "500014": "hàng đợi xây đã đầy",
+                "500034": "đã có công trình cùng loại chưa max cấp"}
+
+
+def read_build_rejections(cfg, n: int = 5) -> list[dict]:
+    """The latest build_rejected events (issue #82): what the server refused and why,
+    newest first, with the building's name."""
+    try:
+        lines = Path(cfg.event_log_path).read_text(encoding="utf-8").splitlines()
+    except OSError:
+        return []
+    names = load_build_names()
+    out: list[dict] = []
+    for line in reversed(lines):
+        if '"build_rejected"' not in line:
+            continue
+        try:
+            e = json.loads(line)
+        except ValueError:
+            continue
+        d = e.get("detail") or {}
+        bid = int(d.get("build_id") or 0)
+        out.append({"ts": e.get("ts"), "kind": d.get("kind"), "build_id": bid,
+                    "name": build_label(names, bid), "ecode": d.get("ecode"),
+                    "reason": _BUILD_ECODE.get(str(d.get("ecode")), "")})
+        if len(out) >= n:
+            break
+    return out
+
+
 def read_alerts(cfg) -> dict:
     """Early-warning state (alerts.json): capture / incoming enemy marches / approach."""
     try:
@@ -894,6 +924,8 @@ class Handler(BaseHTTPRequestHandler):
                 n = 50
             n = max(1, min(n, 500))
             self._json(200, tail_events(cfg.event_log_path, n))
+        elif parsed.path == "/api/build/rejections":
+            self._json(200, read_build_rejections(cfg))
         elif parsed.path == "/api/decisions":
             self._json(200, read_json_array(cfg.decisions_path))
         elif parsed.path == "/api/equipment":
