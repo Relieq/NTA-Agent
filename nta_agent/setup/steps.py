@@ -44,14 +44,65 @@ def _adb(get_dm) -> dict:
     return {"ok": True, "detail": exe}
 
 
+def _ldplayer_adb_debug() -> list[tuple[str, int]]:
+    """``basicSettings.adbDebug`` of each LDPlayer instance next to our adb.exe
+    (0 = ADB off -> no port, ``adb devices`` empty). LDPlayer 14 hides this toggle
+    in its UI (issue #79)."""
+    from nta_agent import config
+    out = []
+    cfg_dir = Path(config._find_adb()).parent / "vms" / "config"
+    for f in sorted(cfg_dir.glob("leidian*.config")):
+        try:
+            text = f.read_text(encoding="utf-8", errors="ignore")
+        except OSError:
+            continue
+        m = re.search(r'"basicSettings\.adbDebug"\s*:\s*(\d+)', text)
+        if m:
+            out.append((f.name, int(m.group(1))))
+    return out
+
+
+_PREFERRED = ("emulator-5554", "127.0.0.1:5555")
+_ADB_OFF_HINT = (
+    "Bật ADB cho giả lập. LDPlayer 9: Cài đặt → Khác → Gỡ lỗi ADB = Mở kết nối cục bộ. "
+    'LDPlayer 14 (không có mục đó): TẮT giả lập, sửa "basicSettings.adbDebug" thành 1 trong '
+    r"LDPlayer14\vms\config\leidian0.config, bật lại rồi chạy lại bước này.")
+
+
 def _device(get_dm) -> dict:
-    serial = get_dm().serial
-    settings.set_values({"adb_serial": serial})
-    return {"ok": True, "detail": serial}
+    """Really ask adb (issue #79: this used to pass for any saved serial, even one
+    adb could not see): the saved serial must be listed; a wrong one is replaced by
+    the emulator adb does see."""
+    dm = get_dm()
+    serial = dm.serial
+    listed = dm.devices()
+    if serial in listed:
+        settings.set_values({"adb_serial": serial})
+        return {"ok": True, "detail": serial}
+    if listed:
+        pick = next((s for s in _PREFERRED if s in listed), listed[0])
+        settings.set_values({"adb_serial": pick})
+        return {"ok": True, "detail": f"{pick} (serial cũ '{serial}' không có trong adb devices)"}
+    off = [name for name, v in _ldplayer_adb_debug() if v == 0]
+    detail = f"adb không thấy thiết bị nào (serial đang đặt: {serial})"
+    if off:
+        detail += f"; ADB đang TẮT trong cấu hình LDPlayer ({', '.join(off)}: adbDebug=0)"
+        return {"ok": False, "detail": detail, "hint": _ADB_OFF_HINT}
+    return {"ok": False, "detail": detail}
+
+
+_NO_CONN = ("not found", "no devices", "offline", "unauthorized", "no emulators")
 
 
 def _root(get_dm) -> dict:
-    out = get_dm().su("id")
+    try:
+        out = get_dm().su("id")
+    except Exception as e:
+        # a connection problem is step 2's, not "root is off" (issue #79)
+        if any(k in str(e).lower() for k in _NO_CONN):
+            return {"ok": False, "detail": f"chưa kết nối được giả lập: {str(e)[:120]}",
+                    "hint": "Chưa kết nối được giả lập — chạy lại bước 2 (Kết nối giả lập) trước."}
+        raise
     return {"ok": "uid=0" in out, "detail": out.strip()[:80] or "không có quyền root"}
 
 
@@ -156,9 +207,11 @@ TITLES = {
     "token": "Token đăng nhập",
 }
 _HINTS = {
-    "adb": ("Cài LDPlayer 9 (có sẵn adb.exe) hoặc nhập đường dẫn adb trong Cài đặt.",
+    "adb": ("Cài LDPlayer 9 hoặc 14 (có sẵn adb.exe) hoặc nhập đường dẫn adb trong Cài đặt.",
             "buoc-1-adb"),
-    "device": ("Mở LDPlayer và bật ADB: Cài đặt LDPlayer → Khác → Gỡ lỗi ADB = Mở kết nối cục bộ.",
+    "device": (("Mở LDPlayer và bật ADB: Cài đặt LDPlayer → Khác → Gỡ lỗi ADB = Mở kết nối cục bộ "
+               r"(LDPlayer 14 không có mục này: sửa basicSettings.adbDebug=1 trong vms\config\leidian0.config "
+               "khi giả lập đang tắt)."),
                "buoc-2-gia-lap"),
     "root": ("Bật Root: Cài đặt LDPlayer → Khác → Quyền ROOT = Bật, rồi khởi động lại giả lập.",
              "buoc-3-root"),
@@ -191,6 +244,7 @@ def _save(d: dict) -> None:
 
 def _decorate(name: str, r: dict) -> dict:
     hint, anchor = _HINTS[name]
+    hint = r.get("hint") or hint   # a step may know better (e.g. root -> connection)
     return {"name": name, "title": TITLES[name], "ok": bool(r.get("ok")),
             "detail": r.get("detail", ""), "hint": "" if r.get("ok") else hint,
             "doc": f"README.md#{anchor}", "ran": bool(r.get("ran", True)),
@@ -215,6 +269,8 @@ def run_step(name: str, dm_factory=None) -> dict:
         r = {"ok": False, "detail": f"{type(e).__name__}: {e}"[:200]}
     d = _load()
     d[name] = {"ok": bool(r.get("ok")), "detail": r.get("detail", ""), "at": int(time.time())}
+    if r.get("hint"):
+        d[name]["hint"] = r["hint"]
     _save(d)
     return _decorate(name, d[name])
 

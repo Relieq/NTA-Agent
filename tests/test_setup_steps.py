@@ -9,6 +9,10 @@ class FakeDM:
     def __init__(self, version=GAME_VERSION, root=True, rid="rid-1"):
         self.version, self.root, self.rid = version, root, rid
         self.serial = "emulator-5554"
+        self.listed = ["emulator-5554"]
+
+    def devices(self):
+        return list(self.listed)
 
     def shell(self, cmd, timeout=30):
         if "dumpsys package" in cmd:
@@ -128,3 +132,40 @@ def test_readme_has_every_setup_anchor():
     readme = Path("README.md").read_text(encoding="utf-8")
     for _hint, anchor in steps._HINTS.values():
         assert f'<a id="{anchor}"></a>' in readme, anchor
+
+
+
+# ---- issue #79: steps must really talk to adb ----------------------------------
+def test_device_step_fails_when_adb_sees_no_device(monkeypatch):
+    dm = FakeDM()
+    dm.serial, dm.listed = "5555", []
+    monkeypatch.setattr(steps, "_ldplayer_adb_debug", lambda: [("leidian0.config", 0)])
+    r = steps.run_step("device", dm_factory=lambda: dm)
+    assert r["ok"] is False and "không thấy thiết bị" in r["detail"]
+    assert "adbDebug" in r["hint"]                      # LDPlayer 14 has no UI toggle
+
+
+def test_device_step_fixes_a_wrong_serial_when_one_device_is_there():
+    dm = FakeDM()
+    dm.serial, dm.listed = "5555", ["emulator-5554"]
+    r = steps.run_step("device", dm_factory=lambda: dm)
+    assert r["ok"] is True and settings.get("adb_serial") == "emulator-5554"
+
+
+def test_root_step_blames_the_connection_not_root():
+    class NoDevice(FakeDM):
+        def su(self, cmd, timeout=30):
+            raise RuntimeError("adb shell su -c 'id' failed: adb.exe: device '5555' not found")
+    r = steps.run_step("root", dm_factory=NoDevice)
+    assert r["ok"] is False and "Root" not in r["hint"] and "bước 2" in r["hint"]
+
+
+def test_ldplayer14_adb_is_a_candidate():
+    from nta_agent import config
+    assert any("LDPlayer14" in str(p) for p in config._ADB_CANDIDATES)
+
+
+def test_settings_refuses_a_bare_port_as_serial():
+    from nta_agent.dashboard.server import update_settings
+    r = update_settings({"adb_serial": "5555"})
+    assert r["ok"] is False and "127.0.0.1:5555" in r["error"]

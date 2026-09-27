@@ -119,7 +119,8 @@ hint; fix it and press **Chạy lại** (Run again).
    Otherwise enter its path in Settings.
 2. **Connect the emulator.** Start LDPlayer; in **LDPlayer settings → Other → ADB debugging**
    choose **Open local connection**. With several instances, enter the device (e.g.
-   `emulator-5554`) in Settings.
+   `emulator-5554`) in Settings. **LDPlayer 14** has no such option: **stop** the emulator,
+   set `"basicSettings.adbDebug": 1` in `LDPlayer14\vms\config\leidian0.config`, then start it.
 3. **Root.** **LDPlayer settings → Other → Root permission = On**, save and restart LDPlayer.
    Root is used to read the game's device id and login token (read-only).
 4. **Game version.** Checks the installed game matches the version the app supports. If the

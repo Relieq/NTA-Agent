@@ -57,6 +57,12 @@ class DeviceManager:
                 return parts[0]
         return None
 
+    def devices(self) -> list[str]:
+        """Serials ``adb devices`` lists as ready ("device" state)."""
+        out = self._raw(["devices"], timeout=10).decode("utf-8", "ignore")
+        return [p[0] for p in (ln.split() for ln in out.splitlines()[1:])
+                if len(p) == 2 and p[1] == "device"]
+
     @property
     def serial(self) -> str:
         if not self._serial:

@@ -507,6 +507,10 @@ def update_settings(body: dict) -> dict:
     from nta_agent import settings
     if not isinstance(body, dict) or not body:
         return {"ok": False, "error": "không có gì để lưu"}
+    serial = str(body.get("adb_serial") or "").strip()
+    if serial.isdigit():  # issue #79: "5555" is not a serial adb knows
+        return {"ok": False, "error": f"serial '{serial}' không hợp lệ — dùng emulator-5554 "
+                                      f"hoặc 127.0.0.1:{serial}"}
     try:
         settings.set_values(body)
     except KeyError as e:
