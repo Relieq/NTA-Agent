@@ -10,8 +10,17 @@ export default {
    // status polling overwrites st every second, so keep the refusal visible on its own
    if(s&&s.error){ err.value=s.error; setTimeout(()=>{err.value="";},8000); } }
   const alive=()=> st.value.engine==="RUNNING"||st.value.engine==="PAUSED";
+  const bye=ref("");
+  async function app(name){   // quit / restart the whole app (#81)
+   const q= name==="quit" ? "Thoát NTA-Agent? Agent sẽ dừng và dashboard tắt hẳn."
+    : "Khởi động lại NTA-Agent? Agent sẽ dừng; app mở lại và đọc lại biến môi trường.";
+   if(!window.confirm(q)) return;
+   await postJSON("/api/app/"+name,{});
+   bye.value= name==="quit" ? "Đã thoát — có thể đóng tab này." : "Đang khởi động lại…";
+   if(name==="restart") setTimeout(function wait(){ fetch("/api/app").then(r=>r.ok?location.reload():0)
+    .catch(()=>setTimeout(wait,1000)); },2500); }
   const color=()=> COLOR[st.value.engine]||"var(--muted)";
-  return { st, busy, err, showLog, act, alive, color };
+  return { st, busy, err, showLog, act, alive, color, app, bye };
  },
  template:`<div style="display:flex;align-items:center;gap:8px;position:relative">
   <span class="dot" :style="{background:color()}"></span>
@@ -20,6 +29,9 @@ export default {
   <button v-if="st.engine!=='PAUSED'" :disabled="busy||!alive()" @click="act('pause')">⏸ Pause</button>
   <button v-else :disabled="busy" @click="act('resume')">▶ Resume</button>
   <button :disabled="busy||!alive()" @click="act('stop')">⏹ Stop</button>
+  <button :disabled="busy" @click="app('restart')" title="Khởi động lại cả app (đọc lại biến môi trường)">↻</button>
+  <button :disabled="busy" @click="app('quit')" title="Thoát hẳn NTA-Agent (dừng agent + tắt dashboard)">⏻</button>
+  <span v-if="bye" style="color:#d29922;font-size:12px">{{ bye }}</span>
   <span v-if="err" style="color:#da3633;font-size:12px">{{ err }}</span>
   <button v-if="st.engine==='CRASHED' && st.log_tail && st.log_tail.length" @click="showLog=!showLog"
    title="Các dòng cuối trong build/run/agent.log">📄 Xem lỗi</button>

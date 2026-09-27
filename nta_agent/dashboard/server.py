@@ -1070,6 +1070,22 @@ class Handler(BaseHTTPRequestHandler):
             import threading
             threading.Timer(0.5, lambda: os._exit(0)).start()  # updater waits for our exit
             return
+        if parsed.path in ("/api/app/quit", "/api/app/restart"):
+            # issue #81: the dashboard ran in the background with no way to close or
+            # restart it (env changes need a restart). Stop the agent, then exit.
+            import os
+            import threading
+            self.server.supervisor.stop()
+            if parsed.path.endswith("restart"):
+                from nta_agent import app as _app
+                try:
+                    _app.relaunch(self.server.server_address[1])
+                except OSError as e:
+                    self._json(500, {"ok": False, "error": f"không khởi động lại được: {e}"})
+                    return
+            self._json(200, {"ok": True})
+            threading.Timer(0.5, lambda: os._exit(0)).start()
+            return
         if parsed.path == "/api/settings/test-key":
             if self._body() is None:
                 return

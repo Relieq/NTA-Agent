@@ -215,3 +215,8 @@ def test_territory_map_shows_resource_buildings_not_as_forts():
     tp = _c("TerritoryPanel.js")
     assert "own_buildings" in tp and "resBuilds" in tp and "Xưởng gỗ" in tp
     assert "walled(" in tp          # only main/fort outlined as cities
+
+
+def test_control_bar_has_quit_and_restart():
+    cb = _c("ControlBar.js")
+    assert "/api/app/" in cb and "'restart'" in cb and "'quit'" in cb and "window.confirm" in cb
