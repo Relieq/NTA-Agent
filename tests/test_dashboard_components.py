@@ -209,3 +209,9 @@ def test_equipment_panel_marks_exclusive_and_shows_real_lines():
     ep = _c("EquipmentPanel.js")
     assert "o.exclusive" in ep and "chuyên dụng" in ep
     assert "o.lines" in ep and "dung luyện" in ep and "🔒" in ep
+
+
+def test_territory_map_shows_resource_buildings_not_as_forts():
+    tp = _c("TerritoryPanel.js")
+    assert "own_buildings" in tp and "resBuilds" in tp and "Xưởng gỗ" in tp
+    assert "walled(" in tp          # only main/fort outlined as cities

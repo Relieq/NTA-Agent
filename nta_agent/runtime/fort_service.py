@@ -146,6 +146,10 @@ class FortService:
                        "fort_count": len(fort_indices) + len(building),  # building counts to the cap
                        "building": building,
                        "forts": fort_coords, "fort_cap": cap,
+                       # every building of ours on the map with its city byte (1 main,
+                       # 2 fort, 3-5 farm/mill/quarry) — shown on the map, never a fort
+                       "own_buildings": sorted([i % mw, i // mw, int(t)]
+                                               for i, t in cities.items() if int(i) != main),
                        "threats": threat["threats"][:50],
                        "threat_summary": threat["summary"],
                        "approach": approach, "scanned_at": now}
