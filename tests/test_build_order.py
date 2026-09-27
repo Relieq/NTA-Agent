@@ -119,3 +119,65 @@ def test_build_order_yields_to_pending_fort():
     rule2 = BuildOrder(sequence=[2016], config=GameConfig.load(),
                        pending_forts_source=list)
     assert rule2.applies(st, Acts()) is True
+
+
+def test_rejected_build_is_reported_and_resyncs(tmp_path=None):
+    # issue #82: 500013/500014/500034 were swallowed (no event, rule "fired"); state
+    # stayed out of sync with the server forever. Report it and resync the builds.
+    from nta_agent.io.api.client import ApiError
+
+    class BusyActs(Acts):
+        resynced = 0
+
+        def add_build(self, index, build_id):
+            raise ApiError("game/HD_AddAreaBuild: ecode.500013")
+
+        def resync_city_builds(self):
+            BusyActs.resynced += 1
+
+    events = []
+    st = _state([Building(id=2001, lv=10, uid="m", index=109726)])
+    act = BusyActs()
+    rule = BuildOrder(sequence=[2016], config=GameConfig.load(),
+                      on_event=lambda k, d: events.append((k, d)))
+    assert rule.applies(st, act) is True
+    rule.act(act)
+    assert BusyActs.resynced == 1
+    assert events == [("build_rejected", {"kind": "construct", "build_id": 2016,
+                                          "ecode": "500013"})]
+
+
+def test_duplicate_not_maxed_error_names_the_build():
+    from nta_agent.io.api.client import ApiError
+
+    class DupActs(Acts):
+        def add_build(self, index, build_id):
+            raise ApiError("game/HD_AddAreaBuild: ecode.500034")
+
+        def resync_city_builds(self):
+            pass
+
+    st = _state([Building(id=2001, lv=10, uid="m", index=109726)])
+    rule = BuildOrder(sequence=[2016], config=GameConfig.load())
+    rule.applies(st, DupActs())
+    try:
+        rule.act(DupActs())
+        raise AssertionError("expected a raise")
+    except Exception as e:
+        assert "500034" in str(e) and "2016" in str(e)   # errors.jsonl says WHAT was built
+
+
+def test_dashboard_lists_build_rejections(tmp_path):
+    import json
+
+    from nta_agent.dashboard.server import read_build_rejections
+    from nta_agent.runtime.config import RuntimeConfig
+    cfg = RuntimeConfig(distinct_id="x", log_dir=tmp_path)
+    cfg.event_log_path.write_text("\n".join(json.dumps(e) for e in [
+        {"ts": 1, "kind": "build_rejected", "detail": {"kind": "construct", "build_id": 2002, "ecode": "500034"}},
+        {"ts": 2, "kind": "tick"},
+        {"ts": 3, "kind": "build_rejected", "detail": {"kind": "construct", "build_id": 2003, "ecode": "500013"}},
+    ]), encoding="utf-8")
+    rows = read_build_rejections(cfg)
+    assert [r["build_id"] for r in rows] == [2003, 2002]              # newest first
+    assert rows[0]["reason"] == "đã có trong hàng đợi xây"

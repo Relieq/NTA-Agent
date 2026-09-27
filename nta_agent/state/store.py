@@ -360,7 +360,10 @@ def _apply_build_update(state: GameState, info: dict[str, Any], add: bool = Fals
     if not b.index:
         b.index = state.main_city_index
     for existing in state.builds:
-        if (b.uid and existing.uid == b.uid) or (existing.id == b.id and existing.index == b.index):
+        # match by uid when we have one: several buildings may share an id (2
+        # granaries) and a new one must not overwrite the other's level (#82)
+        if (existing.uid == b.uid) if (b.uid and existing.uid) else (
+                existing.id == b.id and existing.index == b.index):
             existing.lv = b.lv
             if b.uid:
                 existing.uid = b.uid

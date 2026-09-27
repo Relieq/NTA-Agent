@@ -266,6 +266,7 @@ def run(cfg: RuntimeConfig, *, ticks: int = 0, session=None, engine=None) -> Non
         elif getattr(rule, "name", "") == "build_order":
             from nta_agent.runtime import fort_queue as _fq
             rule.pending_forts_source = lambda: _fq.load(cfg.pending_forts_path)
+            rule.on_event = log.append   # build_rejected (#82)
 
     def _safe(fn, *a):
         try:
