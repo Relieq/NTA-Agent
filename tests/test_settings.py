@@ -13,10 +13,23 @@ def store(monkeypatch, tmp_path):
 
 
 def test_env_wins_over_file(store, monkeypatch):
-    settings.set_values({"openai_model": "gpt-x"})
-    assert settings.get("openai_model") == "gpt-x"
-    monkeypatch.setenv("OPENAI_MODEL", "gpt-env")
-    assert settings.get("openai_model") == "gpt-env"
+    settings.set_values({"adb_serial": "emulator-5554"})
+    assert settings.get("adb_serial") == "emulator-5554"
+    monkeypatch.setenv("NTA_ADB_SERIAL", "127.0.0.1:5555")
+    assert settings.get("adb_serial") == "127.0.0.1:5555"
+
+
+def test_openai_key_typed_in_settings_wins_over_env(store, monkeypatch):
+    # issue #80: an unrelated OPENAI_API_KEY in the Windows env silently replaced the
+    # key the user typed -> 401. What the user typed wins; env is only a fallback.
+    monkeypatch.setenv("OPENAI_API_KEY", "nva-some-other-provider-key-000000000000")
+    assert settings.get("openai_api_key") == "nva-some-other-provider-key-000000000000"
+    assert settings.source("openai_api_key") == "env"
+    settings.set_values({"openai_api_key": "sk-typed-by-user-1234567890abcd"})
+    assert settings.get("openai_api_key") == "sk-typed-by-user-1234567890abcd"
+    assert settings.source("openai_api_key") == "file"
+    v = settings.view()["openai_api_key"]
+    assert v["source"] == "file" and v["env_also"] is True
 
 
 def test_secret_is_encrypted_on_disk_and_masked_in_view(store):
@@ -24,8 +37,9 @@ def test_secret_is_encrypted_on_disk_and_masked_in_view(store):
     assert "sk-test-1234567890-xyzabcd" not in store.read_text(encoding="utf-8")
     assert settings.get("openai_api_key") == "sk-test-1234567890-xyzabcd"
     v = settings.view()
-    assert v["openai_api_key"] == {"set": True, "value": "sk-…abcd"}
-    assert v["openai_model"] == {"set": False, "value": ""}
+    assert v["openai_api_key"] == {"set": True, "value": "sk-…abcd", "source": "file",
+                                   "env_also": False}
+    assert v["openai_model"] == {"set": False, "value": "", "source": "", "env_also": False}
 
 
 def test_blank_clears_and_unknown_rejected(store):

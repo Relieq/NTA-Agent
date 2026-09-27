@@ -87,7 +87,11 @@ export default {
     <td v-else style="padding:6px 0">
      <input :type="f.secret?'password':'text'" autocomplete="off" style="width:100%;max-width:340px"
       :placeholder="(cur[f.key]&&cur[f.key].set) ? (f.secret ? 'đã lưu: '+cur[f.key].value : cur[f.key].value) : (f.placeholder||'chưa đặt')"
-      v-model="draft[f.key]"></td>
+      v-model="draft[f.key]">
+     <div v-if="cur[f.key]&&cur[f.key].source==='env'" class="muted" style="font-size:11px;color:#d29922">
+      đang lấy từ biến môi trường của Windows — nhập giá trị ở đây để thay</div>
+     <div v-else-if="cur[f.key]&&cur[f.key].env_also" class="muted" style="font-size:11px">
+      (biến môi trường cũng có giá trị, nhưng app dùng giá trị đã lưu ở đây)</div></td>
     <td style="text-align:right;white-space:nowrap">
      <button v-if="cur[f.key]&&cur[f.key].set" @click="clear(f.key)">Xoá</button></td>
    </tr></table>
