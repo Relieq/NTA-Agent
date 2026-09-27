@@ -607,7 +607,8 @@ def read_forge_view(cfg) -> dict:
     equips = [{**e, "target": targets.get(str(e.get("uid")))}
               for e in (data.get("equips") or []) if isinstance(e, dict)]
     return {"equips": equips, "busy": data.get("busy"), "iron": data.get("iron", 0),
-            "smelting": data.get("smelting"), "fixator": data.get("fixator", 0)}
+            "smelting": data.get("smelting"), "fixator": data.get("fixator", 0),
+            "craft_waiting": data.get("craft_waiting") or []}
 
 
 def _smelt_raw(cfg) -> dict:
