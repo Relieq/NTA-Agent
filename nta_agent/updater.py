@@ -120,6 +120,38 @@ def _move(src: Path, dst: Path) -> None:
     shutil.move(str(src), str(dst))
 
 
+def _rename(src: Path, dst: Path, tries: int = 10) -> None:
+    """Atomic same-volume rename, retried while Windows reports the item in use.
+    NEVER falls back to copy+delete: that is what emptied app/ on 2026-09-27 (the
+    rename failed, the fallback deleted every file, the cleanup deleted the copy)."""
+    for i in range(tries):
+        try:
+            os.replace(src, dst)
+            return
+        except PermissionError:
+            if i == tries - 1:
+                raise
+            time.sleep(1.0)
+
+
+def _release_handles(data: Path) -> None:
+    """Stop helpers that may hold the install folder: the adb daemon keeps the
+    working dir of the adb call that started it (it was app/ — rename then fails).
+    It restarts by itself on the next adb call."""
+    try:
+        cfg = json.loads((Path(data) / "settings.json").read_text(encoding="utf-8"))
+        adb = cfg.get("adb_path")
+    except (OSError, ValueError, AttributeError):
+        adb = None
+    if not isinstance(adb, str) or not adb:
+        return
+    try:
+        subprocess.run([adb, "kill-server"], cwd=str(Path(adb).parent), capture_output=True,
+                       timeout=15, creationflags=0x08000000)
+    except (OSError, subprocess.SubprocessError):
+        pass
+
+
 def apply(zip_path: Path, root: Path, backups: Path, kind: str) -> Path:
     """Replace ``_ITEMS[kind]`` under ``root`` with the zip's; returns the backup dir.
 
@@ -147,25 +179,30 @@ def apply(zip_path: Path, root: Path, backups: Path, kind: str) -> Path:
     backup.mkdir(parents=True)
     moved_out, moved_in = [], []
     try:
+        # swap by same-volume RENAMES only (old item -> root/.old_<name>, staged ->
+        # root/<name>): a failure deletes nothing and is undone exactly
         for name in _ITEMS[kind]:
             if (stage / name).exists():
                 if (root / name).exists():
-                    _move(root / name, backup / name)
+                    _rename(root / name, root / f".old_{name}")
                     moved_out.append(name)
-                _move(stage / name, root / name)
+                _rename(stage / name, root / name)
                 moved_in.append(name)
     except OSError:
         for name in moved_in:
-            if (root / name).is_dir():
-                shutil.rmtree(root / name, ignore_errors=True)
-            else:
-                (root / name).unlink(missing_ok=True)
+            _rename(root / name, stage / name)
         for name in moved_out:
-            _move(backup / name, root / name)
+            _rename(root / f".old_{name}", root / name)
         shutil.rmtree(backup, ignore_errors=True)
         raise
     finally:
         shutil.rmtree(stage, ignore_errors=True)
+    # the swap is done; park the old items in the backup (may cross volumes -> copy)
+    for name in moved_out:
+        try:
+            _move(root / f".old_{name}", backup / name)
+        except OSError:
+            pass  # a leftover .old_<name> is harmless; the new version is in place
     return backup
 
 
@@ -174,11 +211,19 @@ def rollback(root: Path, backup: Path) -> None:
     root, backup = Path(root), Path(backup)
     for item in list(backup.iterdir()):
         cur = root / item.name
-        if cur.is_dir():
-            shutil.rmtree(cur)
-        elif cur.exists():
-            cur.unlink()
-        _move(item, cur)
+        old = root / f".rb_{item.name}"
+        if cur.exists():
+            _rename(cur, old)   # renamed aside, not deleted, until the backup is back
+        try:
+            _move(item, cur)
+        except OSError:
+            if old.exists() and not cur.exists():
+                _rename(old, cur)
+            raise
+        if old.is_dir():
+            shutil.rmtree(old, ignore_errors=True)
+        elif old.exists():
+            old.unlink(missing_ok=True)
     shutil.rmtree(backup, ignore_errors=True)
 
 
@@ -266,6 +311,7 @@ def run_update(root: Path, data: Path, assets: dict, port: int) -> int:
         _download(url, zp)
         if not verify(zp, asset["sha256"]):
             raise ValueError("sha256 mismatch — download corrupted or tampered")
+        _release_handles(data)
         backup = apply(zp, root, backups, kind)
         shutil.rmtree(tmp, ignore_errors=True)
     except Exception as e:  # nothing replaced: just bring the old version back up
@@ -291,6 +337,7 @@ def run_rollback(root: Path, data: Path) -> int:
         _log(data, "rollback: no backup")
         _launch(root)
         return 1
+    _release_handles(data)
     rollback(root, b)
     _log(data, f"rolled back to {b.name}")
     _launch(root)
@@ -369,7 +416,9 @@ def cached_check(max_age_s: float = 6 * 3600, force: bool = False, fetch=None) -
     try:
         out["update"] = check(fetch=fetch or (lambda url: _fetch_json(url, tok)), current=cur)
     except urllib.error.HTTPError as e:
-        if e.code in (401, 403) or (e.code == 404 and not tok):
+        if e.code in (403, 429) and str((e.headers or {}).get("X-RateLimit-Remaining", "")) == "0":
+            out["error"] = "GitHub đang tạm giới hạn số lần kiểm tra — thử lại sau ít phút"
+        elif e.code in (401, 403) or (e.code == 404 and not tok):
             # the repo is private: 404 without a token, 401/403 with a bad one
             out["error"] = "cần GitHub token hợp lệ (Cài đặt) để kiểm tra cập nhật"
         elif e.code != 404:  # 404 with a token = no release yet: nothing to update to

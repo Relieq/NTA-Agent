@@ -946,6 +946,13 @@ class Handler(BaseHTTPRequestHandler):
                 n = 50
             n = max(1, min(n, 500))
             self._json(200, tail_events(cfg.event_log_path, n))
+        elif parsed.path == "/api/update/log":
+            from nta_agent import paths
+            try:
+                lines = (paths.run_dir() / "updater.log").read_text(encoding="utf-8").splitlines()
+            except OSError:
+                lines = []
+            self._json(200, {"lines": lines[-15:]})
         elif parsed.path == "/api/build/rejections":
             self._json(200, read_build_rejections(cfg))
         elif parsed.path == "/api/decisions":

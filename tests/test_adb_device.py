@@ -30,3 +30,18 @@ def test_screencap_matches_current_display(dm: DeviceManager):
 @pytest.mark.device
 def test_current_focus_reports_a_window(dm: DeviceManager):
     assert dm.current_focus()  # non-empty string
+
+
+def test_adb_runs_from_its_own_folder(monkeypatch):
+    # the adb daemon inherits the working dir of the first adb call; from app\ it
+    # locked that folder and broke updates (2026-09-27)
+    from nta_agent.config import Settings
+    from nta_agent.io import adb as adbmod
+    seen = []
+
+    class P:
+        returncode, stdout, stderr = 0, b"List of devices attached\n", b""
+    monkeypatch.setattr(adbmod.subprocess, "run", lambda args, **kw: seen.append(kw.get("cwd")) or P())
+    dm = adbmod.DeviceManager(settings=Settings(adb_path=r"C:\LD\adb.exe", serial="emulator-5554"))
+    dm.devices()
+    assert seen == [r"C:\LD"]
