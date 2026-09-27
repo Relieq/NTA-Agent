@@ -107,3 +107,68 @@ def test_prune_keeps_newest(tmp_path):
 
 def test_cached_check_is_off_in_dev():
     assert updater.cached_check()["packaged"] is False
+
+
+def test_locked_app_folder_aborts_without_losing_files(tmp_path, monkeypatch):
+    # live 2026-09-27: the adb daemon had app\ as its working dir -> renaming app\
+    # failed; shutil.move then fell back to copy + delete, deleted every file in app\,
+    # and the cleanup removed the copy too -> an EMPTY app\. Now nothing is deleted.
+    import os
+    root, backups = tmp_path / "NTA-Agent", tmp_path / "backups"
+    _mk(root, "0.1.0")
+    z = tmp_path / "new.zip"
+    _zip(z, {"app/nta_agent/__init__.py": "0.2.0", "VERSION": "0.2.0"})
+    real = os.replace
+
+    def locked(src, dst):
+        if os.path.normcase(os.path.abspath(src)) == os.path.normcase(str(root / "app")):
+            raise PermissionError(13, "being used by another process")
+        return real(src, dst)
+    monkeypatch.setattr(updater.os, "replace", locked)
+    monkeypatch.setattr(updater.time, "sleep", lambda s: None)
+    with pytest.raises(OSError):
+        updater.apply(z, root, backups, "app")
+    assert _read(root / "app" / "nta_agent" / "__init__.py") == "0.1.0"   # intact
+    assert _read(root / "VERSION") == "0.1.0"
+
+
+def test_apply_retries_a_briefly_locked_folder(tmp_path, monkeypatch):
+    import os
+    root, backups = tmp_path / "NTA-Agent", tmp_path / "backups"
+    _mk(root, "0.1.0")
+    z = tmp_path / "new.zip"
+    _zip(z, {"app/nta_agent/__init__.py": "0.2.0", "VERSION": "0.2.0"})
+    real, fails = os.replace, {"n": 2}
+
+    def flaky(src, dst):
+        if os.path.normcase(os.path.abspath(src)) == os.path.normcase(str(root / "app")) and fails["n"]:
+            fails["n"] -= 1
+            raise PermissionError(13, "being used by another process")
+        return real(src, dst)
+    monkeypatch.setattr(updater.os, "replace", flaky)
+    monkeypatch.setattr(updater.time, "sleep", lambda s: None)
+    updater.apply(z, root, backups, "app")
+    assert _read(root / "app" / "nta_agent" / "__init__.py") == "0.2.0"
+
+
+def test_release_handles_stops_the_adb_daemon(tmp_path, monkeypatch):
+    import json
+    (tmp_path / "settings.json").write_text(json.dumps({"adb_path": r"C:\LD\adb.exe"}), encoding="utf-8")
+    calls = []
+    monkeypatch.setattr(updater.subprocess, "run", lambda args, **kw: calls.append((args, kw)))
+    updater._release_handles(tmp_path)
+    assert calls and calls[0][0][1:] == ["kill-server"]
+
+
+def test_rate_limit_is_not_reported_as_a_token_problem(monkeypatch, tmp_path):
+    import urllib.error
+
+    from nta_agent import paths
+    monkeypatch.setenv("NTA_DATA_DIR", str(tmp_path))
+    monkeypatch.setattr(paths, "is_packaged", lambda: True)
+
+    def limited(url):
+        raise urllib.error.HTTPError(url, 403, "rate limit exceeded",
+                                     {"X-RateLimit-Remaining": "0"}, None)
+    r = updater.cached_check(force=True, fetch=limited)
+    assert "giới hạn" in r["error"] and "token" not in r["error"]

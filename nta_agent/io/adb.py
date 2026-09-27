@@ -71,12 +71,21 @@ class DeviceManager:
 
     # ---- low-level command runners -------------------------------------------------
 
+    def _cwd(self) -> str | None:
+        """Run adb from its own folder: the adb daemon keeps the working dir of the
+        call that started it, and from app/ it locked that folder so updates could
+        not replace it (2026-09-27). adb on PATH (no folder) -> unchanged."""
+        import ntpath
+        return ntpath.dirname(str(self.settings.adb_path or "")) or None
+
+
     def _raw(self, args: list[str], timeout: float = 30) -> bytes:
         """Run adb without a target device (connect/devices)."""
         proc = subprocess.run(
             [self.settings.adb_path, *args],
             capture_output=True,
             timeout=timeout,
+            cwd=self._cwd(),
         )
         if proc.returncode != 0:
             raise AdbError(f"adb {' '.join(args)} failed: {proc.stderr.decode('utf-8', 'ignore')}")
@@ -88,6 +97,7 @@ class DeviceManager:
             [self.settings.adb_path, "-s", self.serial, *args],
             capture_output=True,
             timeout=timeout,
+            cwd=self._cwd(),
         )
         if proc.returncode != 0:
             raise AdbError(f"adb {' '.join(args)} failed: {proc.stderr.decode('utf-8', 'ignore')}")

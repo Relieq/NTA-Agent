@@ -12,8 +12,21 @@ export default {
   async function doUpdate(){
    if(!confirm("Cập nhật lên "+upd.value.update.version+"? Agent sẽ dừng, app tự khởi động lại (~1 phút).")) return;
    const r=await postJSON("/api/update/apply",{});
-   updMsg.value=(r&&r.ok) ? "Đang cập nhật… trang sẽ tự tải lại." : ((r&&r.error)||"Lỗi");
-   if(r&&r.ok) setTimeout(()=>location.reload(), 45000);
+   if(!(r&&r.ok)){ updMsg.value=(r&&r.error)||"Lỗi"; return; }
+   // follow the update instead of a blind reload: wait for the app to come back and
+   // compare its version; the old version back = the update was aborted -> show why
+   const want=upd.value.update.version, t0=Date.now(); let wentDown=false;
+   updMsg.value="Đang cập nhật…";
+   const poll=async ()=>{
+    let v=null; try{ const x=await fetch("/api/app"); v=x.ok ? await x.json() : null; }catch(e){ v=null; }
+    if(!v){ wentDown=true; }
+    else if(v.version===want){ updMsg.value="Đã cập nhật lên "+want+" — đang tải lại…"; setTimeout(()=>location.reload(),1500); return; }
+    else if(wentDown){ const lg=await getJSON("/api/update/log");
+     updMsg.value="Cập nhật THẤT BẠI, app đã mở lại bản "+v.version+". "+(((lg&&lg.lines)||[]).slice(-2).join(" | ")); return; }
+    if(Date.now()-t0>180000){ updMsg.value="Quá lâu chưa thấy app mở lại — xem file updater.log trong thư mục dữ liệu (%LOCALAPPDATA%/NTA-Agent/run)"; return; }
+    setTimeout(poll,2000);
+   };
+   setTimeout(poll,2000);
   }
   usePolling(async ()=>{
    const s=await getJSON("/api/state");
