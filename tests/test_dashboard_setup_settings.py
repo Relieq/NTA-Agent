@@ -78,3 +78,17 @@ def test_crash_status_carries_last_run_log_tail(tmp_path):
     f = sup._open_agent_log()
     f.close()
     assert "=== agent start" in (tmp_path / "agent.log").read_text(encoding="utf-8").splitlines()[-1]
+
+
+def test_key_probe_explains_env_source_and_bad_format(monkeypatch):
+    # issue #80: a non-OpenAI value is refused up front, and a 401 says the key came
+    # from the Windows environment when it did
+    monkeypatch.setenv("OPENAI_API_KEY", "nva-provider-key-123456789012345")
+    r = server.test_openai_key(opener=lambda req, timeout: None)
+    assert r["ok"] is False and "sk-" in r["error"] and "nva" in r["error"]
+    monkeypatch.setenv("OPENAI_API_KEY", "sk-from-env-123456789012345")
+
+    def denied(req, timeout):
+        raise urllib.error.HTTPError(req.full_url, 401, "no", {}, None)
+    r = server.test_openai_key(opener=denied)
+    assert "biến môi trường" in r["error"] and "sk-from-env" not in json.dumps(r)

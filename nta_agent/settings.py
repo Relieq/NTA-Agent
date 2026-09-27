@@ -77,12 +77,34 @@ def _load() -> dict:
     return d if isinstance(d, dict) else {}
 
 
-def get(key: str, default=None):
+# What the user types in Settings beats the environment for these (issue #80: an
+# unrelated OPENAI_API_KEY in the Windows env replaced the typed key -> 401). Other
+# keys keep env-first (dev/testing overrides such as NTA_DASHBOARD_PORT).
+FILE_FIRST = {"openai_api_key", "openai_model"}
+
+
+def _raw(key: str):
     env = os.environ.get(KEYS.get(key, ""), "")
-    if env:
-        return env
     v = _dec(_load().get(key))
-    return v if v not in (None, "") else default
+    return env, (v if v not in (None, "") else None)
+
+
+def source(key: str) -> str:
+    """Where ``get(key)`` comes from: "file", "env" or "" (unset)."""
+    env, v = _raw(key)
+    if key in FILE_FIRST and v is not None:
+        return "file"
+    if env:
+        return "env"
+    return "file" if v is not None else ""
+
+
+def get(key: str, default=None):
+    env, v = _raw(key)
+    src = source(key)
+    if src == "env":
+        return env
+    return v if src == "file" else default
 
 
 def set_values(values: dict) -> None:
@@ -116,5 +138,8 @@ def view() -> dict:
     for k in KEYS:
         v = get(k)
         shown = (mask(v) if k in SECRETS else v) if v else ""
-        out[k] = {"set": bool(v), "value": shown}
+        env, _ = _raw(k)
+        # env_also: the env var is set too (and is NOT what is used) — worth a note
+        out[k] = {"set": bool(v), "value": shown, "source": source(k),
+                  "env_also": bool(env) and source(k) == "file"}
     return out

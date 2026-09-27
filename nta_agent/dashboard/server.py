@@ -514,6 +514,20 @@ def update_settings(body: dict) -> dict:
     return {"ok": True, "settings": settings.view()}
 
 
+def _key_problem(key: str) -> str:
+    """Why a key can't be an OpenAI key (they start with "sk-"), else ""."""
+    return "" if key.startswith("sk-") else (
+        f"giá trị không giống OpenAI key (bắt đầu bằng '{key[:3]}…', OpenAI key bắt đầu bằng 'sk-')")
+
+
+def _denied(settings) -> str:
+    """401 message that names where the key came from (issue #80)."""
+    if settings.source("openai_api_key") == "env":
+        return ("key bị từ chối (401) — đang dùng key từ biến môi trường OPENAI_API_KEY "
+                "của Windows; nhập key trong Cài đặt để thay")
+    return "key bị từ chối (401)"
+
+
 def test_openai_key(opener=None) -> dict:
     """Probe the stored key with GET /v1/models (free). Never echoes the key."""
     import urllib.error
@@ -523,13 +537,15 @@ def test_openai_key(opener=None) -> dict:
     key = settings.get("openai_api_key")
     if not key:
         return {"ok": False, "error": "chưa nhập OpenAI API key"}
+    if _key_problem(key):
+        return {"ok": False, "error": _key_problem(key)}
     req = urllib.request.Request("https://api.openai.com/v1/models",
                                  headers={"Authorization": "Bearer " + key})
     try:
         with (opener or urllib.request.urlopen)(req, timeout=8) as r:
             return {"ok": 200 <= r.status < 300}
     except urllib.error.HTTPError as e:
-        return {"ok": False, "error": "key bị từ chối (401)" if e.code == 401 else f"HTTP {e.code}"}
+        return {"ok": False, "error": _denied(settings) if e.code == 401 else f"HTTP {e.code}"}
     except (urllib.error.URLError, OSError) as e:
         return {"ok": False, "error": f"không kết nối được: {e}"}
 
@@ -551,6 +567,8 @@ def list_openai_models(opener=None) -> dict:
     key = settings.get("openai_api_key")
     if not key:
         return {"ok": False, "models": [], "error": "chưa nhập OpenAI API key"}
+    if _key_problem(key):
+        return {"ok": False, "models": [], "error": _key_problem(key)}
     req = urllib.request.Request("https://api.openai.com/v1/models",
                                  headers={"Authorization": "Bearer " + key})
     try:
@@ -558,7 +576,7 @@ def list_openai_models(opener=None) -> dict:
             data = json.loads(r.read().decode("utf-8"))
     except urllib.error.HTTPError as e:
         return {"ok": False, "models": [],
-                "error": "key bị từ chối (401)" if e.code == 401 else f"HTTP {e.code}"}
+                "error": _denied(settings) if e.code == 401 else f"HTTP {e.code}"}
     except (urllib.error.URLError, OSError, ValueError) as e:
         return {"ok": False, "models": [], "error": f"không lấy được danh sách: {e}"}
     ids = sorted({m.get("id", "") for m in data.get("data", []) if isinstance(m, dict)})
