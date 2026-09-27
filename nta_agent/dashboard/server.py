@@ -383,6 +383,7 @@ def read_forts_view(cfg) -> dict:
             "fort_zone": data.get("fort_zone") or [],
             "fort_count": data.get("fort_count", 0),
             "forts": data.get("forts") or [],
+            "own_buildings": data.get("own_buildings") or [],   # [x, y, city byte]
             "fort_cap": data.get("fort_cap", 0),
             "threats": data.get("threats") or [],
             "threat_summary": data.get("threat_summary") or {"count": 0},

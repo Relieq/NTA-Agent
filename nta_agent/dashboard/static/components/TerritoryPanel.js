@@ -18,7 +18,7 @@ export default {
  setup(){
   const canvas=ref(null), tip=ref(null), sel=ref(null);
   let scale=16, originX=0, originY=0, fitted=false, hover=null;
-  let data={main:0, mw:MAPW, owned:[], accepted:[], forts:[], garr:[], zone:[], fortCount:0, fortCap:0, armyCells:{},
+  let data={main:0, mw:MAPW, owned:[], accepted:[], forts:[], resBuilds:[], garr:[], zone:[], fortCount:0, fortCap:0, armyCells:{},
             building:[], pending:[], enemy:[], enemyCities:[], frontier:[], ally:[], allyCities:[]};
   const dig=ref({state:"idle"});
   let digBuf=2; try{ const v=parseInt(localStorage.getItem("nta.digBuffer")); if(v>=0&&v<=6) digBuf=v; }catch(e){}
@@ -43,12 +43,15 @@ export default {
   const cellAt=(px,py)=>({ x: Math.floor((px-originX)/scale),
                            y: (data.mw-1) - Math.floor((py-originY)/scale) });
 
+  // city byte of our resource buildings (game city.byte_id 3/4/5 = 2201/2202/2203)
+  const RES_NAME={3:"Ruộng",4:"Xưởng gỗ",5:"Mỏ đá"}, RES_ICON={3:"🌾",4:"🪵",5:"🪨"};
   function buildStateMap(){
    stateMap=new Map();
    const put=(x,y,label,index)=>{ const k=idx(x,y); if(!stateMap.has(k)) stateMap.set(k,{label,index:index??k}); };
    const mx=data.main%data.mw, my=Math.floor(data.main/data.mw);
    [[mx,my],[mx+1,my],[mx,my+1],[mx+1,my+1]].forEach(([x,y])=>put(x,y,"thành chính"));
    data.forts.forEach(([x,y])=>put(x,y,"Cứ Điểm"));
+   data.resBuilds.forEach(([x,y,t])=>put(x,y,RES_NAME[t]||"công trình"));
    data.building.forEach(b=>put(b.x,b.y,"Cứ Điểm đang xây"));
    data.pending.forEach(p=>put(p.x,p.y,"Cứ Điểm chờ xây"));
    data.zone.forEach(([x,y])=>put(x,y,"gợi ý Cứ Điểm"));
@@ -223,6 +226,13 @@ export default {
    ctx.strokeStyle="#8957e5"; ctx.lineWidth=2; ctx.setLineDash([3,2]);
    data.pending.forEach(p=>{ if(inView(p.x,p.y)) ctx.strokeRect(sX(p.x)+2,sY(p.y)+2,scale-4,scale-4); });
    ctx.setLineDash([]);
+   // resource buildings (farm/mill/quarry): drawn late so the zone tint can't hide them
+   data.resBuilds.forEach(([x,y,t])=>{ if(!inView(x,y)) return;
+    const cx=sX(x)+scale/2, cy=sY(y)+scale/2;
+    if(scale>=16){ ctx.font=Math.min(scale-4,14)+"px system-ui"; ctx.textAlign="center";
+     ctx.textBaseline="middle"; ctx.fillText(RES_ICON[t]||"•", cx, cy); }
+    else { ctx.fillStyle="#f0e6d2"; ctx.beginPath(); ctx.arc(cx,cy,Math.max(2,scale/4),0,6.3); ctx.fill();
+     ctx.strokeStyle="#0b1320"; ctx.lineWidth=1; ctx.stroke(); } });
    if(hover && inView(hover.x,hover.y)){ ctx.strokeStyle="#58a6ff"; ctx.lineWidth=2;
     ctx.strokeRect(sX(hover.x)+1,sY(hover.y)+1,scale-2,scale-2); }
    ctx.restore();
@@ -252,6 +262,7 @@ export default {
     c.pawns+=n; c.maxState=Math.max(c.maxState,(a.state)|0); });
    data={ main:t.main_city||0, mw, owned:f.owned_cells||[], accepted:f.accepted||[],
     forts:f.forts||[],   // built Cứ Điểm from the chunk city decode (authoritative)
+    resBuilds:(f.own_buildings||[]).filter(b=>b[2]>=3&&b[2]<=5),  // farms/mills/quarries (not forts)
     garr:(t.garrisons||[]).map(i=>[i%mw, Math.floor(i/mw)]),
     enemy:f.enemy_cells||[], enemyCities:f.enemy_cities||[], frontier:f.frontier||[],
     ally:f.ally_cells||[], allyCities:f.ally_cities||[],
@@ -382,6 +393,7 @@ export default {
    <span><b style="color:#e3b341">▢</b> ô đã chiếm nhưng RỜI (không nối với thành)</span>
    <span><b style="color:#39d0d8">⬡</b> bao lãnh địa (hull nối biên vùng liền chứa thành)</span>
    <span>🏯 <b style="color:#8957e5">■</b> Cứ Điểm đã xây (viền vàng) · 🏗 đang xây · <b style="color:#8957e5">▢</b> chờ xây</span>
+   <span>🌾 ruộng · 🪵 xưởng gỗ · 🪨 mỏ đá (công trình tài nguyên, không phải Cứ Điểm)</span>
    <span><b style="color:#d95926">▨</b> vùng gợi ý xây Cứ Điểm — bấm 1 ô để agent xây</span>
    <span>quân (số=lính): <b style="color:#c3c2b7">▢</b>rảnh <b style="color:#58a6ff">▢</b>hành quân <b style="color:#da3633">▢</b>đang đánh</span>
    <span><b style="color:#da3633">■</b> ô địch</span>

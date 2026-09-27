@@ -278,3 +278,26 @@ def test_resource_buildings_are_not_forts(tmp_path):
     svc.tick(_state(land_count=5, main=main, forts=[]))
     data = json.loads(cfg.forts_path.read_text(encoding="utf-8"))
     assert data["fort_count"] == 1 and data["forts"] == [[103, 105]]
+
+
+def test_own_buildings_listed_with_their_type(tmp_path):
+    main = 100 * 600 + 100
+    fort, farm = 105 * 600 + 103, 101 * 600 + 101
+    owned = {main, fort, farm}
+
+    def scan(actions, main, uid, map_width=600, focus=None):
+        return {"owned": set(owned), "cities": {main: 1, fort: 2, farm: 3},
+                "enemy_cells": set(), "enemy_cities": {}, "frontier": set()}
+
+    cfg, svc = _make(tmp_path, scan=scan, max_count_fn=lambda bid: 3)
+    svc.tick(_state(land_count=3, main=main, forts=[]))
+    data = json.loads(cfg.forts_path.read_text(encoding="utf-8"))
+    assert data["own_buildings"] == [[101, 101, 3], [103, 105, 2]]
+
+
+def test_forts_view_passes_own_buildings(tmp_path):
+    from nta_agent.dashboard.server import read_forts_view
+    from nta_agent.runtime.config import RuntimeConfig
+    cfg = RuntimeConfig(distinct_id="x", log_dir=tmp_path)
+    cfg.forts_path.write_text(json.dumps({"own_buildings": [[575, 115, 4]]}), encoding="utf-8")
+    assert read_forts_view(cfg)["own_buildings"] == [[575, 115, 4]]
