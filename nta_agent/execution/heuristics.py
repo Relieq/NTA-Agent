@@ -1208,6 +1208,15 @@ class Recruit:
         pawn = next((p for p in unlocked if self._affordable(state, p)), None)
         if pawn is None:
             return False
+        # The barracks drill queue holds 6 (engine isDrillPawnQueueFull); a full one
+        # is refused with ecode.500018 (258x before, 2026-09-27). Trust a recent view
+        # only (a queue drains over time; a stale one must not block forever).
+        import time as _time
+        _p = (state.raw or {}).get("player") or {}
+        _q = (_p.get("pawnDrillQueues") or {}).get(str(bu))
+        if (isinstance(_q, list) and len(_q) >= 6
+                and _time.time() - float(_p.get("_pawnDrillQueuesAt") or 0) < 600):
+            return False
         armys = actions.get_area(state.main_city_index).get("data", {}).get("armys", []) or []
         # Skip armies the ArmyComposer is arranging (its lock): don't recruit into them
         # (it drives their composition) and don't compete for the drill queue on them.

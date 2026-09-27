@@ -360,6 +360,10 @@ def apply_player_update(state: GameState, item: dict[str, Any]) -> None:
         q = item.get("data_40")
         player["pawnLevelingQueues"] = list(q) if isinstance(q, list) else []
         player["_pawnLevelingQueuesAt"] = _time.time()
+    # PAWN_DRILL_QUEUE (18): the whole drill-queue map {buildUid: {list}}
+    if t == 18 and isinstance(item.get("data_18"), dict):
+        from nta_agent.execution.actions import _set_drill_queues
+        _set_drill_queues(state, item["data_18"])
     # EXTRA_BT_QUEUE (95): paid build slots -> 2 + extra (as at login)
     if t == 95:
         n = int(item.get("data_95") or 0)

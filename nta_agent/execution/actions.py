@@ -15,6 +15,17 @@ from nta_agent.io.api.session import GameSession
 TP_SLOT_KEY = {1: "policySlots", 2: "pawnSlots", 3: "equipSlots"}
 
 
+def _set_drill_queues(state, queues: dict) -> None:
+    """player.pawnDrillQueues = {buildUid: [DrillPawnInfo]} (engine updatePawnDrillQueue)."""
+    import time as _time
+    raw = state.raw if isinstance(state.raw, dict) else {}
+    state.raw = raw
+    player = raw.setdefault("player", {})
+    player["pawnDrillQueues"] = {str(k): list((v or {}).get("list") or []) if isinstance(v, dict)
+                                 else list(v or []) for k, v in queues.items()}
+    player["_pawnDrillQueuesAt"] = _time.time()
+
+
 @dataclass
 class Actions:
     session: GameSession
@@ -64,6 +75,14 @@ class Actions:
                     if isinstance(q, dict) and int(q.get("index", 0) or 0) not in idxs]
             player["pawnLevelingQueues"] = keep + list(qs)
             player["_pawnLevelingQueuesAt"] = _time.time()
+
+    def _with_output(self, route: str, key: str, params: dict) -> dict:
+        """Send, then apply the reply's UpdateOutPut block ``key`` (output/rewards)."""
+        reply = self.session.request(route, params)
+        if isinstance(reply.get(key), dict):
+            from nta_agent.state.store import apply_update_output
+            apply_update_output(self._state, reply[key])
+        return reply
 
     def collect_city_output(self, index: int | None = None) -> dict:
         """Claim accumulated output from a city (default: the main city).
@@ -122,7 +141,7 @@ class Actions:
         """Create a city-type structure at an owned cell — used for a Cứ Điểm / fort
         (build 2102, ui=BuildCity). AddAreaBuild rejects these with ecode.500009
         ("Kiến trúc không tồn tại"); the game builds them via GAME_HD_CreateCity."""
-        return self.session.request("game/HD_CreateCity",
+        return self._with_output("game/HD_CreateCity", "output",
                                     {"index": int(index), "id": int(build_id)})
 
     def get_alliance(self, alliance_uid: str) -> dict:
@@ -178,6 +197,10 @@ class Actions:
             "armyUid": str(army_uid), "armyName": str(army_name),
         })
         self._apply_result(reply)
+        # the drill queues {buildUid: {list}} — Recruit needs them to see a full slot
+        # (258x ecode.500018 before, 2026-09-27)
+        if isinstance(reply.get("queues"), dict):
+            _set_drill_queues(self._state, reply["queues"])
         return reply
 
     def building_uid(self, build_id: int) -> str:
@@ -410,7 +433,7 @@ class Actions:
 
     def claim_army_treasure(self, index: int, army_uid: str) -> dict:
         """Claim an army's opened treasures (GAME_HD_ClaimArmyTreasure)."""
-        return self.session.request("game/HD_ClaimArmyTreasure",
+        return self._with_output("game/HD_ClaimArmyTreasure", "rewards",
                                     {"index": int(index), "auid": str(army_uid)})
 
     def open_armys_treasure(self, targets: list[dict]) -> dict:
@@ -422,7 +445,7 @@ class Actions:
 
     def claim_armys_treasure(self, targets: list[dict]) -> dict:
         """Batch-claim opened treasures (GAME_HD_ClaimArmysTreasure)."""
-        return self.session.request("game/HD_ClaimArmysTreasure", {"targets": targets})
+        return self._with_output("game/HD_ClaimArmysTreasure", "rewards", {"targets": targets})
 
     # ---- formation (tank troop order) ----------------------------------- #
     def move_area_pawns(self, index: int, army_uid: str, assignment: dict) -> dict:
@@ -517,7 +540,8 @@ class Actions:
     def dismiss_army(self, index: int, army_uid: str, pawn_id: int = 0) -> dict:
         """Dismiss an army (GAME_HD_DismissArmy). ``pawn_id`` 0 = whole army."""
         return self.session.request("game/HD_DismissArmy",
-                                    {"index": int(index), "armyUid": str(army_uid), "id": int(pawn_id)})
+                                    {"index": int(index), "armyUid": str(army_uid),
+                                     "pawnId": int(pawn_id)})  # schema name (was "id": dropped)
 
     def dismiss_pawn(self, index: int, army_uid: str, pawn_uid: str) -> dict:
         """Dismiss a SINGLE pawn by uid (GAME_HD_DismissPawn) — the normal way to drop
@@ -532,6 +556,9 @@ class Actions:
         reply = self.session.request("game/HD_PawnLving", {
             "index": int(index), "auid": str(army_uid), "puid": str(pawn_uid)})
         self._apply_result(reply, queue="leveling")
+        if isinstance(reply.get("cost"), dict):  # the reply's resources are in `cost`
+            from nta_agent.state.store import apply_update_output
+            apply_update_output(self._state, reply["cost"])
         return reply
 
     def move_cell_army(
