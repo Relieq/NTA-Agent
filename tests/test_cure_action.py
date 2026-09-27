@@ -55,4 +55,4 @@ def test_change_pawn_army_and_dismiss_shapes():
                           {"index": 72100, "armyUid": "F", "uid": "p1", "newArmyUid": "L",
                            "onlyChangeArmy": True})
     a.dismiss_army(72100, "L", 0)
-    assert s.sent[-1] == ("game/HD_DismissArmy", {"index": 72100, "armyUid": "L", "id": 0})
+    assert s.sent[-1] == ("game/HD_DismissArmy", {"index": 72100, "armyUid": "L", "pawnId": 0})
