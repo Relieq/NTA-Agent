@@ -16,9 +16,14 @@ export default {
   <div v-for="p in ps" :key="p.pawn_id" style="margin:8px 0">
    <div><span class="muted">{{ p.pawn_name }}</span> — hiện: <b>{{ p.current_equip_name||"—" }}</b>
     <span v-if="p.current_equip_desc" class="muted" style="font-size:12px">· {{ p.current_equip_desc }}</span></div>
-   <div v-for="o in (p.options||[])" :key="o.uid" style="display:flex;align-items:center;gap:8px;margin:2px 0">
+   <div v-for="o in (p.options||[])" :key="o.uid" style="display:flex;align-items:flex-start;gap:8px;margin:3px 0">
     <button :disabled="o.uid===p.current_equip_uid||sending[p.pawn_id+':'+o.uid]" @click="equip(p,o)">{{ sending[p.pawn_id+':'+o.uid]?"đã gửi…":o.name }}</button>
-    <span v-if="o.desc" class="muted" style="font-size:12px">{{ o.desc }}</span></div>
+    <div style="font-size:12px;display:flex;flex-direction:column;gap:1px;min-width:0">
+     <span v-if="o.exclusive" style="align-self:flex-start;font-size:11px;padding:0 6px;border-radius:8px;border:1px solid #a371f7;color:#a371f7">chuyên dụng</span>
+     <template v-if="(o.lines||[]).length">
+      <span v-for="(l,i) in o.lines" :key="i" :class="{muted:l.smelted}" :title="l.text"
+       style="white-space:nowrap;overflow:hidden;text-overflow:ellipsis">{{ l.locked ? "🔒 " : (l.smelted ? "⧉ " : "• ") }}{{ l.text }}{{ l.smelted ? " (dung luyện)" : "" }}</span></template>
+     <span v-else-if="o.desc" class="muted">{{ o.desc }}</span></div></div>
    <span v-if="!(p.options||[]).length" class="muted">không có trang bị phù hợp</span>
   </div></div>`
 };

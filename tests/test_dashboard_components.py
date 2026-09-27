@@ -203,3 +203,9 @@ def test_forge_panel_compact_with_filter_and_wish_list():
     assert "Chuyên dụng" in fp and "Đã đạt" in fp and "Tìm tên" in fp   # groups + search
     assert "toggle(e)" in fp and "open[e.uid]" in fp                   # collapsible rows
     assert "Thêm hiệu ứng mong muốn" in fp and "dropWish" in fp        # wish list editor
+
+
+def test_equipment_panel_marks_exclusive_and_shows_real_lines():
+    ep = _c("EquipmentPanel.js")
+    assert "o.exclusive" in ep and "chuyên dụng" in ep
+    assert "o.lines" in ep and "dung luyện" in ep and "🔒" in ep

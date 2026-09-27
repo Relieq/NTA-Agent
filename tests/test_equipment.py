@@ -34,7 +34,8 @@ def test_pawn_equipment_row_and_compat_filtering():
     assert r["current_equip_desc"] == "+10% công"  # effect, markup stripped
     assert r["skin_id"] == 0 and r["attack_speed"] == 6
     # e1 (6001, general) is an option with its effect; e2 (6003, excl to 3999) filtered
-    assert r["options"] == [{"uid": "e1", "id": 6001, "name": "Kiếm Sắt", "desc": "+10% công"}]
+    assert r["options"] == [{"uid": "e1", "id": 6001, "name": "Kiếm Sắt", "desc": "+10% công",
+                             "exclusive": False, "lines": []}]
 
 
 def test_unknown_names_fall_back():
@@ -46,7 +47,8 @@ def test_unknown_names_fall_back():
     assert rows[0]["current_equip_uid"] == "" and rows[0]["current_equip_name"] == ""
     assert rows[0]["current_equip_desc"] == ""
     # unknown equip -> compatible, no effect text
-    assert rows[0]["options"] == [{"uid": "x", "id": 9999, "name": "#9999", "desc": ""}]
+    assert rows[0]["options"] == [{"uid": "x", "id": 9999, "name": "#9999", "desc": "",
+                                     "exclusive": False, "lines": []}]
 
 
 def test_lists_unlocked_pawn_type_without_config():
@@ -64,4 +66,26 @@ def test_lists_unlocked_pawn_type_without_config():
     r = rows[0]
     assert r["current_equip_uid"] == "" and r["current_equip_name"] == ""
     # equip id derived from uid "6001_1" -> 6001 (common) offered as an option
-    assert r["options"] == [{"uid": "6001_1", "id": 6001, "name": "Kiếm Sắt", "desc": "+10% công"}]
+    assert r["options"] == [{"uid": "6001_1", "id": 6001, "name": "Kiếm Sắt", "desc": "+10% công",
+                             "exclusive": False, "lines": []}]
+
+
+
+def test_exclusive_option_first_with_its_real_lines():
+    # the panel used to show only the equip's template description; now each option
+    # carries the lines it actually rolled (locked / smelted marked), exclusives first
+    cfg = FakeConfig()
+    cfg._t["equipBase"][6117] = {"id": 6117, "exclusive_pawn": "3101"}
+    cfg._t["equipText"].update({"name_6117": {"vi": "Cường Nỏ"},
+                                "effect_9": {"vi": "HP dưới <color=#f00>{0}</c> trảm sát"},
+                                "effect_3": {"vi": "Có {1} gây {0} ST Bạo"}})
+    cfg._t["equipEffect"] = {3: {"suffix": "%"}}
+    st = _state()
+    st.raw["player"]["equips"].append({"uid": "6117_10", "lockEffect": 9, "attrs": [
+        {"attr": [0, 2, 12]}, {"attr": [2, 9, 13, 0]}, {"attr": [2, 3, 180, 37, 6005]}]})
+    r = pawn_equipment(st, cfg)[0]
+    first = r["options"][0]
+    assert first["uid"] == "6117_10" and first["exclusive"] is True
+    assert first["lines"] == [
+        {"text": "HP dưới 13 trảm sát", "smelted": False, "locked": True},
+        {"text": "Có 37% gây 180% ST Bạo", "smelted": True, "locked": False}]
