@@ -6,6 +6,7 @@ or rejects per id, and the rule backs off rejected ids.
 from __future__ import annotations
 
 from dataclasses import dataclass, field
+from typing import ClassVar
 
 from nta_agent.execution.heuristics import ClaimTasks
 from nta_agent.state.schema import GameState
@@ -79,3 +80,44 @@ def test_backs_off_rejected_ids():
 
 def test_no_tasks_no_apply():
     assert ClaimTasks().applies(_state(), FakeActions()) is False
+
+
+# ---- 2026-09-27: completed tasks starved behind unfinished ones -----------------
+class _Cfg:
+    T: ClassVar[dict] = {"guideTask": {1: {"cond": "11001,1,3", "show_progress": 1},
+                       2: {"cond": "11001,1,5", "show_progress": 1},
+                       3: {"cond": "11002,0,2", "show_progress": 1}}}
+
+    def table(self, name):
+        return self.T.get(name, {})
+
+
+def _st(tasks):
+    st = GameState(source="api")
+    st.raw = {"player": {"guideTasks": [{"id": i, "progress": p} for i, p in tasks],
+                         "otherTasks": [], "todayTasks": []}}
+    return st
+
+
+def test_a_completed_task_is_claimed_first_and_at_once():
+    # 1 and 2 unfinished (progress < target), 3 done -> claim 3 right away
+    act = FakeActions()
+    rule = ClaimTasks(config=_Cfg())
+    st = _st([(1, 1), (2, 0), (3, 2)])
+    assert rule.applies(st, act) is True
+    rule.act(act)
+    assert act.calls == [("guide", 3)]
+
+
+def test_unfinished_tasks_are_not_tried_and_progress_churn_does_not_restart():
+    act = FakeActions()
+    rule = ClaimTasks(config=_Cfg(), sweep_every=0)
+    for p in range(3):                               # progress keeps moving (notify 55)
+        st = _st([(1, p % 3), (2, 0)])
+        if rule.applies(st, act):
+            rule.act(act)
+    assert act.calls == []                           # nothing claimable -> no requests
+    st = _st([(1, 3), (2, 0)])                       # task 1 reached its target
+    assert rule.applies(st, act) is True
+    rule.act(act)
+    assert act.calls == [("guide", 1)]

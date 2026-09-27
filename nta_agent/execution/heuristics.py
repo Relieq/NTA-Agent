@@ -1363,44 +1363,88 @@ class ClaimTreasures:
 class ClaimTasks:
     """Claim completed task rewards (guide / other / today) — server-authoritative.
 
-    Task ``progress`` isn't always maintained server-side (some conditions are
-    verified only on claim), so instead of predicting completion we *attempt* the
-    claim and let the server decide. A rejected id is backed off until the task
-    lists change (progress advanced), then retried. Guide tasks in particular
-    carry the early-game gameplay guidance + worthwhile rewards.
+    The game's task tables give each task's target (``cond`` "type,id,count"), so a
+    task whose ``progress`` reached it is claimed AT ONCE and first (live 2026-09-27:
+    one attempt per sweep, restarted from the top whenever progress moved, kept
+    retrying unfinished tasks and never reached the finished ones -> no iron). A task
+    still short of its target is not tried (only re-checked now and then, in case
+    progress is stale). Tasks without a known target (``show_progress`` 0 / not in
+    the tables) are attempted once per sweep and retried when the task SET changes.
     """
     name: str = "claim_tasks"
-    sweep_every: int = 20     # ticks between claim attempts (claiming isn't urgent)
+    sweep_every: int = 20     # ticks between attempts on tasks of unknown status
+    recheck_s: float = 1800.0  # also try "unfinished" tasks this often (stale progress)
+    config: object = None      # GameConfig (lazy); False = unavailable
     _seen: set = field(default_factory=set)   # (kind,id) already attempted this cycle
-    _sig: tuple = ()          # task-list signature; changes reset _seen (retry as play advances)
+    _sig: tuple = ()          # task-SET signature; changes reset _seen
     _cooldown: int = 0
     _pending: object = None    # (kind, id)
+    _last_recheck: float = 0.0
 
     _KINDS = (("guideTasks", "guide"), ("otherTasks", "other"), ("todayTasks", "today"))
+    _TABLE = (("guide", "guideTask"), ("other", "otherTask"), ("today", "todayTask"))
 
     @staticmethod
     def _tasks(state: GameState, key: str) -> list[dict]:
         return (state.raw or {}).get("player", {}).get(key) or []
 
+    def _cfg(self):
+        if self.config is None:
+            try:
+                from nta_agent.data.config import GameConfig
+                self.config = GameConfig.load()
+            except Exception:
+                self.config = False
+        return self.config or None
+
+    def _status(self, kind: str, task: dict) -> str:
+        """"done" / "open" (short of target) / "unknown"."""
+        cfg = self._cfg()
+        if not cfg:
+            return "unknown"
+        try:
+            row = cfg.table(dict(self._TABLE)[kind]).get(task.get("id")) or {}
+        except Exception:
+            row = {}
+        parts = str(row.get("cond") or "").split(",")
+        if not row.get("show_progress") or len(parts) < 3 or not parts[2].strip().isdigit():
+            return "unknown"
+        target = int(parts[2])
+        return "done" if int(task.get("progress", 0) or 0) >= target else "open"
+
     def applies(self, state: GameState, actions: Actions) -> bool:
-        if self._cooldown > 0:
-            self._cooldown -= 1
-            return False
-        # When the task lists move (ids/progress changed, e.g. after a claim or as
-        # play advances), forget what we tried so completed tasks get another go.
-        sig = tuple(
-            (kind, t.get("id"), t.get("progress"))
-            for key, kind in self._KINDS for t in self._tasks(state, key)
-        )
+        import time as _time
+        sig = tuple(sorted((kind, t.get("id")) for key, kind in self._KINDS
+                           for t in self._tasks(state, key)))
         if sig != self._sig:
             self._sig = sig
             self._seen.clear()
-        for key, kind in self._KINDS:
-            for t in self._tasks(state, key):
-                tid = t.get("id")
-                if tid is None or (kind, tid) in self._seen:
-                    continue
-                self._pending = (kind, tid)
+        tasks = [(kind, t) for key, kind in self._KINDS for t in self._tasks(state, key)
+                 if t.get("id") is not None]
+        # 1) finished tasks: claim now, no throttle (one per tick)
+        for kind, t in tasks:
+            if (kind, t["id"]) not in self._seen and self._status(kind, t) == "done":
+                self._pending = (kind, t["id"])
+                return True
+        if self._cooldown > 0:
+            self._cooldown -= 1
+            return False
+        # 2) unknown status: one attempt per sweep, once per task set
+        for kind, t in tasks:
+            if (kind, t["id"]) not in self._seen and self._status(kind, t) == "unknown":
+                self._pending = (kind, t["id"])
+                return True
+        # 3) "unfinished" ones now and then, in case our progress is stale
+        now = _time.time()
+        if not self._last_recheck:
+            self._last_recheck = now          # first re-check one period from now
+        elif now - self._last_recheck >= self.recheck_s:
+            self._last_recheck = now
+            opens = [(k, t) for k, t in tasks if self._status(k, t) == "open"]
+            for kind, t in opens:
+                self._seen.discard((kind, t["id"]))
+            if opens:
+                self._pending = (opens[0][0], opens[0][1]["id"])
                 return True
         return False
 
@@ -1413,10 +1457,10 @@ class ClaimTasks:
         claim = {"guide": actions.claim_task,
                  "other": actions.claim_other_task,
                  "today": actions.claim_today_task}[kind]
-        self._cooldown = self.sweep_every  # one claim per sweep
+        self._cooldown = self.sweep_every
         try:
             claim(tid)
-        except Exception:  # "not complete" is the expected case — stay quiet, retry next cycle
+        except Exception:  # "not complete" is the expected case — stay quiet, retry later
             return
 
 
