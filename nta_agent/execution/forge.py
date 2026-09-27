@@ -148,23 +148,22 @@ def effect_values(equip: dict) -> dict:
 def unmet_stats(equip: dict, target: dict, effect_row) -> list[str]:
     """Which of the target's criteria the current roll misses.
 
-    Per-stat minimums (``target["mins"] = {"<type>.value"|"<type>.odds": min}``,
-    user 2026-09-24): every set minimum must hold; a required effect that wasn't
-    rolled counts as missed. Without mins, the legacy composite ``threshold`` on
-    :func:`effect_quality` applies (reported as ``"quality"``)."""
+    Per-stat minimums (``target["mins"] = {"<type>.value"|"<type>.odds": min}``)
+    make a WISH LIST of effects (user 2026-09-27): done once every RANDOM line of the
+    equip (2 on an exclusive, 1 on a common) is a wished effect meeting all of its
+    minimums — any of them, not all. Smelted lines are fixed extras and don't count.
+    Fewer wishes than lines -> each wish must be met. Returns the wished keys not
+    yet satisfied (empty = done). Without mins, the legacy composite ``threshold``
+    on :func:`effect_quality` applies (reported as ``"quality"``)."""
     mins = (target or {}).get("mins") or {}
     if mins:
-        vals = effect_values(equip)
-        out = []
-        for key, lo in mins.items():
-            typ, _, stat = str(key).partition(".")
-            try:
-                cur = (vals.get(int(typ)) or {}).get(stat)
-            except ValueError:
-                cur = None
-            if cur is None or cur < float(lo):
-                out.append(str(key))
-        return out
+        from nta_agent.execution.exclusive import natural_effects
+        ok = set(_satisfied_lines(equip, mins))
+        wished = {str(k).partition(".")[0] for k in mins}
+        need = min(max(len(natural_effects(equip)), 1), len(wished))
+        if len(ok) >= need:
+            return []
+        return [str(k) for k in mins if str(k).partition(".")[0] not in {str(t) for t in ok}]
     q = effect_quality(equip, effect_row)
     if q is None:
         return []  # nothing rangeable to judge -> treat as done

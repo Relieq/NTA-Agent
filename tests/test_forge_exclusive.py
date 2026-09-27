@@ -82,3 +82,43 @@ def test_view_shows_exclusive_rows_with_the_match_pool():
     assert [p["type"] for p in r["possible"]] == [21, 3, 8, 15]         # from the match, not 21|22
     assert r["lock_effect"] == 3 and r["fixator_per_recast"] == 2      # lock + smelted 21 in pool
     assert [x["type"] for x in r["effects"] if x.get("smelted")] == [21]
+
+
+# ---- stop at ANY 2 wanted lines (user 2026-09-27) ------------------------------
+MANY = {"6101_10": {"budget": 100, "fixator_budget": 5,
+                    "mins": {"3.value": 150, "21.value": 5, "8.value": 30, "15.value": 9}}}
+
+
+def test_two_wanted_random_lines_of_many_is_done():
+    from nta_agent.execution.forge import target_met
+    e = _eq("6101_10", [(21, 6, 0), (8, 40, 0)])       # any 2 of the 4 wanted, both met
+    assert target_met(e, MANY["6101_10"], _row) is True
+    assert _next([e], MANY) is None
+
+
+def test_one_wanted_line_locks_then_rolls_the_other_toward_any_wanted():
+    e = _eq("6101_10", [(21, 6, 0), (99, 1, 0)])       # 21 met, the other unwanted
+    d = _next([e], MANY)
+    assert d.kind == "lock" and d.lock_effect == 21
+    d2 = _next([{**e, "lockEffect": 21}], MANY)
+    assert d2.kind == "recast" and d2.fixator == 1
+
+
+def test_a_wanted_effect_below_its_minimum_does_not_count():
+    from nta_agent.execution.forge import target_met
+    e = _eq("6101_10", [(21, 6, 0), (8, 20, 0)])       # 8 rolled but under 30
+    assert target_met(e, MANY["6101_10"], _row) is False
+
+
+def test_smelted_lines_do_not_count_toward_the_two():
+    from nta_agent.execution.forge import target_met
+    # 21 random + met; 8 only via smelting -> still one random line to roll
+    e = {"uid": "6101_10", "lockEffect": 0,
+         "attrs": [{"attr": [2, 21, 6, 0]}, {"attr": [2, 99, 1, 0]}, {"attr": [2, 8, 40, 0, 6005]}]}
+    assert target_met(e, {"mins": {"21.value": 5, "8.value": 30}}, _row) is False
+
+
+def test_a_single_wanted_effect_needs_only_that_line():
+    from nta_agent.execution.forge import target_met
+    e = _eq("6101_10", [(21, 6, 0), (99, 1, 0)])
+    assert target_met(e, {"mins": {"21.value": 5}}, _row) is True
