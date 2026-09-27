@@ -322,3 +322,22 @@ def test_buffer_uids_known_right_after_a_restart(tmp_path):
     _setup_done(tmp_path)
     fresh = BufferLeveling(profile=_prof(), state_path=tmp_path / "buffers.json", rows=ROWS)
     assert "B" in fresh.buffer_uids()
+
+
+def test_no_swap_when_the_buffer_is_no_longer_in_the_cell(tmp_path):
+    # live 2026-09-27: the swap step checked only that the MAIN army was in the
+    # meeting cell; the buffer had left, so ExchangePawnArmy failed with 500011 97
+    # times over 3.5 h. Re-plan the meeting instead of swapping into an empty cell.
+    _setup_done(tmp_path)
+    rule = _rule6(tmp_path)
+    world = _field_world()
+    acts = FakeActions(world, swap_mutates=True)
+    _tick(rule, _state(), acts)
+    world[2]["index"] = FIELD - 1                            # buffer next to G0
+    _tick(rule, _state(), acts)
+    world[0]["index"] = FIELD - 1                            # main arrived
+    world[2]["index"] = MAIN                                 # ...but the buffer left
+    acts.calls.clear()
+    _tick(rule, _state(), acts)
+    assert not any(c[0] == "exchange" for c in acts.calls)
+    assert _phase(tmp_path)["phase"] == "travel"

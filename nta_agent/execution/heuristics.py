@@ -1896,6 +1896,11 @@ class BufferLeveling:
                         moves = [{"uid": str(mainarmy["uid"]), "index": midx}]
                         planned = ("move", lambda m=moves, c=cell: actions.move_cell_army(m, c))
                     continue
+                if bidx != cell:
+                    # the buffer left the meeting cell (live: 97x ecode.500011 over
+                    # 3.5 h swapping into a cell without it) -> plan the meeting again
+                    rec.update(phase="travel", cell=None)
+                    continue
                 if not (is_idle(mainarmy) and is_idle(buf)):
                     continue
                 pairs = bp.swap_pairs(mainarmy, buf, target)
