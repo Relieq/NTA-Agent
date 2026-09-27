@@ -176,6 +176,12 @@ class FortBuild:
             self.on_event("fort_built", {"index": idx})
 
 
+
+def _army_pawn_cap(state) -> int:
+    """Pawns per army right now (main-city effect 63; 9 when unknown) — issue #83."""
+    from nta_agent.execution import caps as _caps
+    return _caps.army_pawn_cap(state)
+
 @dataclass
 class BuildOrder:
     """Upgrade buildings along a priority order, respecting prereqs and cost.
@@ -1218,6 +1224,9 @@ class Recruit:
                 and _time.time() - float(_p.get("_pawnDrillQueuesAt") or 0) < 600):
             return False
         armys = actions.get_area(state.main_city_index).get("data", {}).get("armys", []) or []
+        # pawns per army follow the main city (lv4 = 5, not 9 — issue #83)
+        from nta_agent.execution import caps as _caps
+        cap = min(self.max_army_pawns, _caps.army_pawn_cap(state, self.config))
         # Skip armies the ArmyComposer is arranging (its lock): don't recruit into them
         # (it drives their composition) and don't compete for the drill queue on them.
         if self.locked_source is not None:
@@ -1241,7 +1250,7 @@ class Recruit:
                 if (army is not None and self._affordable(state, pid)
                         and not army.get("state")
                         and not self._is_full(army)
-                        and len(army.get("pawns", [])) < self.max_army_pawns):
+                        and len(army.get("pawns", [])) < cap):
                     self._pending = (bu, pid, army_uid, "", len(army.get("pawns", [])))
                     return True
         # recruit into a non-marching city army that still has room — with THAT army's
@@ -1249,7 +1258,7 @@ class Recruit:
         # got a Cường Nỏ, the first unlocked type). Its type locked/unaffordable -> skip it.
         room, fill = None, pawn
         for a in armys:
-            if a.get("state") or self._is_full(a) or len(a.get("pawns", [])) >= self.max_army_pawns:
+            if a.get("state") or self._is_full(a) or len(a.get("pawns", [])) >= cap:
                 continue
             main = _main_pawn_type(a)
             if main is None:
@@ -1761,7 +1770,8 @@ class BufferLeveling:
             prop = bp.propose(group_armies, spares, grp["target_lv"], rows=self._rows(),
                               barracks_lv=self._barracks_lv(state),
                               exp_book=int(state.resources.exp_book or 0),
-                              army_count=len(armies), army_cap=len(armies))
+                              army_count=len(armies), army_cap=len(armies),
+                              buffer_size=_army_pawn_cap(state))
             old = st.get("proposal") or {}
             if ({k: v for k, v in prop.items() if k != "books_have"}
                     != {k: v for k, v in old.items() if k != "books_have"}):
@@ -2132,7 +2142,7 @@ class SpareArmies:
                 self._emit("spare_gather", {"armies": [a.get("name") for a in away if is_idle(a)]})
                 return True
             return False  # the rest are still marching home
-        ops = purity_ops(home) if len(home) == len(spares) else []
+        ops = purity_ops(home, _army_pawn_cap(state)) if len(home) == len(spares) else []
         if ops:
             self._reserved = {str(a["uid"]) for a in spares}
             op = ops[0]
@@ -2512,6 +2522,7 @@ class ArmyComposer:
     locked_uids: set = field(default_factory=set)     # armies occupy/logistics must skip
     _plan: object = None
     _blocked_notified: bool = False
+    _cap_notified: bool = False
     rename_retry_ticks: int = 12      # after a failed rename (e.g. 500036 in battle)
     _rename_wait: dict = field(default_factory=dict)  # uid -> applies() calls to skip
 
@@ -2559,9 +2570,16 @@ class ArmyComposer:
             armies = actions.get_player_armys() or []
         except Exception:
             return False
+        from nta_agent.execution import caps as _caps
         from nta_agent.execution.composition_plan import plan_composition_step
-        plan = plan_composition_step(target, armies, city, self._strike_uids,
-                                     self._reserved(state), self._unlocked(state), army_cap=0)
+        # pawns per army follow the main city (lv4 = 5): a bigger size can't be met
+        # yet -> plan to the cap now, keep the goal for later (issue #83)
+        cap = _caps.army_pawn_cap(state)
+        capped = [t for t in target if int(t.get("size", 9) or 9) > cap]
+        plan_target = [{**t, "size": min(int(t.get("size", 9) or 9), cap)} for t in target]
+        plan = plan_composition_step(plan_target, armies, city, self._strike_uids,
+                                     self._reserved(state), self._unlocked(state), army_cap=0,
+                                     pawn_cap=cap)
         self._plan = plan
         self._city = city
         self._strike_uids = [a["uid"] for a in plan["assign"]]
@@ -2592,6 +2610,19 @@ class ArmyComposer:
             self._cooldown = self.blocked_cooldown
             return False
         self._blocked_notified = False
+        if plan["done"] and capped:
+            # assembled up to what the main city allows: release the armies (they farm
+            # meanwhile) and wait for a bigger cap instead of drilling into full armies
+            self.locked_uids = set()
+            msg = self._cap_message(state, cap)
+            self._status({"active": False, "blocked": False, "done": False, "waiting_cap": True,
+                          "issues": [msg], "strike": self._strike_uids})
+            if self.on_event and not self._cap_notified:
+                self.on_event("composition_capped", {"cap": cap, "message": msg})
+                self._cap_notified = True
+            self._cooldown = self.blocked_cooldown
+            return False
+        self._cap_notified = False
         if plan["done"]:
             # ONE-SHOT goal (user 2026-09-23): the group is assembled -> clear the
             # target so the composer stands down instead of re-activating (and
@@ -2613,6 +2644,20 @@ class ArmyComposer:
         self._status({"active": True, "blocked": False, "done": False,
                       "issues": issues, "strike": self._strike_uids})
         return bool(plan["actions"])
+
+    @staticmethod
+    def _cap_message(state, cap: int) -> str:
+        from nta_agent.execution import caps as _caps
+        lv = _caps.main_city_lv(state)
+        msg = f"Thành Chính lv{lv}: tối đa {cap} lính/đội — nhóm đã đủ ở mức này"
+        try:
+            from nta_agent.data.config import GameConfig
+            nxt = _caps.next_cap_level(GameConfig.load(), lv, cap)
+        except Exception:
+            nxt = None
+        if nxt:
+            msg += f"; nâng Thành Chính lên lv{nxt[0]} để được {nxt[1]} lính/đội"
+        return msg
 
     def _name_group(self, actions, target, assign, by_uid, only=None) -> None:
         """Give strike armies the names the player chose. Names are matched per pawn
@@ -2714,6 +2759,14 @@ class ArmyComposer:
                     self._cooldown = self.res_cooldown
                     if ecode == "500012":
                         _record_res_block(self, "cereal")  # recruit is cereal-paced
+                    return
+                # Recruiting into a FULL army (500019) is not a benign skip: it looped
+                # every tick for 3 h (#83). Say so and back off.
+                if op == "recruit" and ecode == "500019":
+                    self._cooldown = self.res_cooldown
+                    if self.on_event:
+                        self.on_event("composition_error", {"op": op, "ecode": ecode,
+                                                            "army": a.get("army")})
                     return
                 # Other expected mid-reorg conditions — skip THIS action, continue the
                 # batch (a benign failure must not abort the tick / block the recruit):

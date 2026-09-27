@@ -175,3 +175,14 @@ def test_refill_waits_when_the_armys_type_is_not_unlocked():
     r.applies(st, act)
     r.act(act)
     assert all(c[1] == 3305 and c[2] != "D1" for c in act.calls)   # never mixes D1
+
+
+def test_recruit_respects_the_main_city_pawn_cap(monkeypatch):
+    # issue #83: at main city lv4 an army holds 5 — a 5-pawn army is full
+    from nta_agent.execution import caps
+    monkeypatch.setattr(caps, "army_pawn_cap", lambda state, config=None: 5)
+    st = _state([3101])
+    full5 = {"uid": "A", "pawns": [{"id": 3101}] * 5, "state": None}
+    act = FakeActions(st, armys=[full5])
+    r = Recruit(config=False, max_armies=1)
+    assert r.applies(st, act) is False

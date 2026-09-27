@@ -68,7 +68,7 @@ def _assign(target: list[dict], armies: list[dict], reserved: set,
 
 
 def plan_composition_step(target, armies, city_index, strike_uids, reserved_uids,
-                          unlocked_ids, army_cap):
+                          unlocked_ids, army_cap, pawn_cap: int = 9):
     """Return {assign, actions, done, blocked, report} — the next step toward target."""
     # Feasibility is judged over the USABLE pool (reserved/farm pawns are never pulled),
     # so a request isn't called feasible just because the farm holds the pawns.
@@ -108,7 +108,7 @@ def plan_composition_step(target, armies, city_index, strike_uids, reserved_uids
     #    then recruit the remainder. Everything uses only co-located, non-reserved donors.
     actions: list[dict] = []
     co_donors = [d for d in donors if d.get("index") == city_index]
-    donor_room = {d["uid"]: max(0, 9 - len(d.get("pawns") or [])) for d in co_donors}
+    donor_room = {d["uid"]: max(0, pawn_cap - len(d.get("pawns") or [])) for d in co_donors}
     donor_pool: dict[int, list[tuple[str, str]]] = {}  # pid -> [(donor_uid, pawn_uid)]
     for d in co_donors:
         for p in (d.get("pawns") or []):
@@ -172,6 +172,10 @@ def plan_composition_step(target, armies, city_index, strike_uids, reserved_uids
     # 2c) RECRUIT the remaining deficit — counted over the USABLE (non-reserved) pool
     #     only, since reserved (farm) pawns are never pulled into the strike group.
     usable = [a for a in armies if a["uid"] not in set(reserved_uids)]
+    # the strike armies themselves count even when they sit in the farm group (#83:
+    # "cần chiêu mộ thêm 9" was shown while the strike army already held 5)
+    _seen = {a["uid"] for a in usable}
+    usable += [by_uid[a["uid"]] for a in assign if a["uid"] and a["uid"] not in _seen]
     for pid in sorted(needed_types):
         want = sum(a["size"] for a in assign if a["pawn_id"] == pid)
         deficit = max(0, want - count_owned(usable, pid))
@@ -181,7 +185,7 @@ def plan_composition_step(target, armies, city_index, strike_uids, reserved_uids
             # on ecode.500019 and the other short armies never get filled).
             shorts = [a["uid"] for a in assign if a["pawn_id"] == pid and a["uid"]
                       and _count(by_uid[a["uid"]], pid) < a["size"]
-                      and len(by_uid[a["uid"]].get("pawns") or []) < 9]
+                      and len(by_uid[a["uid"]].get("pawns") or []) < pawn_cap]
             actions.append({"op": "recruit", "pawn_id": pid,
                             "army": shorts[0] if shorts else None, "count": deficit})
 

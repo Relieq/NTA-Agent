@@ -338,3 +338,51 @@ def test_strike_armies_are_restored_after_a_restart():
     assert r._strike_uids == ["tank", "imp1"]
     r.restore_strike(["other"])            # only once: a live assignment wins
     assert r._strike_uids == ["tank", "imp1"]
+
+
+# ---- issue #83: pawns per army follow the main city level ----------------------
+def _capped_state(cap_lv=4, unlocked=(3202,)):
+    from nta_agent.state.schema import Building
+    st = _state(unlocked)
+    st.builds = [Building(index=CITY, id=2001, lv=cap_lv, uid="m")]
+    return st
+
+
+class _Cfg:
+    def table(self, name):
+        return {2001004: {"effects": "11,4|63,5"}, 2001005: {"effects": "11,4|63,7"}} \
+            if name == "buildAttr" else {}
+
+
+def test_target_bigger_than_the_cap_waits_instead_of_looping(monkeypatch):
+    # live: size 9, main city lv4 -> cap 5; D1 held 5 and every tick drilled into it
+    # (ecode.500019, swallowed), kept D1 locked and starved Recruit/Occupy for 3 h
+    from nta_agent.execution import caps
+    monkeypatch.setattr(caps, "pawn_cap_at", lambda cfg, lv: {4: 5, 5: 7}.get(lv, 9))
+    events = []
+    target = [{"pawn_id": 3202, "armies": 1, "size": 9}]
+    prof = _profile(target)
+    r = ArmyComposer(profile=prof, on_event=lambda k, d: events.append((k, d)))
+    r._strike_uids = ["D1"]
+    acts = FakeActions([_army("D1", [3202] * 5)])
+    assert r.applies(_capped_state(), acts) is False       # nothing to do at this cap
+    assert r.locked_uids == set()                          # D1 released for occupy/recruit
+    assert acts.calls == []
+    assert prof.army["strike_target"] == target            # the goal is kept (grows later)
+    assert any(k == "composition_capped" for k, _ in events)
+
+
+def test_recruit_army_full_is_reported_and_backs_off():
+    from nta_agent.io.api.client import ApiError
+
+    class Full(FakeActions):
+        def drill_pawn(self, *a, **k):
+            raise ApiError("game/HD_DrillPawn: ecode.500019")
+    events = []
+    r = ArmyComposer(profile=_profile([{"pawn_id": 3202, "armies": 1, "size": 3}]),
+                     on_event=lambda k, d: events.append((k, d)))
+    r._strike_uids = ["D1"]
+    acts = Full([_army("D1", [3202] * 2)])
+    assert r.applies(_state((3202,)), acts) is True
+    r.act(acts)
+    assert r._cooldown > 0 and any(k == "composition_error" for k, _ in events)
