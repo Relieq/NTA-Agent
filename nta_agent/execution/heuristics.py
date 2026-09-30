@@ -213,6 +213,8 @@ class BuildOrder:
     _cooldown: int = 0        # global back-off (queue full / already queued)
     _blocked: set = field(default_factory=set)  # server-rejected steps (2 key shapes)
     _sig: tuple = ()  # last builds signature; changing it clears blocks (retry)
+    _streak: int = 0          # consecutive queue rejections (drives the progressive back-off)
+    _qsig: tuple = ()         # last build-queue signature: a change = the world moved
 
     # Global (not per-build) queue conditions: the drill/recruit task holds the
     # build slot but isn't always synced into our build_queue, so the pre-check
@@ -268,6 +270,11 @@ class BuildOrder:
         if sig != self._sig:
             self._sig = sig
             self._blocked.clear()
+            self._streak = 0
+        qsig = tuple(sorted(str(q.get("uid", "")) for q in state.build_queue))
+        if qsig != self._qsig:   # something started/finished: the server state moved too
+            self._qsig = qsig
+            self._streak = 0
         from nta_agent.execution.build_planner import next_build_action
         rt = state.room_type
         seq, skip = self.sequence, None
@@ -292,6 +299,7 @@ class BuildOrder:
                 actions.add_build(self._city, action.build_id)
             else:
                 actions.upgrade_build(action.build.index, uid=action.build.uid)
+            self._streak = 0   # accepted: the queue was free after all
         except Exception as e:
             ecode = str(e).split("ecode.")[-1][:6] if "ecode." in str(e) else ""
             what = ({"kind": "construct", "build_id": action.build_id}
@@ -313,7 +321,10 @@ class BuildOrder:
             # back off for the whole queue rather than blocking one id and churning
             # the rest against the same full queue.
             if any(q in str(e) for q in self.QUEUE_ECODES):
-                self._cooldown = self.queue_cooldown
+                # The server says busy while our queue looked free: ask again later and
+                # later (x2 up to x8) instead of every ~2 min for as long as it stays full.
+                self._cooldown = self.queue_cooldown * min(2 ** self._streak, 8)
+                self._streak += 1
                 return
             # Otherwise it's a per-step rejection (e.g. 500034 duplicate-not-maxed):
             # block just this step until the builds signature changes, and surface it.

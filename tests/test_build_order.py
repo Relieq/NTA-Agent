@@ -181,3 +181,55 @@ def test_dashboard_lists_build_rejections(tmp_path):
     rows = read_build_rejections(cfg)
     assert [r["build_id"] for r in rows] == [2003, 2002]              # newest first
     assert rows[0]["reason"] == "đã có trong hàng đợi xây"
+
+
+# ---- 2026-10-01: a server that says "queue full" while our queue looks free -----------
+def _rejecting_acts(ecode="500014"):
+    from nta_agent.io.api.client import ApiError
+
+    class Busy(Acts):
+        def add_build(self, index, build_id):
+            self.calls.append(("add", index, build_id))
+            raise ApiError(f"game/HD_AddAreaBuild: ecode.{ecode}")
+
+        def resync_city_builds(self):
+            pass
+    return Busy()
+
+
+def test_queue_rejections_back_off_progressively():
+    # local queue says free (0/2) but the server keeps answering 500014: each retry waits
+    # longer (x2 up to x8) instead of asking every ~2 minutes forever
+    st = _state([Building(id=2001, lv=10, uid="m", index=109726)])
+    act = _rejecting_acts()
+    rule = BuildOrder(sequence=[2016], config=GameConfig.load())
+    waits = []
+    for _ in range(6):
+        assert rule.applies(st, act) is True
+        rule.act(act)
+        waits.append(rule._cooldown)
+        rule._cooldown = 0                      # fast-forward the wait
+    assert waits == [24, 48, 96, 192, 192, 192]
+    assert len(act.calls) == 6
+
+
+def test_backoff_resets_when_the_world_changes_or_a_build_succeeds():
+    st = _state([Building(id=2001, lv=10, uid="m", index=109726)])
+    rule = BuildOrder(sequence=[2016], config=GameConfig.load())
+    bad = _rejecting_acts()
+    for _ in range(3):
+        rule.applies(st, bad)
+        rule.act(bad)
+        rule._cooldown = 0
+    assert rule._streak == 3
+    good = Acts()
+    rule.applies(st, good)
+    rule.act(good)
+    assert rule._streak == 0 and rule._cooldown == 0
+    # a changed queue (something finished) also restarts from the short wait
+    rule._streak = 3
+    st.build_queue = [{"uid": "x"}]
+    rule.applies(st, good)
+    st.build_queue = []
+    rule.applies(st, good)
+    assert rule._streak == 0
