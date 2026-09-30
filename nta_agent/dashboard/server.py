@@ -169,6 +169,18 @@ def confirm_strike(cfg, strike) -> dict:
             "notes": notes}
 
 
+def confirm_dismissals(cfg, specs) -> dict:
+    """Queue the dismissals the player CONFIRMED: re-resolve them against the CURRENT
+    armies (which pawns are the lowest-level may have changed) and hand each to the
+    agent, which waits for the army to be idle. Pure of HTTP."""
+    from nta_agent.brain.guard import sanitize_dismissals
+    clean, notes = sanitize_dismissals(specs, _armies_from_disk(cfg))
+    for d in clean:
+        append_command(cfg.commands_path, {"action": "dismiss", "uid": d["uid"],
+                                           "scope": d["scope"], "pawn_uids": d["pawn_uids"]})
+    return {"ok": True, "queued": clean, "notices": notes}
+
+
 def chat_reply_summary(out: dict) -> str:
     """What the brain answered, in one line, for the next turn's chat history."""
     if not out.get("ok"):
@@ -176,6 +188,9 @@ def chat_reply_summary(out: dict) -> str:
     parts = []
     if out.get("strike"):
         parts.append("Đề xuất tạo nhóm (chờ xác nhận): " + out["strike"]["summary"])
+    if out.get("dismissals"):
+        parts.append("Đề xuất giải tán (chờ xác nhận): " + ", ".join(
+            f"{d['name']} ({d['count']} lính)" for d in out["dismissals"]))
     if out.get("renames"):
         parts.append("Đề xuất đổi tên: " + ", ".join(
             f"{r.get('current_name') or r['uid']}→{r['name']}" for r in out["renames"]))
@@ -269,10 +284,29 @@ def handle_chat(cfg, message, *, history=None, propose=None):
                      "dominant": dominant.get(str(a.get("uid"))),
                      "share": (max(comp.values()) / total) if total else 1.0,
                      "troops": _troops_label(dict(comp), names)})
-    from nta_agent.brain.guard import sanitize_strike
+    from nta_agent.brain.guard import sanitize_dismissals, sanitize_strike
+    # Dismissals are irreversible: PROPOSED here, confirmed on the dashboard, then queued.
+    raw_dis = edits.get("army_dismissals") if isinstance(edits, dict) else None
+    dis_clean, dis_notes = sanitize_dismissals(raw_dis, armies)
+    from nta_agent.execution.profile import active_formation
+    group = {str(u) for u in (active_formation(profile).get("group") or ())}
+    dismissals = []
+    for d in dis_clean:
+        a = by_uid.get(d["uid"], {})
+        warn = []
+        if d["uid"] in group:
+            warn.append("đang trong nhóm farm")
+        if str(a.get("name", "")).startswith("Nâng Cấp"):
+            warn.append("đội đệm nâng lính")
+        if int(a.get("state", 0) or 0) != 0:
+            warn.append("đang bận — agent chờ rảnh mới giải tán")
+        comp = Counter(str(p.get("id")) for p in (a.get("pawns") or []))
+        dismissals.append({**d, "troops": _troops_label(dict(comp), names), "warn": warn,
+                           "pawn_name": names.get(str(d["pawn_id"])) if d["pawn_id"] else ""})
     strike, notices = ([], [])
     if raw_strike:
         strike, notices = sanitize_strike(raw_strike, unlocked, message, pawn_names)
+    notices = list(notices) + dis_notes
     if strike:
         # Names the player gave belong to the NEW group (renamed once it's assembled),
         # not to whichever existing armies the LLM guessed.
@@ -294,7 +328,8 @@ def handle_chat(cfg, message, *, history=None, propose=None):
             "strike": ({"targets": strike, "summary": strike_summary(strike)}
                        if strike else None),
             "notices": notices,
-            "renames": proposal, "needs_confirm": bool(proposal) or bool(strike),
+            "renames": proposal, "dismissals": dismissals,
+            "needs_confirm": bool(proposal) or bool(strike) or bool(dismissals),
             "question": question,
             "active": profile.army.get("active", ""),
             "presets": list(profile.army.get("presets") or {}),
@@ -1240,8 +1275,12 @@ class Handler(BaseHTTPRequestHandler):
                 body = json.loads(self.rfile.read(length) or b"{}")
                 renames = body.get("renames") or []
                 strike = body.get("strike_target") or []
+                dismissals = body.get("dismissals") or []
             except (ValueError, TypeError, AttributeError):
                 self._json(400, {"ok": False, "error": "bad json"})
+                return
+            if dismissals:
+                self._json(200, confirm_dismissals(cfg, dismissals))
                 return
             if strike:
                 self._json(200, confirm_strike(cfg, strike))

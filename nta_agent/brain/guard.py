@@ -249,6 +249,58 @@ def _order_grounded(order: str, evidence, ledger) -> bool:
     return not bests or 2 * sum(1 for b in bests if b == order) >= len(bests)
 
 
+def _is_hero(p: dict) -> bool:
+    return bool(p.get("hero")) or bool(p.get("avatarArmyUID"))
+
+
+def sanitize_dismissals(raw, armies) -> tuple[list, list]:
+    """Validate chat-proposed dismissals into ``(clean, notices)``.
+
+    ``raw``: ``[{uid, scope: "army"|"pawns", pawn_id?, count?}]``. The model cannot know
+    pawn uids, so the pawns are CHOSEN here, deterministically: the lowest-level ones
+    first (of ``pawn_id`` if given). Heroes are never dismissed; unknown armies are
+    dropped; a count above what exists is clamped. One entry per army (last wins). Each
+    result carries what the confirm UI and the queue need:
+    ``{uid, name, index, scope, count, pawn_id, pawn_uids}``."""
+    by_uid = {str(a.get("uid")): a for a in (armies or [])}
+    out: dict = {}
+    notes: list = []
+    for r in raw if isinstance(raw, list) else []:
+        if not isinstance(r, dict):
+            continue
+        uid = str(r.get("uid", ""))
+        army = by_uid.get(uid)
+        if army is None:
+            continue
+        allp = army.get("pawns") or []
+        pawns = [p for p in allp if not _is_hero(p)]
+        name = army.get("name") or uid
+        base = {"uid": uid, "name": name, "index": int(army.get("index", 0) or 0)}
+        if r.get("scope") in ("army", "all") or r.get("all") is True:
+            if len(pawns) != len(allp):
+                notes.append(f"{name} có tướng — không giải tán cả đội được, chỉ giải tán lính")
+                continue
+            if not pawns:
+                continue
+            out[uid] = {**base, "scope": "army", "count": len(pawns), "pawn_id": None,
+                        "pawn_uids": []}
+            continue
+        pid = r.get("pawn_id")
+        try:
+            pid = int(pid) if pid not in (None, "") else None
+            count = int(r.get("count") or 0)
+        except (TypeError, ValueError):
+            continue
+        pool = [p for p in pawns if pid is None or int(p.get("id", 0) or 0) == pid]
+        if count < 1 or not pool:
+            continue
+        pool.sort(key=lambda p: int(p.get("lv", 0) or 0))   # lowest level first
+        chosen = pool[:count]
+        out[uid] = {**base, "scope": "pawns", "count": len(chosen), "pawn_id": pid,
+                    "pawn_uids": [str(p.get("uid")) for p in chosen]}
+    return list(out.values()), notes
+
+
 def sanitize_lessons(edits, ledger, valid_army_uids, valid_build_ids=None) -> list:
     """Validate LLM-proposed lessons into dicts ready for LessonStore.upsert.
 
