@@ -196,3 +196,32 @@ def test_persisted_armies_keep_their_slots_and_gaps_fill_from_all_armies():
     r = plan_composition_step(TARGET, armies, CITY, strike_uids=["imp2"],
                               reserved_uids=set(), unlocked_ids={3206, 3305}, army_cap=9)
     assert {a["uid"] for a in r["assign"]} == {"tank", "imp1", "imp2"}
+
+
+# ---- 2026-10-01: a leftover pawn was DISMISSED although its own strike army needed it ----
+def _ar(uid, ids, index=100):
+    return {"uid": uid, "name": uid, "index": index, "state": 0,
+            "pawns": [{"uid": f"{uid}p{i}", "id": x, "lv": 1} for i, x in enumerate(ids)]}
+
+
+def test_purged_pawn_goes_to_the_short_strike_army_of_its_own_type():
+    # target: 1 army of 3201 + 2 of 3305. D2 just got its first 3305 and still holds a
+    # lone 3201 (294 cereal each); Đội 1 (3201) is short by 2 -> MOVE it there, don't dismiss
+    from nta_agent.execution.composition_plan import plan_composition_step
+    target = [{"pawn_id": 3201, "armies": 1, "size": 9}, {"pawn_id": 3305, "armies": 2, "size": 9}]
+    armies = [_ar("A", [3201] * 7), _ar("D2", [3201, 3305]), _ar("D3", [3201])]
+    plan = plan_composition_step(target, armies, 100, ["A", "D2", "D3"], set(), {3201, 3305},
+                                 army_cap=0, pawn_cap=9)
+    ops = [(a["op"], a.get("from") or a.get("army"), a.get("to")) for a in plan["actions"]
+           if a["op"] in ("move_pawn", "dismiss_pawn")]
+    assert ("move_pawn", "D2", "A") in ops
+    assert not any(op == "dismiss_pawn" for op, _, _ in ops)
+
+
+def test_leftover_is_dismissed_only_when_nobody_needs_it():
+    from nta_agent.execution.composition_plan import plan_composition_step
+    target = [{"pawn_id": 3201, "armies": 1, "size": 9}, {"pawn_id": 3305, "armies": 2, "size": 9}]
+    armies = [_ar("A", [3201] * 9), _ar("D2", [3201, 3305]), _ar("D3", [3201])]   # A is full
+    plan = plan_composition_step(target, armies, 100, ["A", "D2", "D3"], set(), {3201, 3305},
+                                 army_cap=0, pawn_cap=9)
+    assert any(a["op"] == "dismiss_pawn" and a["army"] == "D2" for a in plan["actions"])

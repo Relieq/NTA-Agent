@@ -132,6 +132,15 @@ def plan_composition_step(target, armies, city_index, strike_uids, reserved_uids
     #     with the highest-level pawns; DISMISS the rest lowest-level first (user: dismiss
     #     low-level lính). Never empty a strike army that has no target pawns yet.
     dismissals: list[tuple[int, dict]] = []
+    # room left in each strike army for ITS OWN type: a leftover pawn of that type goes
+    # there before it is dismissed (2026-10-01: a 294-cereal Đao Khiên was dismissed while
+    # its own strike army was 2 short)
+    need_room = {}
+    for b in assign:
+        if b["uid"]:
+            have_b = _count(by_uid[b["uid"]], b["pawn_id"])
+            need_room[b["uid"]] = min(b["size"] - have_b,
+                                      pawn_cap - len(by_uid[b["uid"]].get("pawns") or []))
     for a in assign:
         if not a["uid"]:
             continue
@@ -146,11 +155,18 @@ def plan_composition_step(target, armies, city_index, strike_uids, reserved_uids
         for p in non_target:
             if have == 0 and total <= 1:
                 break  # keep >=1 so an unfilled strike army's uid survives
-            dest = next((u for u, room in donor_room.items() if room > 0), None)
+            ptype = int(p.get("id", 0) or 0)
+            own = next((b["uid"] for b in assign
+                        if b["uid"] and b["uid"] != a["uid"] and b["pawn_id"] == ptype
+                        and need_room.get(b["uid"], 0) > 0), None)
+            dest = own or next((u for u, room in donor_room.items() if room > 0), None)
+            if own:
+                need_room[own] -= 1
             if dest:
                 actions.append({"op": "move_pawn", "from": a["uid"],
                                 "pawn": p.get("uid"), "to": dest})
-                donor_room[dest] -= 1
+                if dest in donor_room:
+                    donor_room[dest] -= 1
             else:
                 dismissals.append((int(p.get("lv", 0) or 0),
                                    {"op": "dismiss_pawn", "army": a["uid"], "pawn": p.get("uid")}))
