@@ -15,3 +15,13 @@ GAME_VERSION = "4.4.8"
 # handshake sends the scripts' version, not the app's: app 4.4.7 ships 4.4.8 scripts
 # (its hot-update manifest says 4.4.8) and the server refused 4.4.7 with ecode 500060.
 GAME_APK_VERSIONS = ("4.4.7",)
+
+
+def handshake_version() -> str:
+    """The version declared at login: the user's override (Settings ``game_version`` /
+    env ``NTA_GAME_VERSION``, for experiments) or :data:`GAME_VERSION`."""
+    try:
+        from nta_agent import settings
+        return str(settings.get("game_version") or "").strip() or GAME_VERSION
+    except Exception:
+        return GAME_VERSION

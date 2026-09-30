@@ -15,6 +15,8 @@ const FIELDS=[
   help:"Để trống. Chỉ cần nếu kho phát hành chuyển sang riêng tư (token chỉ-đọc)."},
  {key:"adb_path", label:"Đường dẫn adb.exe", placeholder:"tự dò (LDPlayer)"},
  {key:"adb_serial", label:"Thiết bị ADB", placeholder:"emulator-5554"},
+ {key:"game_version", label:"Phiên bản khai báo (thử nghiệm)", placeholder:"mặc định của app",
+  help:"Số phiên bản agent gửi khi đăng nhập. Chỉ đổi để thử khi game vừa cập nhật: máy chủ chỉ nhận một khoảng phiên bản (quá thấp = 500060, quá cao = 500122). Giao thức và dữ liệu của agent vẫn lấy từ bản game đã cài, nên khai lệch có thể đăng nhập được nhưng lệnh sau đó sai. Để trống = dùng số mặc định."},
 ];
 export default {
  setup(){

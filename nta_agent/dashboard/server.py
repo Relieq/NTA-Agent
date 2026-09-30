@@ -507,6 +507,9 @@ def update_settings(body: dict) -> dict:
     from nta_agent import settings
     if not isinstance(body, dict) or not body:
         return {"ok": False, "error": "không có gì để lưu"}
+    gv = str(body.get("game_version") or "").strip()
+    if gv and not re.fullmatch(r"\d+(\.\d+){1,3}", gv):
+        return {"ok": False, "error": "phiên bản khai báo phải dạng số, ví dụ 4.4.8"}
     serial = str(body.get("adb_serial") or "").strip()
     if serial.isdigit():  # issue #79: "5555" is not a serial adb knows
         return {"ok": False, "error": f"serial '{serial}' không hợp lệ — dùng emulator-5554 "
