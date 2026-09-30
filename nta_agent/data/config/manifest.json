@@ -1,5 +1,5 @@
 {
-  "game_version": "4.4.4",
+  "game_version": "4.4.7",
   "files": {
     "_map_scene_grid.json": {
       "sha256": "1144691f8e395cc2ad97a49fa59293c8b70f8dff2019ace66b085bb10ac44ea5",
@@ -38,15 +38,15 @@
       "rows": 4
     },
     "buffAttr.json": {
-      "sha256": "47e02da9fe725471cee9dfc2b24a8d957dc7343c8f462dd353d29077761ab3de",
-      "rows": 337
+      "sha256": "4766d012e7c9f04592d4bf47a1bdd00c2d9b25e5f14669b5ecd4ff96daeadae8",
+      "rows": 359
     },
     "buffBase.json": {
-      "sha256": "dd38ab127690bb8d5fc2b9818706214e9d80837416e38121154cf0e825a89e4b",
-      "rows": 167
+      "sha256": "8a023809c1a6339fb2d52f4c50c29605c2d94561c4d0ad821f63ec18a5975526",
+      "rows": 170
     },
     "buffText.json": {
-      "sha256": "a4d5282f7a889431ea8709f0a88c95ac16d23a09bc7d2c701baf1b6d4636cb04",
+      "sha256": "510a17f92e66e02b08bd2c60acfa4040c362111e64c7548b31dcd01d71a8169c",
       "rows": 214
     },
     "buildAttr.json": {
@@ -66,7 +66,7 @@
       "rows": 45
     },
     "buildText.json": {
-      "sha256": "44fae4cdf84d62efaccc858d710bb556d3bef5dca69f4c6723d90ea2f66a9fca",
+      "sha256": "2b8b51353ebb0ff319f9adb2c9fb8bc769ec3ab0ee409523430ce136d9f49ce0",
       "rows": 52
     },
     "ceri.json": {
@@ -74,8 +74,8 @@
       "rows": 99
     },
     "chatEmoji.json": {
-      "sha256": "78a90f74c932d04c5678af3b974ae0a4de3c3d5d8ce7988e45e6dd0cc56ab98f",
-      "rows": 113
+      "sha256": "7d35b449564967bba149d7a346286cfe897d0d6b33561bf89561113ed4a53754",
+      "rows": 117
     },
     "chatEmojiText.json": {
       "sha256": "35869404150d4461585f5491d20aff9884f3defc69adf4b904c480b65f67a9e2",
@@ -90,11 +90,11 @@
       "rows": 15
     },
     "citySkin.json": {
-      "sha256": "8bc55361c14d4cd030dcc39852cc2b04a53fdc9230f22d8eee21c8de153d7fc5",
-      "rows": 27
+      "sha256": "6614a7b58374c84f76b30a0f702619e731689c6f934528efe7ddc761184f1d5d",
+      "rows": 28
     },
     "cityText.json": {
-      "sha256": "c25d5b2fabb329cbfd56a2a0fa7561352ef2af6e9ad44215d6bef7a7d204e94e",
+      "sha256": "d5a71eb064f39f9e07a17b6ceb59c54af86b7801837ef593c819fadb604cb580",
       "rows": 14
     },
     "corsairArenaBase.json": {
@@ -122,11 +122,11 @@
       "rows": 150
     },
     "ecode.json": {
-      "sha256": "a7df79c77c4706a784da26f9cf46a4a9113c24bd1cced93e1c9d69f817e4832b",
+      "sha256": "f51659269e3622ae9e5353821ab4e30cf1daf4300c7369d3d60788209e70fd34",
       "rows": 234
     },
     "equipBase.json": {
-      "sha256": "23229ebceabe92918af312e83a00f3f9e3b9289fca6a1f574883d14be9ed8341",
+      "sha256": "f6a532ba888bb3115d18bd5061dc1849a2827a6aef36c2103848a98c4d00f449",
       "rows": 68
     },
     "equipEffect.json": {
@@ -134,7 +134,7 @@
       "rows": 51
     },
     "equipText.json": {
-      "sha256": "2f8db8587066b5a3e2a31b15658941368f0b662ee7dcabe6fe05fc8243e9599e",
+      "sha256": "752d8414ae6fd997900649e48d5e66b952806fc30907f7d773bb7471a0d36f86",
       "rows": 119
     },
     "evaluateGift.json": {
@@ -150,16 +150,16 @@
       "rows": 53
     },
     "guideText.json": {
-      "sha256": "418ee1bab6e4e606a19097cab20ac8a14fdbef41c6e9dfbb67fa4b0ff658cb9f",
+      "sha256": "65a1a8e2c0cbf1f24e066a89198a730b339d52e5e413d8c91cdfa7722f1dc60d",
       "rows": 123
     },
     "headFrame.json": {
-      "sha256": "2edeb74c3bb8034c573d738fa801b5f63e2d2e8520b10941d51d09cbb9d6ff04",
-      "rows": 4
+      "sha256": "279684fc4fb2986439ae36401ad72527d55b9e29a7324c7eb12ccd5efb07e00f",
+      "rows": 5
     },
     "headIcon.json": {
-      "sha256": "0af02af4837261dc15b79c355d9284d02e0fb33c645cb0853633e247f56c31f9",
-      "rows": 154
+      "sha256": "7f5680971eb3c69c6a34ad287d2806663518db542a534f366c0dec8197330f0c",
+      "rows": 160
     },
     "headIconText.json": {
       "sha256": "1f6f0d2965d11fa152a8867ba97f31abda9f70f30448863ef44e8eff6299ca22",
@@ -170,7 +170,7 @@
       "rows": 15
     },
     "img.json": {
-      "sha256": "d46390baf83a10fa7b0b0831552a9a8f95b672c1c207de2d8d5f82950f8732f4",
+      "sha256": "69cd2c43a3f8565d6831762685b9dc0ddcdd8385d9c0ef3029d96b9ac4664215",
       "rows": 8
     },
     "ingotGiftPack.json": {
@@ -198,15 +198,15 @@
       "rows": 67
     },
     "login.json": {
-      "sha256": "720f7cde133d86afd088583d8f5c7f76910231942d2dabfb2b85cf142f46779e",
-      "rows": 103
+      "sha256": "e731e2e7519aefa0505998e0a3fe69fea01032887966ab6c3e3014f8c465c83c",
+      "rows": 105
     },
     "luckyStarTask.json": {
       "sha256": "1912dc8856a578294f8c4f810af6838e6a6de9868b8d49aa1d6b230a57db78fe",
       "rows": 5
     },
     "mailText.json": {
-      "sha256": "b3756c3b63ccb04a6f7e4595d04ff92c5a9004b9fadd4ac4ab417fd6b7028756",
+      "sha256": "e72684f876040b95149a4be5f260ee3cc42d0143bd5fb874367b68b3fd58f329",
       "rows": 112
     },
     "maps_0.json": {
@@ -226,20 +226,20 @@
       "rows": 360000
     },
     "mythBlindBoxBase.json": {
-      "sha256": "99c7141131c2b051a3c43920c10ecfc87df31b00b2fd6a76ee2009621d3b4162",
-      "rows": 4
+      "sha256": "cb13d78c5860a7a2ad94aae8d7e65f13430e087198bb896035cf3103e62c7776",
+      "rows": 5
     },
     "mythBlindBoxExchange.json": {
-      "sha256": "427d3f92361f8a705f4832929b230010167b2d098295edfa5090859f592b68fb",
-      "rows": 68
+      "sha256": "99b249bcdacc307b41b4130148272ccf845548aea044d373ee22e567c13c48f3",
+      "rows": 90
     },
     "mythBlindBoxPool.json": {
       "sha256": "fd15403bc93223c15bb555de2a591baaae6ce16ce955cce44b1918589c18d406",
       "rows": 14
     },
     "mythBlindBoxReward.json": {
-      "sha256": "0dab6e058be4a0353be7714d2ac5a64bc8aee7e37858d0932a63fc80184a274c",
-      "rows": 84
+      "sha256": "f1548246c6b88a3eeb96f12b20afaa76a3deb4fe9ea4677987d2b1cf4aa7269b",
+      "rows": 103
     },
     "noviceGuideTask.json": {
       "sha256": "55938adac248c78b3eb7571198afd27b7c60cadbf6923de31712375d86d46ae3",
@@ -250,7 +250,7 @@
       "rows": 9
     },
     "npcText.json": {
-      "sha256": "1df6c7f81dea6f73c12c8ce62b879fbb45e54ab62c5b0dc4015a660d963069c8",
+      "sha256": "1d159e1cfcfd7befa6ae0dc2a426ab2d4f79e16c2731bcd8991e64723a458c0b",
       "rows": 9
     },
     "otherTask.json": {
@@ -258,7 +258,7 @@
       "rows": 7
     },
     "pawnAttr.json": {
-      "sha256": "6f155d8f3c15aec4b1666ea905d33bbb0231dd2c8c9c33d5f25d697cef123d23",
+      "sha256": "8e22daac1adf0c06fb52fc6f88eed5471c566c6e0a084b6d9a8d8c372447ffa0",
       "rows": 397
     },
     "pawnBase.json": {
@@ -270,19 +270,19 @@
       "rows": 212
     },
     "pawnSkillText.json": {
-      "sha256": "59b9fb73b5f9b88e6446c52d19d23fe4d0c98f56146d49935a2c10cca10ebb20",
+      "sha256": "3d9f3328ff596c22cca3ae4f0bb91f93d8125a41c44700a74a46490c78d4a646",
       "rows": 149
     },
     "pawnSkin.json": {
-      "sha256": "23395ae8a2e79e68632ad1e83e8d1dbf0b99d88bb2137a4f54607c90080fbcc1",
-      "rows": 371
+      "sha256": "e593ba79ba5cb8021ae5d9a47a2b56ed5cc91509a83d9b9392f1dcacaaa0858e",
+      "rows": 400
     },
     "pawnSkinText.json": {
-      "sha256": "4cfeb57a89cd7d1e032c57103b7750c2cd0a878f317713cc6f17dcaf4a8cf9fc",
-      "rows": 53
+      "sha256": "c5e9a17124dc93b5d60185b772fa8e0860e062d8f57e77e61df5c71d2b2418f1",
+      "rows": 56
     },
     "pawnText.json": {
-      "sha256": "2a72beb896a64d9386cffc0ecc66d53b651bd08472911f46000190d8db8fa845",
+      "sha256": "f404108b458d4bb8f961850e05d9ee8478a6c0eb14414f1a0f74f46dee85543f",
       "rows": 52
     },
     "policy.json": {
@@ -290,11 +290,11 @@
       "rows": 52
     },
     "policyText.json": {
-      "sha256": "e0c6349b51abd7f471dd2edb03d90eb293eb68a56a269e7e3a849fc80dd990cc",
+      "sha256": "38539e4dedc48fb442f6271ec428aee21b3b745a2b5519e662b8b5c11ffcaf87",
       "rows": 104
     },
     "portrayalBase.json": {
-      "sha256": "7e1cb1ec084046badf0180167a8a6a6cf815bc0f90ed678f79f51a8fc84af13a",
+      "sha256": "16530dc3490619deefd0e5bfac9ae716c7008a30c65099e344d3212dcf35107f",
       "rows": 59
     },
     "portrayalSkill.json": {
@@ -302,19 +302,19 @@
       "rows": 59
     },
     "portrayalSkillText.json": {
-      "sha256": "682b4fbd07f978e4e5021c8a8afe92dee833e2f2d14141dbf05a6c485de9e50c",
+      "sha256": "58c52b2bdf10291f4b624d12c9b57d74bd54531cb19efba3901f4cf9d0027b4f",
       "rows": 124
     },
     "portrayalText.json": {
-      "sha256": "90aae146ac4e336758e434b4ec183d328ce3647627a47be345ff77320223c4fc",
+      "sha256": "daa75ca4af8c7d34d8da6afa521dc4d2198f8cf83d55305f8d89f56f625902a0",
       "rows": 108
     },
     "recharge.json": {
-      "sha256": "0861e6766f204fae16aee7fa21eb5cb23f35fc81391a5d0318f8ee47d1a79ff5",
+      "sha256": "2c4ebfe3dfd49a2a5fd3b665829206f0ba4bbe99ebe43979ed640f267a33da9c",
       "rows": 28
     },
     "seasonReward.json": {
-      "sha256": "16840d18cb2baad3d2a7d74c7cfbc43ba80679f821c7399869052f8575fc680a",
+      "sha256": "a42f9a9ad92058ace795602192b815731b9e004f4966fef61f7176750b4f46a0",
       "rows": 24
     },
     "strategy.json": {
@@ -322,11 +322,11 @@
       "rows": 150
     },
     "strategyText.json": {
-      "sha256": "2323d63300293ca628759b4ec4a3d52450e05050028ee4c11379c67c0487823e",
+      "sha256": "74f41842c5a80514daaefa25f1e4f140f7bbf858b3a76cb2ca1b13f048d2ceea",
       "rows": 150
     },
     "sysMsgText.json": {
-      "sha256": "5d2d68a11c9e261747bd2a0f01fa712dc6000d49410a729585e85d795163ba32",
+      "sha256": "f8acf512a4cad59fadacb4c79c11824ac8fb1948c410ce2eb80163a118b3cb22",
       "rows": 17
     },
     "taskCondType.json": {
@@ -334,7 +334,7 @@
       "rows": 80
     },
     "taskText.json": {
-      "sha256": "c23e857f53d2764daa5a2f55fd1cd37333b8180f45942bd8c4931415f4c591e0",
+      "sha256": "f9e4e84f68aad9977c7fb284b3cd81ecf7183fd9136446ce80192e1c44a68d8c",
       "rows": 119
     },
     "title.json": {
@@ -342,12 +342,12 @@
       "rows": 67
     },
     "titleText.json": {
-      "sha256": "11f516555ad154898f0670a649188c4ff98578f09cc5e6e104dbaecfe5f8c688",
+      "sha256": "4449cfb78965d3ad484971318990d4b74f9d781be7debbe686ab9b65198b1e6b",
       "rows": 67
     },
     "toast.json": {
-      "sha256": "08eecbaa54b0d02269a2f9f578206850799c8d52d8ebd6bcf3bd0133da060023",
-      "rows": 217
+      "sha256": "7483f0dac2834e8a8478fa00e10d264e290f5f0565cbad0eddf7f8ff3060ff00",
+      "rows": 222
     },
     "todayTask.json": {
       "sha256": "e01aac963be0f8e585945a7799f4a0626d83c6db6d9539b92e8b7975f2d97f4e",
@@ -358,12 +358,12 @@
       "rows": 20
     },
     "ui.json": {
-      "sha256": "51a866f27334020063b1f92ab1a9df866748efade43ffae65192f794eec94b63",
-      "rows": 2423
+      "sha256": "3478b1e16955934fe1f4f4c163a6682712339167a0cce01d5e0ef2c68c6379a3",
+      "rows": 2441
     },
     "updateDescText.json": {
-      "sha256": "21f20562ee395621856d5933b774e2f107720b7bda14da75dc858d9ce4a16f47",
-      "rows": 1030
+      "sha256": "40bdfd3cd782583283bb02358632edd630a7a1534b2a492e54b9c0c3d44333b8",
+      "rows": 1034
     },
     "wheel.json": {
       "sha256": "d2140bf3f42dc4b6591021ddaa61aeb104dc57c384016a94909bb6278a07377c",
