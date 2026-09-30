@@ -24,6 +24,7 @@ KEYS = {  # setting -> env var that overrides it
     "xxtea_key": "NTA_XXTEA_KEY",
     "dashboard_port": "NTA_DASHBOARD_PORT",
     "update_token": "NTA_UPDATE_TOKEN",
+    "game_version": "NTA_GAME_VERSION",   # experiments: the version declared at login
 }
 SECRETS = {"openai_api_key", "xxtea_key", "update_token"}
 

@@ -22,7 +22,7 @@ from typing import Any
 from nta_agent.io.api.client import ApiError, GameClient, ServerConfig
 from nta_agent.state.schema import GameState
 from nta_agent.state.store import apply_user
-from nta_agent.version import GAME_VERSION
+from nta_agent.version import GAME_VERSION, handshake_version
 
 # The server rotates the single-use accountToken; reusing a spent one fails here.
 TOKEN_INVALID = "ecode.500002"
@@ -108,7 +108,7 @@ class GameSession:
         lang: str = "vi",
         os: str = "Android 9",
         platform: str = "google",
-        version: str = GAME_VERSION,
+        version: str | None = None,
         timeout: float = 15,
     ) -> dict:
         """lobby/HD_TryLogin; populates state.user and returns the raw reply.
@@ -119,6 +119,7 @@ class GameSession:
         agent never needs the app again after the first bootstrap.
         """
         self._distinct_id = distinct_id or self._distinct_id
+        version = version or handshake_version()
         self._login_opts = {"lang": lang, "os": os, "platform": platform, "version": version}
         try:
             return self._try_login(account_token, timeout=timeout)
@@ -173,7 +174,7 @@ class GameSession:
         sid: int | None = None,
         distinct_id: str = "",
         lang: str = "vi",
-        version: str = GAME_VERSION,
+        version: str | None = None,
     ) -> dict:
         """Enter the assigned match server and load state into self.state.
 
@@ -182,6 +183,7 @@ class GameSession:
         Returns the raw Entry reply.
         """
         distinct_id = distinct_id or self._distinct_id
+        version = version or handshake_version()
         is_reconnect = self._in_game and sid is not None
         room_type = 0
         if sid is None:
