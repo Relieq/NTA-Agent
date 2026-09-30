@@ -152,6 +152,10 @@ class DigService:
         return 0
 
     # ---- the tick --------------------------------------------------------------------
+    def reset_for_new_game(self) -> None:
+        """A new match: the old dig's cells/armies no longer exist."""
+        self.dig = {}
+
     def tick(self, state) -> None:
         try:
             for _ in range(5):  # a plan cut short by a newer op -> handle that op now

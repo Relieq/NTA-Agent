@@ -137,6 +137,20 @@ def reset_for_new_game(path, home_city: int) -> list[str]:
         if lg.get(k):
             cleared.append(f"logistics.{k}")
         lg[k] = empty
+    # config bound to the old match's progress (2026-09-30: a new match kept the old
+    # leveling groups, logistics, revive toggle and the brain's notes): back to defaults.
+    # The player's STRATEGY (build order, occupy policy, formation names, onetile) stays.
+    if a.get("composition"):
+        cleared.append("army.composition")
+    a["composition"] = {}
+    for section in ("leveling", "logistics", "revive"):
+        default = copy.deepcopy(DEFAULT_PROFILE[section])
+        if getattr(prof, section, None) != default:
+            cleared.append(section)
+        setattr(prof, section, default)
+    if prof.notes:
+        cleared.append("notes")
+    prof.notes = []
     a["home_city"] = int(home_city)
     save_profile(prof, path)
     return cleared
