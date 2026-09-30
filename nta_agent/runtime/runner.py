@@ -216,8 +216,8 @@ def run(cfg: RuntimeConfig, *, ticks: int = 0, session=None, engine=None) -> Non
                 rule.buffer_source = _buffers.buffer_uids
             if _spares is not None:  # spares being gathered/sorted aren't sent out
                 rule.spare_reserved_source = _spares.reserved_uids
-            if _composer is not None:  # skip armies the composer is arranging (it locks them)
-                rule.locked_source = lambda: getattr(_composer, "locked_uids", set())
+            if _composer is not None:  # skip armies the composer is WORKING on (free while it waits for cereal)
+                rule.locked_source = lambda: getattr(_composer, "busy_uids", set())
             if config is not None:  # pace discovery by the cheapest occupy cost
                 from nta_agent.execution.occupy_planner import min_occupy_stamina
                 rule.min_stamina = min_occupy_stamina(config)
@@ -268,7 +268,7 @@ def run(cfg: RuntimeConfig, *, ticks: int = 0, session=None, engine=None) -> Non
             rule.pending_forts_source = lambda: _fq.load(cfg.pending_forts_path)
             rule.on_event = log.append   # build_rejected (#82)
     for _r in _rules:
-        if getattr(_r, "name", "") == "recruit":   # the price of a pawn is per match
+        if getattr(_r, "name", "") in ("recruit", "army_composer"):   # pawn price is per match
             from nta_agent.runtime import world_random as _wr_cost
             _r.pawn_cost_source = lambda: _wr_cost.load_pawn_costs(cfg.world_random_path)
     _forge_rule = next((r for r in _rules if getattr(r, "name", "") == "forge"), None)

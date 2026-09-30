@@ -2618,6 +2618,11 @@ class ArmyComposer:
     _plan: object = None
     _blocked_notified: bool = False
     _cap_notified: bool = False
+    _wait_notified: bool = False
+    status_extra: dict = field(default_factory=dict)   # {"waiting": {...}} while short of cereal
+    wait_cooldown: int = 12          # ~1 min between affordability re-checks
+    config: object = None            # GameConfig (lazy) for table prices
+    pawn_cost_source: object = None  # callable -> {pawn_id: base cost} of THIS match
     rename_retry_ticks: int = 12      # after a failed rename (e.g. 500036 in battle)
     _rename_wait: dict = field(default_factory=dict)  # uid -> applies() calls to skip
 
@@ -2631,6 +2636,15 @@ class ArmyComposer:
         if self.profile is None:
             return None
         return list((getattr(self.profile, "army", None) or {}).get("strike_target") or [])
+
+    def _cfg(self):
+        if self.config is None:
+            try:
+                from nta_agent.data.config import GameConfig
+                self.config = GameConfig.load()
+            except Exception:
+                self.config = False
+        return self.config or None
 
     @staticmethod
     def _unlocked(state) -> set:
@@ -2736,9 +2750,63 @@ class ArmyComposer:
             self.locked_uids = set()
             self._strike_uids = []
             return False
+        wait = self._waiting_for_resources(state, plan)
+        self.status_extra = {"waiting": wait} if wait else {}
+        if wait:
+            # The next recruit is unaffordable: don't ask the server, and let OccupyCell
+            # farm with the armies meanwhile (loot is what funds the rest) — Recruit and
+            # the others still stand down (locked_uids) so the cereal is kept for this
+            # group. Re-check in ~1 min. (2026-10-01: an unaffordable target froze all.)
+            self._status({"active": True, "blocked": False, "done": False, "waiting": wait,
+                          "issues": issues + [wait["text"]], "strike": self._strike_uids})
+            if self.on_event and not self._wait_notified:
+                self.on_event("composition_waiting", wait)
+                self._wait_notified = True
+            self._cooldown = self.wait_cooldown
+            return False
+        self._wait_notified = False
         self._status({"active": True, "blocked": False, "done": False,
                       "issues": issues, "strike": self._strike_uids})
         return bool(plan["actions"])
+
+    @property
+    def busy_uids(self) -> set:
+        """Armies the composer is actively working on — OccupyCell skips these. While it
+        only WAITS for resources they are free to farm (locked_uids still holds them
+        back from Recruit and friends)."""
+        return set() if self.status_extra.get("waiting") else set(self.locked_uids)
+
+    def _waiting_for_resources(self, state, plan) -> dict | None:
+        """{pawn_id, need, have, eta_min, text} when the plan's next step is a recruit the
+        player can't pay for yet (price = this match's, else the config table)."""
+        acts = plan.get("actions") or []
+        if not acts or any(a.get("op") != "recruit" for a in acts):
+            return None    # some other op (rally/move/dismiss) can still progress
+        res = getattr(state, "resources", None)
+        pid = int(acts[0].get("pawn_id", 0) or 0)
+        if res is None or not pid:
+            return None
+        cfg = self._cfg()
+        try:
+            table = int(cfg.pawn_recruit_cost(pid).get("cereal", 0)) if cfg else 0
+        except Exception:
+            table = 0
+        from nta_agent.execution.pawn_cost import cereal_cost
+        costs = None
+        if self.pawn_cost_source is not None:
+            try:
+                costs = self.pawn_cost_source()
+            except Exception:
+                costs = None
+        need = cereal_cost(pid, table, costs)
+        have = int(getattr(res, "cereal", 0) or 0)
+        if not need or have >= need:
+            return None
+        prod = int((getattr(state, "production", None) or {}).get("cereal", 0) or 0)
+        eta = round((need - have) / prod * 60) if prod > 0 else None
+        text = (f"chờ lương để chiêu mộ: cần {need}, đang có {have}"
+                + (f" (~{eta} phút)" if eta is not None else ""))
+        return {"pawn_id": pid, "need": need, "have": have, "eta_min": eta, "text": text}
 
     @staticmethod
     def _cap_message(state, cap: int) -> str:

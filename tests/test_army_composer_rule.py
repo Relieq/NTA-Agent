@@ -386,3 +386,49 @@ def test_recruit_army_full_is_reported_and_backs_off():
     assert r.applies(_state((3202,)), acts) is True
     r.act(acts)
     assert r._cooldown > 0 and any(k == "composition_error" for k, _ in events)
+
+
+# ---- 2026-10-01: a strike target nobody can afford froze the whole agent --------------
+def _poor_state(cereal, production=114):
+    from types import SimpleNamespace as NS
+    st = _state((3201,))
+    st.resources = NS(cereal=cereal, timber=900, stone=900, iron=0, gold=0)
+    st.production = {"cereal": production}
+    return st
+
+
+class _PriceCfg:
+    def pawn_recruit_cost(self, pawn_id):
+        return {"cereal": 216}
+
+
+def _composer(events):
+    target = [{"pawn_id": 3201, "armies": 1, "size": 9}]
+    r = ArmyComposer(profile=_profile(target), config=_PriceCfg(),
+                     pawn_cost_source=lambda: {3201: 294},
+                     on_event=lambda k, d: events.append((k, d)))
+    r._strike_uids = ["A"]
+    return r
+
+
+def test_unaffordable_recruit_releases_the_armies_but_keeps_recruit_standing_down():
+    events = []
+    r = _composer(events)
+    acts = FakeActions([_army("A", [3201] * 7)])
+    # price this match 294 > cereal 275: nothing to recruit now, don't ask the server
+    assert r.applies(_poor_state(275), acts) is False
+    assert acts.calls == []
+    assert r.locked_uids == {"A"}            # Recruit & co. still leave its cereal alone
+    assert r.busy_uids == set()              # ...but OccupyCell may farm with the army meanwhile
+    kinds = [k for k, _ in events]
+    assert "composition_waiting" in kinds
+    assert r.status_extra["waiting"]["need"] == 294 and r.status_extra["waiting"]["have"] == 275
+
+
+def test_affordable_recruit_locks_the_armies_again():
+    r = _composer([])
+    acts = FakeActions([_army("A", [3201] * 7)])
+    assert r.applies(_poor_state(275), acts) is False and r.busy_uids == set()
+    r._cooldown = 0
+    assert r.applies(_poor_state(400), acts) is True        # now 400 >= 294
+    assert r.busy_uids == {"A"} == r.locked_uids
