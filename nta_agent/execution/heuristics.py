@@ -1169,6 +1169,7 @@ class Recruit:
     config: object = None
     profile: object = None    # Profile: fill armies toward army.composition
     locked_source: object = None  # callable -> army-uid set the ArmyComposer owns (skip them)
+    pawn_cost_source: object = None  # callable -> {pawn_id: base cost} of THIS match
     _pending: object = None   # (build_uid, pawn_id, army_uid, army_name, pawn_count)
     _cooldown: int = 0
     # Armies the server rejected as full (ecode.500019), by uid -> pawn count when
@@ -1207,7 +1208,13 @@ class Recruit:
         cfg = self._cfg()
         if not cfg:
             return True  # can't check -> let the server decide
-        cost = cfg.pawn_recruit_cost(pawn_id)
+        cost = dict(cfg.pawn_recruit_cost(pawn_id))
+        if "cereal" in cost and self.pawn_cost_source is not None:
+            from nta_agent.execution.pawn_cost import cereal_cost
+            try:   # this match's price (server pawnCostMap), not the config table's
+                cost["cereal"] = cereal_cost(pawn_id, cost["cereal"], self.pawn_cost_source())
+            except Exception:
+                pass
         r = state.resources
         have = {"cereal": r.cereal, "timber": r.timber, "stone": r.stone, "iron": r.iron}
         return all(have.get(k, 0) >= v for k, v in cost.items())
