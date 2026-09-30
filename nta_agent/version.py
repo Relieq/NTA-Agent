@@ -9,4 +9,4 @@ from __future__ import annotations
 
 # The game client version reported in the login handshake, and pinned by the
 # config manifest. Keep in sync with the extracted config tables.
-GAME_VERSION = "4.4.4"
+GAME_VERSION = "4.4.7"
