@@ -44,6 +44,6 @@ def test_reset_for_new_game_clears_stale_uids_keeps_settings(tmp_path):
     assert a["active"] == "Default Formation"
     assert a["home_city"] == 71372
     assert prof.logistics["redeploy"] == {} and prof.logistics["exclude"] == []
-    assert prof.logistics["enabled"] is True                  # settings kept
+    assert prof.logistics["enabled"] is False                 # match-bound config: defaults (2026-09-30)
     assert prof.occupy["expansion"] == "spiral" and prof.build["skip"] == [2000]
     assert "strike_target" in cleared and "group" in cleared
