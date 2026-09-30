@@ -182,6 +182,16 @@ def _army_pawn_cap(state) -> int:
     from nta_agent.execution import caps as _caps
     return _caps.army_pawn_cap(state)
 
+
+_BUILD_RESOURCES = {"timber", "stone", "cereal"}   # what constructions spend
+
+
+def _holds_builds(missing) -> bool:
+    """A waiting craft makes construction yield only if it is short of resources builds
+    spend AND of nothing else (iron/gold short -> it can't happen soon either way)."""
+    keys = set(missing or {})
+    return bool(keys) and keys <= _BUILD_RESOURCES
+
 @dataclass
 class BuildOrder:
     """Upgrade buildings along a priority order, respecting prereqs and cost.
@@ -234,10 +244,12 @@ class BuildOrder:
                 pass
         # An unlocked equip waiting to be CRAFTED for want of timber/stone/cereal has
         # priority too: builds spent those first and the craft never happened (live
-        # 2026-09-27). Crafts are cheap (~300 each), so this is a short yield.
+        # 2026-09-27). Crafts are cheap (~300 each), so this is a short yield — and ONLY
+        # when those are the craft's sole shortfall: if iron (or gold) is short as well,
+        # waiting would stall construction for nothing (user 2026-10-01).
         if self.craft_pending_source is not None:
             try:
-                if any(set(w.get("missing") or {}) & {"timber", "stone", "cereal"}
+                if any(_holds_builds(w.get("missing"))
                        for w in (self.craft_pending_source() or [])):
                     return False
             except Exception:
@@ -2480,10 +2492,10 @@ class Forge:
                 if self.on_event:
                     self.on_event("forge", {"uid": c["uid"], "id": c["id"], "cost": c["cost"]})
                 return True
-            waiting.append({"uid": c["uid"], "id": c["id"],
-                            "missing": {k: int(v) - int(res.get(k, 0) or 0)
-                                        for k, v in c["cost"].items()
-                                        if int(v) > int(res.get(k, 0) or 0)}})
+            missing = {k: int(v) - int(res.get(k, 0) or 0)
+                       for k, v in c["cost"].items() if int(v) > int(res.get(k, 0) or 0)}
+            waiting.append({"uid": c["uid"], "id": c["id"], "missing": missing,
+                            "yield_builds": _holds_builds(missing)})
         self.craft_waiting = waiting
         # 2) recast user-targeted equips toward their effect-quality threshold
         if self.targets_source is None:

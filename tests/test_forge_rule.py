@@ -200,7 +200,8 @@ def test_a_craft_short_of_timber_is_reported_as_waiting():
     rule = Forge(config=FakeConfig(BASE2), profile=SimpleNamespace(forge={"enabled": True}))
     assert rule.applies(st, FakeActions()) is False
     assert rule.craft_waiting == [{"uid": "6005_1", "id": 6005,
-                                   "missing": {"timber": 247, "stone": 181}}]
+                                   "missing": {"timber": 247, "stone": 181},
+                                   "yield_builds": True}]
     st.resources.timber = st.resources.stone = 400
     assert rule.applies(st, FakeActions()) is True and rule.craft_waiting == []
 
@@ -217,3 +218,35 @@ def test_build_order_yields_to_a_craft_waiting_for_build_resources():
     assert rule.applies(st, Acts()) is False
     waiting[:] = [{"uid": "6005_1", "id": 6005, "missing": {"iron": 1}}]   # iron: no clash
     assert rule.applies(st, Acts()) is True
+
+
+# ---- 2026-10-01: builds may only wait for a craft that iron is NOT holding up -----------
+def test_craft_short_of_iron_does_not_hold_builds_back():
+    # timber/stone short AND iron short: the craft can't happen even after the builds
+    # stop spending timber/stone -> waiting would stall construction for nothing
+    from nta_agent.data.config import GameConfig
+    from nta_agent.execution.heuristics import BuildOrder
+    from nta_agent.state.schema import Building
+    from tests.test_build_order import Acts
+    from tests.test_build_order import _state as bstate
+    st = bstate([Building(id=2001, lv=10, uid="m", index=109726)])
+
+    def rule(missing):
+        w = [{"uid": "6005_1", "id": 6005, "missing": missing}]
+        return BuildOrder(sequence=[2016], config=GameConfig.load(), craft_pending_source=lambda: w)
+    assert rule({"iron": 2}).applies(st, Acts()) is True                    # only iron: don't wait
+    assert rule({"timber": 200, "iron": 2}).applies(st, Acts()) is True     # iron short too: don't wait
+    assert rule({"timber": 200, "stone": 90}).applies(st, Acts()) is False  # iron OK: builds yield
+    assert rule({"cereal": 50}).applies(st, Acts()) is False
+
+
+def test_craft_waiting_flags_when_builds_should_yield():
+    st = _state({"1": {"id": 6005, "lv": 1}}, iron=0)
+    st.resources.timber, st.resources.stone = 110, 176
+    rule = Forge(config=FakeConfig(BASE2), profile=SimpleNamespace(forge={"enabled": True}))
+    assert rule.applies(st, FakeActions()) is False
+    assert rule.craft_waiting[0]["yield_builds"] is False                  # iron short too
+    st.resources.iron = 10
+    rule2 = Forge(config=FakeConfig(BASE2), profile=SimpleNamespace(forge={"enabled": True}))
+    rule2.applies(st, FakeActions())
+    assert rule2.craft_waiting[0]["yield_builds"] is True                  # only timber/stone short
