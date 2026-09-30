@@ -1,9 +1,11 @@
 import { getJSON, postJSON, usePolling } from "../api.js";
+import Collapsible from "./Collapsible.js";
 const { ref, onMounted } = window.Vue;
 
 // Đội farm = profile.army.group: nhóm đội agent coi là "đội farm cố định". Nâng-lính
 // rút lính dưới cấp TỪ nhóm này; occupy ưu tiên nhóm này. Không chọn -> nâng-lính đứng im.
 export default {
+ components:{ Collapsible },
  setup(){
   const armies = ref([]); const group = ref([]); const saved = ref("");
 
@@ -28,11 +30,14 @@ export default {
    if (r && r.applied && r.applied.army && Array.isArray(r.applied.army.group))
      group.value = r.applied.army.group.map(String);
   }
-  return { armies, group, saved, inGroup, toggle, save };
+  const names = ()=> armies.value.filter(a=>inGroup(a.uid)).map(a=>a.name||a.uid).join(", ");
+  return { armies, group, saved, inGroup, toggle, save, names };
  },
  template:`<div class="card"><h2>Đội farm (nhóm nâng cấp / farm)</h2>
   <div class="kv" style="color:#8b949e;margin-bottom:8px">Chọn các đội là <b>đội farm</b>. Nâng-lính rút
    lính dưới cấp từ nhóm này để nâng; nếu không chọn đội nào, nâng-lính sẽ <b>không chạy</b>. (Tối đa 5 đội/ô.)</div>
+  <Collapsible id="farm-group" title="Chọn đội farm"
+   :summary="group.length ? group.length+' đội: '+names() : 'chưa chọn đội nào'">
   <div v-for="a in armies" :key="a.uid" style="display:flex;align-items:center;gap:8px;margin:3px 0">
    <label class="kv" style="display:flex;align-items:center;gap:6px;cursor:pointer">
     <input type="checkbox" :checked="inGroup(a.uid)" @change="toggle(a.uid)"/>
@@ -44,5 +49,5 @@ export default {
   <div style="margin-top:8px">
    <button @click="save">Lưu đội farm ({{ group.length }})</button>
    <span class="kv" style="margin-left:10px;color:#199e70">{{ saved }}</span>
-  </div></div>`
+  </div></Collapsible></div>`
 };

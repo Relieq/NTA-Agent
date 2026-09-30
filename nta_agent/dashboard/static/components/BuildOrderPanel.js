@@ -1,6 +1,8 @@
 import { getJSON, postJSON } from "../api.js";
+import Collapsible from "./Collapsible.js";
 const { ref, onMounted } = window.Vue;
 export default {
+ components:{ Collapsible },
  setup(){
   const rows=ref([]);   // [{id, name, skip}]
   const names=ref({}); const msg=ref(""); const dragId=ref(null);
@@ -47,6 +49,8 @@ export default {
    <b style="color:#d29922">Game từ chối xây gần đây</b> <span class="muted">(agent tự đồng bộ lại công trình từ game)</span>
    <div v-for="(r,i) in rej" :key="i">{{ ago(r.ts) }} trước · {{ r.kind==="construct" ? "xây" : "nâng" }} <b>{{ r.name }}</b>
     — ecode {{ r.ecode }}<span v-if="r.reason">: {{ r.reason }}</span></div></div>
+  <Collapsible id="build-order" title="Thứ tự xây"
+   :summary="rows.filter(r=>!r.skip).slice(0,5).map(r=>r.name).join(' › ')+' · '+rows.filter(r=>r.skip).length+' mục bỏ qua'">
   <ul class="bolist">
    <li v-for="r in rows" :key="r.id" draggable="true" :class="{drag:dragId===r.id, skip:r.skip}"
     @dragstart="onDragStart(r.id)" @dragover="onDragOver(r.id,$event)" @dragend="onDragEnd">
@@ -57,5 +61,5 @@ export default {
     <label><input type="checkbox" v-model="r.skip"> bỏ qua</label>
    </li></ul>
   <button style="margin-top:6px" @click="save">Lưu thứ tự xây</button>
-  <span class="muted">{{ msg }}</span></div>`
+  <span class="muted">{{ msg }}</span></Collapsible></div>`
 };

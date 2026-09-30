@@ -1,4 +1,5 @@
 import { getJSON, postJSON, usePolling } from "../api.js";
+import Collapsible from "./Collapsible.js";
 const { ref, computed, onMounted } = window.Vue;
 
 // Nâng cấp lính theo NHÓM đội: chế độ "Nâng trực tiếp" (nâng ngay trong đội ở thành)
@@ -8,6 +9,7 @@ const PHASE = { leveling: "đang nâng ở thành", travel: "đang tới ô kề
                 home: "đang về thành" };
 
 export default {
+ components:{ Collapsible },
  setup(){
   const cfg = ref({ enabled:false, target_lv:0, max_leveling:1 });
   const armies = ref([]);
@@ -63,10 +65,11 @@ export default {
   <label class="kv" style="display:block;margin:6px 0">
    <input type="checkbox" v-model="cfg.enabled"/> Bật tự động nâng cấp</label>
 
-  <div class="kv" style="margin:6px 0"><b>Nhóm đội muốn nâng</b></div>
+  <Collapsible id="level-pick" title="Nhóm đội muốn nâng"
+   :summary="(armies.filter(a=>pick[a.uid]).length ? armies.filter(a=>pick[a.uid]).map(a=>a.name).join(', ') : 'chưa chọn đội nào')">
   <div style="display:flex;flex-wrap:wrap;gap:8px;font-size:12px">
    <label v-for="a in armies" :key="a.uid"><input type="checkbox" v-model="pick[a.uid]"/>
-    {{ a.name }} <span class="muted">({{ (a.pawns||[]).length }} lính)</span></label></div>
+    {{ a.name }} <span class="muted">({{ (a.pawns||[]).length }} lính)</span></label></div></Collapsible>
 
   <div class="kv" style="margin:8px 0">Chế độ:
    <label><input type="radio" value="direct" v-model="mode"/> Nâng trực tiếp</label>

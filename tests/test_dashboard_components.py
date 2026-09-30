@@ -226,3 +226,19 @@ def test_chat_panel_confirms_dismissals_before_sending_them():
     cp = _c("BrainChatPanel.js")
     assert "dismissals" in cp and "Xác nhận giải tán" in cp and "window.confirm" in cp
     assert "không hoàn tác" in cp.lower()
+
+
+def test_selection_lists_are_collapsible_by_default():
+    col = _c("Collapsible.js")
+    assert "default: false" in col and "localStorage" in col and "nta.open" in col
+    for panel, anchor in (("EquipmentPanel.js", "equip-"), ("FarmGroupPanel.js", "farm-group"),
+                          ("LevelingConfigPanel.js", "level-pick"), ("DecisionsPanel.js", "decision-"),
+                          ("BuildOrderPanel.js", "build-order"), ("SmeltPanel.js", "smelt-")):
+        src = _c(panel)
+        assert 'import Collapsible from "./Collapsible.js"' in src, panel
+        assert "<Collapsible" in src and anchor in src, panel
+
+
+def test_craft_waiting_panel_says_whether_builds_yield():
+    fp = _c("ForgePanel.js")
+    assert "yield_builds" in fp and "xây dựng vẫn chạy" in fp

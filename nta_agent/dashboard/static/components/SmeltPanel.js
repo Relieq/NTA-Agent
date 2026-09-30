@@ -1,9 +1,11 @@
 import { getJSON, postJSON, usePolling } from "../api.js";
+import Collapsible from "./Collapsible.js";
 const { ref } = window.Vue;
 // Dung luyện (smelting) — the PLAYER decides: pick an exclusive equip (main) and the
 // common equips to smelt into it (1 per open slot), look at the preview, confirm.
 // The agent only sends that confirmed command; it never smelts/restores by itself.
 export default {
+ components:{ Collapsible },
  setup(){
   const v=ref({mains:[],slots:0,need_lv:[14,20],smithy_lv:0,fixator:0,smelting:null,forging:null});
   const pick=ref({});      // main uid -> [vice id | "" per slot]
@@ -46,10 +48,9 @@ export default {
    Máy cố định: <b>{{ v.fixator }}</b>
    <span v-if="busy()" style="color:#d29922"> · ⏳ {{ busy() }}</span></div>
   <span v-if="!v.mains.length" class="muted">Chưa có trang bị chuyên dụng nào.</span>
-  <div v-for="m in v.mains" :key="m.uid" style="border-top:1px solid var(--border, #30363d);padding:6px 0">
-   <div style="display:flex;gap:10px;align-items:baseline;flex-wrap:wrap">
-    <b>{{ m.name }}</b>
-    <span style="font-size:11px;padding:0 6px;border-radius:8px;border:1px solid #a371f7;color:#a371f7">chuyên dụng · {{ m.pawn_name }}</span></div>
+  <Collapsible v-for="m in v.mains" :key="m.uid" :id="'smelt-'+m.uid" :title="m.name"
+   :badge="'chuyên dụng · '+m.pawn_name"
+   :summary="m.effects.length+' hiệu ứng'+(m.smelted_from.length ? ' · đã dung luyện '+m.smelted_from.length+' món' : '')">
    <div style="font-size:12px;margin-top:2px">
     <div v-for="(e,i) in m.effects" :key="i">• {{ e.text }}
      <span v-if="e.smelted" class="muted">(dung luyện từ {{ candName(m,e.from) }}<span v-if="m.pool.includes(e.type)"> · trong danh sách → +1 máy cố định/lần rèn</span>)</span></div></div>
@@ -76,6 +77,6 @@ export default {
      <button @click="confirmSmelt(m)" :disabled="!!busy() || prev[m.uid].unchanged">Xác nhận dung luyện</button>
      <button @click="clearPrev(m)">Huỷ</button></div></div>
    <div v-if="msg[m.uid]" style="font-size:12px;margin-top:4px" :style="{color: msg[m.uid].ok ? '#199e70' : '#da3633'}">{{ msg[m.uid].t }}</div>
-  </div>
+  </Collapsible>
  </div>`
 };
