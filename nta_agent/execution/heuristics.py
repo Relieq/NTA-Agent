@@ -2780,10 +2780,17 @@ class ArmyComposer:
         """{pawn_id, need, have, eta_min, text} when the plan's next step is a recruit the
         player can't pay for yet (price = this match's, else the config table)."""
         acts = plan.get("actions") or []
-        if not acts or any(a.get("op") != "recruit" for a in acts):
-            return None    # some other op (rally/move/dismiss) can still progress
+        ops = {a.get("op") for a in acts}
+        if not acts or not ops <= {"recruit", "rally"}:
+            return None    # moving/dismissing pawns costs no cereal: it can still progress
         res = getattr(state, "resources", None)
-        pid = int(acts[0].get("pawn_id", 0) or 0)
+        rec = next((a for a in acts if a.get("op") == "recruit"), None)
+        if rec is not None:
+            pid = int(rec.get("pawn_id", 0) or 0)
+        else:   # rally only: the recruit comes after it — find the type still short
+            short = [t for t in (getattr(plan.get("report"), "targets", None) or [])
+                     if getattr(t, "deficit", 0) > 0 and getattr(t, "unlocked", False)]
+            pid = int(getattr(short[0], "pawn_id", 0) or 0) if short else 0
         if res is None or not pid:
             return None
         cfg = self._cfg()
