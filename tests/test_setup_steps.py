@@ -169,3 +169,12 @@ def test_settings_refuses_a_bare_port_as_serial():
     from nta_agent.dashboard.server import update_settings
     r = update_settings({"adb_serial": "5555"})
     assert r["ok"] is False and "127.0.0.1:5555" in r["error"]
+
+
+def test_game_step_accepts_the_apk_version_that_bundles_our_handshake_version():
+    # 2026-09-30: the Android app is 4.4.7 but its bundled game scripts (what the client
+    # sends to the server) are 4.4.8 — the server accepts only the latter
+    from nta_agent.version import GAME_APK_VERSIONS
+    assert GAME_APK_VERSIONS, "list the app versions that bundle GAME_VERSION"
+    r = steps.run_step("game", dm_factory=lambda: FakeDM(version=GAME_APK_VERSIONS[0]))
+    assert r["ok"] is True
