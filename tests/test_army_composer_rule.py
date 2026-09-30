@@ -432,3 +432,27 @@ def test_affordable_recruit_locks_the_armies_again():
     r._cooldown = 0
     assert r.applies(_poor_state(400), acts) is True        # now 400 >= 294
     assert r.busy_uids == {"A"} == r.locked_uids
+
+
+def test_no_rally_while_waiting_for_cereal_farming_armies_stay_out():
+    # live 2026-10-01: Đội 1 went out to occupy; the composer (plan = rally only, the
+    # recruit step comes after it) called it home each time it was idle -> ping-pong
+    r = _composer([])
+    away = _army("A", [3201] * 7, index=555)             # out on the map, idle after a win
+    acts = FakeActions([away])
+    assert r.applies(_poor_state(12), acts) is False
+    assert acts.calls == [] and r.busy_uids == set()     # no rally, armies stay free
+    r._cooldown = 0
+    assert r.applies(_poor_state(400), acts) is True     # affordable -> it calls them home
+    r.act(acts)
+    assert acts.calls and acts.calls[0][0] == "rally"
+
+
+def test_free_progress_still_happens_while_broke():
+    # pulling existing pawns costs no cereal: only rally/recruit-only plans wait
+    r = _composer([])
+    donors = _army("D", [3201, 3201, 3201])
+    short = _army("A", [3201] * 2)
+    acts = FakeActions([short, donors])
+    r.applies(_poor_state(12), acts)
+    assert r.status_extra.get("waiting") is None          # a move_pawn op exists
