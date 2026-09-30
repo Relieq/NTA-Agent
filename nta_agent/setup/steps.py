@@ -13,7 +13,7 @@ import time
 from pathlib import Path
 
 from nta_agent import gamedata, paths, settings
-from nta_agent.version import GAME_VERSION
+from nta_agent.version import GAME_APK_VERSIONS, GAME_VERSION
 
 PACKAGE = "twgame.global.acers"
 _PREFS = f"/data/data/{PACKAGE}/shared_prefs/com.thinkingdata.analyse.xml"
@@ -115,7 +115,7 @@ def _game(get_dm) -> dict:
     ver = _installed_version(get_dm())
     if ver is None:
         return {"ok": False, "detail": "chưa cài game trong giả lập"}
-    ok = ver == GAME_VERSION
+    ok = ver == GAME_VERSION or ver in GAME_APK_VERSIONS
     return {"ok": ok, "detail": f"game {ver} (app hỗ trợ {GAME_VERSION})"}
 
 
