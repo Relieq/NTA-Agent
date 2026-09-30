@@ -220,3 +220,9 @@ def test_territory_map_shows_resource_buildings_not_as_forts():
 def test_control_bar_has_quit_and_restart():
     cb = _c("ControlBar.js")
     assert "/api/app/" in cb and "'restart'" in cb and "'quit'" in cb and "window.confirm" in cb
+
+
+def test_chat_panel_confirms_dismissals_before_sending_them():
+    cp = _c("BrainChatPanel.js")
+    assert "dismissals" in cp and "Xác nhận giải tán" in cp and "window.confirm" in cp
+    assert "không hoàn tác" in cp.lower()

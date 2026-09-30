@@ -43,6 +43,8 @@ class DecisionService:
         from nta_agent.runtime.rename_queue import RenameQueue
         self.renames = RenameQueue(getattr(cfg, "pending_renames_path", None)
                                    or Path(cfg.commands_path).with_name("pending_renames.json"))
+        from nta_agent.runtime.dismiss_queue import DismissQueue
+        self.dismissals = DismissQueue(Path(cfg.commands_path).with_name("pending_dismissals.json"))
         # {pawn_id: equip_uid} the player chose on the dashboard: kept so armies that
         # were marching (the game only equips idle armies) get it once they are idle
         self._equip_sync_path = Path(cfg.commands_path).with_name("equip_sync.json")
@@ -148,6 +150,11 @@ class DecisionService:
         if action == "restore_smelt":
             self.actions.restore_smelt_equip(str(cmd["main_uid"]))
             return
+        if action == "dismiss":
+            # the player CONFIRMED this on the dashboard; the queue waits for an idle army
+            self.dismissals.add(str(cmd["uid"]), str(cmd.get("scope", "army")),
+                                cmd.get("pawn_uids") or [])
+            return
         if action == "rename_army":
             # Chat/dashboard rename: queued until the army is idle, then sent with its
             # current index (a one-shot send failed on busy/marching armies).
@@ -196,6 +203,10 @@ class DecisionService:
                 sys.stderr.write(f"[decision] {cmd.get('action')} failed: {e}\n")
             finally:
                 mark_done(self.cfg.commands_done_path, cmd["id"])
+        try:
+            self.dismissals.process(self.actions, self._on_event)
+        except Exception as e:  # a network hiccup must not kill the loop
+            sys.stderr.write(f"[dismissals] process failed: {e}\n")
         try:
             self.renames.process(self.actions, self._on_event)
         except Exception as e:  # a network hiccup must not kill the loop

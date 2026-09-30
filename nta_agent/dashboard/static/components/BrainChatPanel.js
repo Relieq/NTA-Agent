@@ -5,10 +5,11 @@ export default {
   const tactics=ref(null), log=ref([]), input=ref(""), busy=ref(false);
   const pending=ref(null);   // proposed renames awaiting the player's confirmation
   const strike=ref(null);    // proposed strike group awaiting confirmation
+  const dismiss=ref(null);   // proposed dismissals awaiting confirmation (irreversible)
   function say(who,text){ log.value=[...log.value,{who,text}]; }
   async function send(){
    const msg=input.value.trim(); if(!msg) return;
-   input.value=""; say("Bạn",msg); busy.value=true; pending.value=null; strike.value=null;
+   input.value=""; say("Bạn",msg); busy.value=true; pending.value=null; strike.value=null; dismiss.value=null;
    const o=await postJSON("/api/chat",{message:msg});
    if(!o){ say("Brain","⚠️ lỗi mạng"); }
    else if(!o.ok){ say("Brain","⚠️ "+(o.error||"lỗi")); }
@@ -18,6 +19,10 @@ export default {
     if(o.strike && (o.strike.targets||[]).length){
      strike.value=o.strike;                         // chờ Xác nhận
      say("Brain","Đề xuất tạo nhóm quân (xác nhận để thực hiện): "+o.strike.summary);
+    }
+    if((o.dismissals||[]).length){
+     dismiss.value=o.dismissals;                    // chờ Xác nhận (không hoàn tác được)
+     say("Brain","Đề xuất giải tán (KHÔNG hoàn tác được — xác nhận để thực hiện):");
     }
     if(o.needs_confirm && (o.renames||[]).length){
      pending.value=o.renames;                       // chờ Xác nhận
@@ -43,8 +48,19 @@ export default {
                          : ("⚠️ "+((o&&o.error)||"lỗi")));
    strike.value=null; busy.value=false;
   }
+  async function confirmDismiss(){
+   const n=dismiss.value.reduce((s,d)=>s+d.count,0);
+   if(!window.confirm("Giải tán "+n+" lính ở "+dismiss.value.length+" đội? Không hoàn tác được.")) return;
+   busy.value=true;
+   const o=await postJSON("/api/chat/confirm",{dismissals:dismiss.value.map(d=>({uid:d.uid,scope:d.scope,pawn_id:d.pawn_id,count:d.count}))});
+   say("Brain", (o&&o.ok)? ("✔ Đã xếp lệnh giải tán "+(o.queued||[]).length+" đội — agent thực hiện khi đội rảnh (đội đang đánh/hành quân sẽ chờ).")
+                         : ("⚠️ "+((o&&o.error)||"lỗi")));
+   dismiss.value=null; busy.value=false;
+  }
+  function cancelDismiss(){ dismiss.value=null; say("Brain","Đã huỷ giải tán."); }
   function cancelStrike(){ strike.value=null; say("Brain","Đã huỷ tạo nhóm quân."); }
-  return { tactics, log, input, busy, send, pending, confirm, cancel, strike, confirmStrike, cancelStrike };
+  return { tactics, log, input, busy, send, pending, confirm, cancel, strike, confirmStrike, cancelStrike,
+           dismiss, confirmDismiss, cancelDismiss };
  },
  template:`<div class="card full"><h2>Chiến thuật (brain)</h2>
   <div v-if="tactics" class="muted">Đội hình đang dùng: <b>{{ tactics.active||"(mặc định)" }}</b> · Presets: {{ (tactics.presets||[]).join(", ")||"—" }}
@@ -60,6 +76,16 @@ export default {
      <span v-if="(t.names||[]).length" class="muted"> → {{ t.names.join(", ") }}</span></li></ul>
    <button :disabled="busy" @click="confirmStrike">Xác nhận</button>
    <button :disabled="busy" @click="cancelStrike" style="margin-left:6px">Huỷ</button></div>
+  <div v-if="dismiss" style="border:1px solid #da3633;border-radius:6px;padding:8px;margin:6px 0">
+   <div style="margin-bottom:4px"><b style="color:#da3633">Giải tán</b> <span class="muted">(không hoàn tác được; chỉ lính thường, không đụng tướng)</span></div>
+   <ul style="margin:0 0 6px;padding-left:18px">
+    <li v-for="(d,i) in dismiss" :key="i">
+     <b>{{ d.name }}</b> <span class="muted">({{ d.troops }})</span> →
+     <b v-if="d.scope==='army'">giải tán cả đội ({{ d.count }} lính)</b>
+     <b v-else>giải tán {{ d.count }} lính{{ d.pawn_name ? " "+d.pawn_name : "" }} cấp thấp nhất</b>
+     <span v-for="w in (d.warn||[])" :key="w" style="color:#d29922"> ⚠ {{ w }}</span></li></ul>
+   <button :disabled="busy" @click="confirmDismiss" style="border-color:#da3633;color:#da3633">Xác nhận giải tán</button>
+   <button :disabled="busy" @click="cancelDismiss" style="margin-left:6px">Huỷ</button></div>
   <div v-if="pending" style="border:1px solid #d98a26;border-radius:6px;padding:8px;margin:6px 0">
    <ul style="margin:0 0 6px;padding-left:18px">
     <li v-for="(r,i) in pending" :key="i">
@@ -68,6 +94,6 @@ export default {
    <button :disabled="busy" @click="cancel" style="margin-left:6px">Huỷ</button></div>
   <div style="display:flex;gap:6px">
    <input v-model="input" @keydown.enter="send" style="flex:1"
-    placeholder="Ra chỉ thị cho brain (vd: đổi tên 4 đội IMP thành Đội 1..4)…"/>
+    placeholder="Ra chỉ thị cho brain (vd: đổi tên 4 đội IMP thành Đội 1..4, hoặc giải tán 2 lính thấp cấp của Đội 1)…"/>
    <button :disabled="busy" @click="send">Gửi</button></div></div>`
 };
