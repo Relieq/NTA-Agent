@@ -21,6 +21,15 @@ def load(path) -> dict[int, list[int]]:
     return {int(k): [int(t) for t in v] for k, v in (d.get("exclusive") or {}).items()}
 
 
+def load_pawn_costs(path) -> dict[int, int]:
+    """``{pawnId: base cereal cost}`` of THIS match (empty when not fetched yet)."""
+    try:
+        d = json.loads(Path(path).read_text(encoding="utf-8"))
+    except (OSError, ValueError):
+        return {}
+    return {int(k): int(v) for k, v in (d.get("pawn_cost") or {}).items()}
+
+
 def refresh(actions, path, *, now: float | None = None, every_s: float = 0.0) -> bool:
     """Fetch and write the file unless it is younger than ``every_s``. True if written."""
     now = time.time() if now is None else now

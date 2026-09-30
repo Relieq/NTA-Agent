@@ -186,3 +186,41 @@ def test_recruit_respects_the_main_city_pawn_cap(monkeypatch):
     act = FakeActions(st, armys=[full5])
     r = Recruit(config=False, max_armies=1)
     assert r.applies(st, act) is False
+
+
+# ---- 2026-10-01: recruit cost is PER MATCH (server pawnCostMap), not the config table ----
+class _CostCfg:
+    def pawn_recruit_cost(self, pawn_id):
+        return {"cereal": 216}          # the static table says 216 for a 3305
+
+
+def test_recruit_uses_the_per_match_pawn_cost():
+    # live: this match 3305 costs 312 cereal (client: PAWN_COST_LV_LIST[0] * pawnCostMap[id]);
+    # the agent trusted the table (216), tried with ~250 and was refused (ecode.500012)
+    st = _state([3305], cereal=250)
+    act = FakeActions(st, armys=[{"uid": "A", "pawns": [{"id": 3305}], "state": None}])
+    r = Recruit(config=_CostCfg(), pawn_cost_source=lambda: {3305: 312})
+    assert r.applies(st, act) is False                      # 250 < 312
+    st.resources.cereal = 320
+    assert Recruit(config=_CostCfg(), pawn_cost_source=lambda: {3305: 312}).applies(st, act) is True
+
+
+def test_without_a_match_cost_map_the_table_is_used():
+    st = _state([3305], cereal=250)
+    act = FakeActions(st, armys=[{"uid": "A", "pawns": [{"id": 3305}], "state": None}])
+    assert Recruit(config=_CostCfg()).applies(st, act) is True      # 250 >= 216
+
+
+def test_pawn_cost_helper_and_loader(tmp_path):
+    import json
+
+    from nta_agent.execution.pawn_cost import cereal_cost
+    from nta_agent.runtime import world_random
+    assert cereal_cost(3305, 216, {3305: 312}) == 312
+    assert cereal_cost(3305, 216, {3305: 312}, lv=2) == 4 * 312     # PAWN_COST_LV_LIST[2] = 4
+    assert cereal_cost(3501, 216, {3501: 150}) == 216              # siege units: table cost
+    assert cereal_cost(3305, 216, {}) == 216 and cereal_cost(3305, 216, None) == 216
+    p = tmp_path / "w.json"
+    p.write_text(json.dumps({"exclusive": {}, "pawn_cost": {"3305": 312}}), encoding="utf-8")
+    assert world_random.load_pawn_costs(p) == {3305: 312}
+    assert world_random.load_pawn_costs(tmp_path / "missing.json") == {}
