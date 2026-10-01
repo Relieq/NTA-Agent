@@ -215,7 +215,10 @@ def pawn_move_label(m: dict) -> str:
     else:
         return f"đổi thứ tự lính trong {m['name']}"
     if m.get("gather"):
-        s += " (hai đội đang ở khác ô: agent gọi về thành chính trước, rồi mới đổi)"
+        at = int(m.get("meet") or 0)
+        who = " và ".join(m.get("travel") or []) or "các đội"
+        s += (f" (hai đội đang ở khác ô: agent gọi {who} tới ô ({at % 600}, {at // 600}) "
+              "— điểm gặp gần nhất trong đất của bạn — rồi mới đổi)")
     return s
 
 
@@ -233,6 +236,26 @@ def _pawn_cap(cfg) -> int:
         return army_pawn_cap(state)
     except Exception:
         return DEFAULT_PAWN_CAP
+
+
+def _meet_picker(cfg, armies):
+    """cells -> the owned cell halfway between them (see choose_meet); the main city when
+    our territory is not known. Pure of HTTP."""
+    from nta_agent.execution.pawn_moves import choose_meet
+    try:
+        owned = {int(y) * 600 + int(x) for x, y in
+                 json.loads(Path(cfg.forts_path).read_text(encoding="utf-8"))
+                 .get("owned_cells") or []}
+    except (OSError, ValueError, TypeError, AttributeError):
+        owned = set()
+    main = _main_city(cfg)
+    occ: dict = {}
+    for a in armies or []:
+        occ[a.get("index")] = occ.get(a.get("index"), 0) + 1
+
+    def pick(cells):
+        return choose_meet(cells, owned, fallback=main, occupied=occ)
+    return pick
 
 
 def _main_city(cfg) -> int | None:
@@ -262,7 +285,8 @@ def confirm_pawn_moves(cfg, specs) -> dict:
     from nta_agent.execution.pawn_moves import sanitize_pawn_moves, strike_conflicts
     from nta_agent.execution.profile import apply_edits, load_profile, save_profile
     armies = _armies_from_disk(cfg)
-    clean, notes = sanitize_pawn_moves(specs, armies, cap=_pawn_cap(cfg), meet=_main_city(cfg))
+    clean, notes = sanitize_pawn_moves(specs, armies, cap=_pawn_cap(cfg),
+                                       meet=_meet_picker(cfg, armies))
     if not clean:
         return {"ok": False, "error": "Không còn thao tác hợp lệ. " + " ".join(notes)}
     cancelled = False
@@ -406,7 +430,7 @@ def handle_chat(cfg, message, *, history=None, propose=None):
     from nta_agent.execution.pawn_moves import sanitize_pawn_moves, strike_conflicts
     raw_moves = _raw_pawn_moves(edits)
     moves, move_notes = sanitize_pawn_moves(raw_moves, armies, cap=_pawn_cap(cfg),
-                                            meet=_main_city(cfg))
+                                            meet=_meet_picker(cfg, armies))
     if not moves and not move_notes and not question \
             and (raw_moves or _asks_for_pawn_move(message)):
         # never answer a rearrangement request with silence (live 2026-10-01: the brain

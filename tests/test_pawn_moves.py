@@ -336,7 +336,7 @@ def test_different_cells_are_kept_with_a_gather_step_when_there_is_a_meeting_cel
         _armies(), meet=CITY)
     assert notes == [] and ops[0]["gather"] is True and ops[0]["index"] == CITY
     from nta_agent.dashboard.server import pawn_move_label
-    assert "thành chính" in pawn_move_label(ops[0])
+    assert "(100, 0)" in pawn_move_label(ops[0]) and ops[0]["travel"] == ["Đội 3"]
     # same cell: no gather
     ops, _ = sanitize_pawn_moves([SWAP], _armies(), meet=CITY)
     assert ops[0]["gather"] is False
@@ -451,7 +451,7 @@ def test_chat_offers_the_gather_and_a_question_gets_no_generic_notice(tmp_path):
                                 "army_b": "C", "pawn_b": 3305}]}
     out = handle_chat(cfg, "tráo lính", history=[], propose=propose)
     (m,) = out["pawn_moves"]
-    assert m["gather"] is True and "thành chính" in m["label"] and out["needs_confirm"]
+    assert m["gather"] is True and "(100, 0)" in m["label"] and out["needs_confirm"]
     r = confirm_pawn_moves(cfg, [m["spec"]])
     assert r["ok"] and r["queued"][0]["gather"] is True
 
@@ -459,3 +459,46 @@ def test_chat_offers_the_gather_and_a_question_gets_no_generic_notice(tmp_path):
         return {"question": "Bạn muốn đổi lính nào?"}
     out = handle_chat(cfg, "tráo lính", history=[], propose=asks)
     assert out["question"] and not any("chưa đề xuất" in n for n in out["notices"])
+
+
+# ---- the meeting cell: halfway inside our land, not the city ---------------------------
+def _c(x, y):
+    return y * 600 + x
+
+
+def test_meeting_cell_is_halfway_between_the_armies_inside_our_land():
+    from nta_agent.execution.pawn_moves import choose_meet
+    owned = {_c(x, 10) for x in range(5, 40)}
+    m = choose_meet([_c(10, 10), _c(20, 10)], owned, fallback=_c(5, 10))
+    assert m == _c(15, 10)                                  # 5 cells each, not 10 for one army
+    # one army off our land: the meeting cell is still ours, and the nearest one to both
+    m = choose_meet([_c(10, 10), _c(10, 14)], owned, fallback=_c(5, 10))
+    assert m in owned and max(abs(m % 600 - 10) + abs(m // 600 - 10),
+                              abs(m % 600 - 10) + abs(m // 600 - 14)) <= 6
+    # tie -> the cell with fewer armies already standing on it
+    m = choose_meet([_c(10, 10), _c(13, 10)], owned, fallback=None)
+    assert m == _c(11, 10)                                  # 11 and 12 tie -> the lower index
+    m = choose_meet([_c(10, 10), _c(13, 10)], owned, fallback=None,
+                    occupied={_c(11, 10): 3})
+    assert m == _c(12, 10)
+    # nothing known about our land -> the fallback (main city)
+    assert choose_meet([_c(10, 10), _c(20, 10)], set(), fallback=_c(1, 1)) == _c(1, 1)
+    assert choose_meet([_c(10, 10)], set()) is None
+
+
+def test_chat_picks_the_midpoint_from_the_territory_file(tmp_path):
+    import json as _json
+    cfg = _cfg(tmp_path)
+    armies = _armies()
+    armies[0]["index"], armies[2]["index"] = _c(10, 10), _c(20, 10)    # A and C, 10 cells apart
+    Path(cfg.armies_path).write_text(_json.dumps(armies), encoding="utf-8")
+    Path(cfg.forts_path).write_text(_json.dumps(
+        {"owned_cells": [[x, 10] for x in range(5, 40)]}), encoding="utf-8")
+
+    def propose(digest, profile, instruction=None, history=None):
+        return {"pawn_moves": [{"op": "swap", "army_a": "A", "pawn_a": 3206,
+                                "army_b": "C", "pawn_b": 3305}]}
+    out = handle_chat(cfg, "tráo lính", history=[], propose=propose)
+    (m,) = out["pawn_moves"]
+    assert m["meet"] == _c(15, 10) and sorted(m["travel"]) == ["Đội 1", "Đội 3"]
+    assert "(15, 10)" in m["label"]
