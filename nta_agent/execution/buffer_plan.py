@@ -201,6 +201,39 @@ def meeting_cell(main_index: int, owned, occupancy: dict, cap: int = 5,
     return None
 
 
+def levelable(buffer_armies, group_armies, target_lv: int, types_by_name,
+              in_progress=()) -> tuple[set[str], set[str]]:
+    """``(allowed, started)``: which buffer pawns are WORTH leveling now, and which are already
+    under way. A buffer only has to supply as many ready pawns of a type as the farm group has
+    weak pawns of that type: a main army of 8 archers + 1 hunter needs ONE hunter at the target
+    level, not the whole spare army of hunters used as a buffer (user 2026-10-01: all nine went
+    to level 3). Per type: ``budget = weak pawns in the group - ready - started``; started pawns
+    (mid-way, queued, just sent) always continue; fresh ones may start only while budget lasts."""
+    weak = {t: len(v) for t, v in demand(group_armies, target_lv).items()}
+    in_progress = {str(u) for u in in_progress}
+    by_type: dict[int, list[dict]] = {}
+    for a in buffer_armies or []:
+        allowed_types = types_by_name.get(a.get("name"))
+        for p in a.get("pawns") or []:
+            t = int(p["id"])
+            if allowed_types is None or t in allowed_types:
+                by_type.setdefault(t, []).append(p)
+    allowed: set[str] = set()
+    started: set[str] = set()
+    for t, pawns in by_type.items():
+        low = [p for p in pawns if _lv(p) < target_lv]
+        ready = len(pawns) - len(low)
+        base = min((_lv(p) for p in low), default=0)
+        under_way = [p for p in low if _lv(p) > base or str(p["uid"]) in in_progress]
+        started |= {str(p["uid"]) for p in under_way}
+        allowed |= {str(p["uid"]) for p in under_way}
+        budget = weak.get(t, 0) - ready - len(under_way)
+        fresh = sorted((p for p in low if str(p["uid"]) not in started),
+                       key=lambda p: (_lv(p), str(p["uid"])))
+        allowed |= {str(p["uid"]) for p in fresh[:max(budget, 0)]}
+    return allowed, started
+
+
 def own_target(group_armies, designated, target_lv: int, order=None) -> dict | None:
     """The main army ONE buffer is shaped for: the one with the most weak pawns (below
     ``target_lv``) of the buffer's DESIGNATED types, ties broken by the player's group order
