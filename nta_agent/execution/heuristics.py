@@ -1977,6 +1977,9 @@ class BufferLeveling:
         spares_home = [a for a in armies
                        if str(a.get("uid")) not in members and str(a.get("name", "")) not in names
                        and int(a.get("index", 0) or 0) == main and is_idle(a)]
+        # only as many pawns per type as the group has weak ones are worth leveling
+        worth, _started = bp.levelable(bufs, group_armies, target, names,
+                                       in_progress=leveling_pawn_uids(state))
         self._buffers = {str(a["uid"]) for a in bufs}
         recs = st.setdefault("buffers", {})
         queued = leveling_pawn_uids(state)
@@ -2024,6 +2027,7 @@ class BufferLeveling:
                     continue
                 todo = [p for p in buf.get("pawns") or []
                         if int(p["id"]) in names[buf["name"]] and int(p.get("lv", 0) or 0) < target
+                        and str(p["uid"]) in worth
                         and (bp.level_step(self._rows(), int(p["id"]), int(p.get("lv", 0) or 0))
                              or {"books": 1e9})["books"] <= books
                         and (bp.level_step(self._rows(), int(p["id"]), int(p.get("lv", 0) or 0))
@@ -2200,6 +2204,10 @@ class BufferLeveling:
         weak_types = set(demand(group_armies, target))
         types = {b["name"]: weak_types | {int(t) for t in (b.get("types") or {})}
                  for b in proposal.get("buffers") or []}
+        from nta_agent.execution.buffer_plan import levelable
+        bufs_all = [a for a in armies if str(a.get("name", "")) in types]
+        worth, started = levelable(bufs_all, group_armies, target, types,
+                                   in_progress=queued)
         cands = []
         for a in armies:
             name = str(a.get("name", ""))
@@ -2210,6 +2218,8 @@ class BufferLeveling:
                 lv = int(p.get("lv", 0) or 0)
                 if int(p["id"]) not in types[name] or lv >= target or str(p["uid"]) in queued:
                     continue
+                if str(p["uid"]) not in worth:
+                    continue   # the group has no more weak pawns of this type than are covered
                 step = level_step(self._rows(), int(p["id"]), lv)
                 if step is None or step["barracks_lv"] > barracks or step["books"] > books:
                     continue
@@ -2224,7 +2234,9 @@ class BufferLeveling:
         self.cereal_reserve = 0 if cands else waiting_cereal
         if not cands:
             return False
-        lv0, pawn, army, secs = min(cands)
+        # finish the ones under way (most advanced first) before starting a new pawn (lowest first)
+        lv0, pawn, army, secs = min(
+            cands, key=lambda c: (0, -c[0], c[1]) if c[1] in started else (1, c[0], c[1]))
 
         def run():
             try:

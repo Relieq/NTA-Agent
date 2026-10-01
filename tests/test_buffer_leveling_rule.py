@@ -514,3 +514,67 @@ def test_own_target_is_stable_whatever_order_the_server_lists_armies_in():
         assert own_target(armies, {3201}, 2, order)["uid"] == "G1"
         assert own_target(armies, {3305, 3201}, 2, order)["uid"] == "G0"  # tie: the player's order
     assert own_target([g0], {3201}, 2, order) is None                  # nothing to serve
+
+
+# ---- user 2026-10-01: a main army of 8 archers + 1 hunter must NOT level a whole spare army --
+def _only_what_is_needed_world(tmp_path):
+    hunter = 3201
+    _setup_done(tmp_path)
+    main_army = {"uid": "G0", "name": "Đội 1", "index": MAIN, "state": 0,
+                 "pawns": [_imp(f"m{k}") for k in range(8)] + [{"uid": "mh", "id": hunter, "lv": 1}]}
+    other = {"uid": "G1", "name": "Đội 2", "index": MAIN, "state": 0, "pawns": []}
+    # the buffer is a SPARE army of nine hunters
+    buf = {"uid": "B", "name": "Nâng Cấp 1", "index": MAIN, "state": 0,
+           "pawns": [{"uid": f"h{k}", "id": hunter, "lv": 1} for k in range(9)]}
+    return [main_army, other, buf]
+
+
+def test_only_as_many_buffer_pawns_are_leveled_as_the_group_has_weak_ones(tmp_path):
+    from nta_agent.execution.buffer_plan import levelable
+    armies = _only_what_is_needed_world(tmp_path)
+    types = {"Nâng Cấp 1": {3201}}
+    allowed, started = levelable([armies[2]], armies[:2], 3, types)
+    assert len(allowed) == 1 and started == set()               # ONE hunter, not nine
+    # that one is under way (queued): it continues, and no second hunter is started
+    one = next(iter(allowed))
+    allowed2, started2 = levelable([armies[2]], armies[:2], 3, types, in_progress={one})
+    assert allowed2 == {one} and started2 == {one}
+    # mid-way (above the others' level) counts as started too
+    armies[2]["pawns"][0]["lv"] = 2
+    allowed3, _ = levelable([armies[2]], armies[:2], 3, types)
+    assert allowed3 == {"h0"}
+    # once it is ready (target level) the weak hunter is covered: nothing else is leveled
+    armies[2]["pawns"][0]["lv"] = 3
+    assert levelable([armies[2]], armies[:2], 3, types)[0] == set()
+    # a type the group has no weak pawn of is never leveled
+    assert levelable([armies[2]], [armies[1]], 3, types)[0] == set()
+
+
+def test_the_rule_levels_one_spare_hunter_and_then_goes_to_swap(tmp_path):
+    armies = _only_what_is_needed_world(tmp_path)
+    p = tmp_path / "buffers.json"
+    st = buffers.load(p)
+    st["proposal"] = {"buffers": [{"name": "Nâng Cấp 1", "base_uid": "B", "types": {"3201": 9},
+                                   "merge": [], "recruit": {}}], "dismiss": []}
+    buffers.save(p, st)
+    prof = _prof()
+    prof.leveling["target_lv"] = 3
+    prof.leveling["groups"][0].update(target_lv=3, armies=["G0", "G1"])
+    rows = {**ROWS, 3201001: {"lv_cost": "1,0,242|7,0,1", "lv_time": 360, "lv_cond": "4,2004,1"},
+            3201002: {"lv_cost": "1,0,387|7,0,2", "lv_time": 540, "lv_cond": "4,2004,5"}}
+    rule = BufferLeveling(profile=prof, state_path=p, rows=rows)
+    class Instant(FakeActions):               # a level-up lands at once (no queue to wait for)
+        def pawn_lving(self, index, army_uid, pawn_uid):
+            super().pawn_lving(index, army_uid, pawn_uid)
+            for a in self.armies:
+                for pw in a["pawns"]:
+                    if pw["uid"] == pawn_uid:
+                        pw["lv"] += 1
+    acts = Instant(armies)
+    leveled = set()
+    for _ in range(60):
+        _tick(rule, _state(cereal=99999, exp_book=99), acts)
+        leveled |= {c[2] for c in acts.calls if c[0] == "level"}
+        acts.calls.clear()
+        rule._sent = {}
+    assert len(leveled) <= 1, f"leveled {sorted(leveled)}"        # not the whole spare army
