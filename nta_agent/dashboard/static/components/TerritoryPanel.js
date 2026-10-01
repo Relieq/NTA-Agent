@@ -519,6 +519,9 @@ export default {
     <span v-if="dig.draft.stamina"> · ~{{ dig.draft.stamina }} thể lực</span>
     <span v-if="(dig.draft.forts||[]).length"> · {{ dig.draft.forts.length }} Cứ Điểm</span>
     <span v-if="dig.draft.rough" class="muted"> (ước lượng thô — mô phỏng không sẵn sàng)</span>
+    <div v-if="(dig.draft.group||[]).length" class="muted">Đánh giá bằng (đúng thứ tự vào trận, đội đầu vào trước):
+     <span v-for="(g,i) in dig.draft.group" :key="i">{{ i ? " → " : "" }}<b>{{ g.name }}</b> ({{ g.pawns }} lính)</span>
+     · đổi thứ tự ở khung "Đội farm" (tab Quân đội) rồi bấm Đánh giá lại</div>
     <div v-if="(dig.draft.hard||[]).length" style="color:#e3b341">✕ {{ dig.draft.hard.length }} ô nhóm dig chưa đánh nổi:
      {{ dig.draft.hard.slice(0,6).map(h=>'('+h[0]+','+h[1]+')').join(' ') }}<span v-if="dig.draft.hard.length>6">…</span>
      <span v-if="dig.draft.need_loss!=null"> · cho phép tổn thất ≥ {{ Math.ceil(dig.draft.need_loss) }}% (hiện {{ dig.draft.max_loss||0 }}%) thì đánh được</span>

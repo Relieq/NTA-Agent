@@ -16,7 +16,7 @@ def _line(x0, x1, y=10):
 
 
 def _draft(svc):
-    return json.loads((svc.cfg.dig_state_path).read_text())["draft"]
+    return json.loads((svc.cfg.dig_state_path).read_text(encoding="utf-8"))["draft"]
 
 
 def _evaluate(tmp, svc, seq, path, scan=None, **kw):
@@ -239,3 +239,26 @@ def test_a_drawn_dig_starting_at_an_ally_digs_its_first_cell(tmp_path):
     _req(tmp_path, 3, "confirm")
     svc.tick(_state())
     assert svc.dig["state"] == "active" and svc.next_target() == I(21, 10)
+
+
+# ---- the evaluation names the group it simulated with, and always uses it as it is NOW ------
+def test_evaluation_reports_the_group_it_simulated_with_in_order(tmp_path):
+    svc, _ = _svc(tmp_path, {"owned": _owned_block()})
+    desc = [{"name": "Đội 3", "pawns": 9}, {"name": "Đội 1", "pawns": 9}]
+    svc._predict_factory = lambda st: (_pred, 60, None, desc)
+    d = _evaluate(tmp_path, svc, 1, _line(12, 14))
+    assert d["group"] == desc
+
+
+def test_every_evaluation_simulates_with_the_group_as_it_is_now(tmp_path):
+    svc, _ = _svc(tmp_path, {"owned": _owned_block()})
+    calls = []
+
+    def factory(st):
+        calls.append(1)
+        return _pred, 60, None, [{"name": f"v{len(calls)}", "pawns": 9}]
+    svc._predict_factory = factory
+    d1 = _evaluate(tmp_path, svc, 1, _line(12, 14))
+    d2 = _evaluate(tmp_path, svc, 2, _line(12, 14))          # e.g. the player reordered the group
+    assert len(calls) == 2                                    # not answered from the old memo
+    assert d1["group"][0]["name"] == "v1" and d2["group"][0]["name"] == "v2"
