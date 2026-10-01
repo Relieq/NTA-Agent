@@ -251,6 +251,7 @@ def test_craft_waiting_panel_says_whether_builds_yield():
 def test_farm_group_panel_orders_the_armies():
     fg = _c("FarmGroupPanel.js")
     assert "Thứ tự vào trận" in fg and "draggable" in fg and "move(" in fg and "onDrop" in fg
+    assert 'id="farm-order"' in fg                                 # compact: its own collapsible
     assert "/api/profile" in fg and "group: group.value" in fg      # the saved order is the list order
     terr = _c("TerritoryPanel.js")
     assert "dig.draft.group" in terr and "thứ tự vào trận" in terr
