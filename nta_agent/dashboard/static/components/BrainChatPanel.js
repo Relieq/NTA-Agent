@@ -66,7 +66,7 @@ export default {
    const conflict=moves.value.some(m=>(m.conflict||[]).length);
    if(conflict && !window.confirm("Việc này làm hỏng mục tiêu đội hình đang chạy — xác nhận sẽ HỦY mục tiêu đó. Tiếp tục?")) return;
    busy.value=true;
-   const o=await postJSON("/api/chat/confirm",{pawn_moves:moves.value.map(({label,conflict,...m})=>m)});
+   const o=await postJSON("/api/chat/confirm",{pawn_moves:moves.value.map(m=>m.spec)});
    say("Brain", (o&&o.ok)? ("✔ Đã xếp lệnh cho "+(o.queued||[]).length+" thao tác — agent làm khi các đội rảnh và ở cùng ô."
                           +(o.cancelled_goal?" Đã huỷ mục tiêu đội hình để composer không đổi ngược.":""))
                          : ("⚠️ "+((o&&o.error)||"lỗi")));

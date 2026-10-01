@@ -110,7 +110,10 @@ def sanitize_pawn_moves(raw, armies, cap: int = 9) -> tuple[list, list]:
                         "name_b": b.get("name") or str(b["uid"]),
                         "index": int(a.get("index", 0) or 0), "pawn_a": pa, "pawn_b": pb,
                         "count": n,
-                        "pairs": [[str(xs[i]["uid"]), str(ys[i]["uid"])] for i in range(n)]})
+                        "pairs": [[str(xs[i]["uid"]), str(ys[i]["uid"])] for i in range(n)],
+                        "spec": {"op": "swap", "army_a": str(a["uid"]), "pawn_a": pa,
+                                 "army_b": str(b["uid"]), "pawn_b": pb, "count": n,
+                                 "pos_a": _pos(r.get("pos_a")), "pos_b": _pos(r.get("pos_b"))}})
         elif op == "move":
             src = by_uid.get(str(r.get("army_from")))
             dst_uid = str(r.get("army_to"))
@@ -139,7 +142,9 @@ def sanitize_pawn_moves(raw, armies, cap: int = 9) -> tuple[list, list]:
                         "name_from": src.get("name") or str(src["uid"]),
                         "name_to": target_name or dst_uid,
                         "index": int(src.get("index", 0) or 0), "pawn_id": pid, "count": n,
-                        "pawn_uids": [str(p["uid"]) for p in pool[:n]]})
+                        "pawn_uids": [str(p["uid"]) for p in pool[:n]],
+                        "spec": {"op": "move", "army_from": str(src["uid"]), "army_to": dst_uid,
+                                 "pawn_id": pid, "count": n, "pos": _pos(r.get("pos"))}})
         elif op == "reorder":
             a = by_uid.get(str(r.get("army")))
             order = [_int(t) for t in r.get("order") or [] if _int(t) is not None]
@@ -152,7 +157,8 @@ def sanitize_pawn_moves(raw, armies, cap: int = 9) -> tuple[list, list]:
                 continue
             out.append({"op": "reorder", "army": str(a["uid"]),
                         "name": a.get("name") or str(a["uid"]),
-                        "index": int(a.get("index", 0) or 0), "order": order, "swaps": swaps})
+                        "index": int(a.get("index", 0) or 0), "order": order, "swaps": swaps,
+                        "spec": {"op": "reorder", "army": str(a["uid"]), "order": order}})
     return out, notes
 
 

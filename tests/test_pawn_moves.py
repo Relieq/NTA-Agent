@@ -303,3 +303,24 @@ def test_a_rearrangement_request_is_never_answered_with_silence(tmp_path):
     assert out["pawn_moves"] == [] and out["notices"]
     out = handle_chat(cfg, "xây thêm kho lương", history=[], propose=nothing)
     assert not any("tráo" in n for n in out["notices"])
+
+
+def test_what_the_card_sends_back_confirms(tmp_path):
+    """The dashboard sends each proposal's ``spec`` on confirm (live 2026-10-01: it sent the
+    RESOLVED op, the re-validation found no army_a/pawn_a and refused every confirm)."""
+    cfg = _cfg(tmp_path)
+    ops = [
+        dict(SWAP, pos_a="last"),
+        {"op": "move", "army_from": "A", "army_to": "B", "pawn_id": 3305, "count": 1},
+        {"op": "reorder", "army": "A", "order": [3305]},
+    ]
+
+    def propose(digest, profile, instruction=None, history=None):
+        return {"pawn_moves": ops}
+    out = handle_chat(cfg, "đổi lính", history=[], propose=propose)
+    specs = [m["spec"] for m in out["pawn_moves"]]
+    assert [s["op"] for s in specs] == ["swap", "move", "reorder"]
+    r = confirm_pawn_moves(cfg, specs)
+    assert r["ok"] and [q["op"] for q in r["queued"]] == ["swap", "move", "reorder"]
+    swap = r["queued"][0]
+    assert swap["pairs"] == out["pawn_moves"][0]["pairs"]      # the same pawns as proposed
