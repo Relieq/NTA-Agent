@@ -292,3 +292,16 @@ def test_is_live_covers_waiting_and_a_pending_cancel_ends_it(tmp_path):
     assert svc.is_live() is True             # waiting still owns the group
     _req(tmp_path, 3, "cancel")
     assert svc.is_live() is False
+
+
+def test_a_dig_suggestion_can_start_from_land_touching_an_ally(tmp_path):
+    # surrounded by allies: the old planner started only from OUR cells and found no path
+    block = _owned_block()
+    ring = {I(9, 10), I(9, 11), I(12, 10), I(12, 11), I(10, 9), I(11, 9), I(10, 12), I(11, 12)}
+    scan = {"owned": block, "ally": ring}
+    svc, _ = _svc(tmp_path, scan)
+    _req(tmp_path, 1, "request", index=I(16, 10), buffer=2)
+    svc.tick(_state())
+    d = json.loads((tmp_path / "dig.json").read_text(encoding="utf-8"))
+    assert d["state"] == "preview" and d["reason"] == "ok"
+    assert d["path"][0] == [13, 10] and d["path"][-1] == [16, 10]

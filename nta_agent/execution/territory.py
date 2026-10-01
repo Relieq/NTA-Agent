@@ -129,6 +129,34 @@ def scan_owned(actions, main: int, uid, map_width: int = 600, focus=None):
     return owned, cities
 
 
+ALLY_DEPTH = 8   # how many layers of ally land beyond our border still count as "ours to attack from"
+
+
+def ally_reach(owned, ally_cells, map_width: int = 600, depth: int = ALLY_DEPTH) -> set[int]:
+    """The ally cells a cell next to which we may attack: the game lets us occupy a cell that
+    touches OUR land or an ALLY's land (engine ``checkCanOccupyCell``: any outer neighbour
+    owned by someone of our alliance). Ally land that touches ours, and — through further ally
+    land — up to ``depth`` layers beyond, so a ring of allies around us does not leave us
+    without a single attackable cell. Ally land elsewhere on the map is not included."""
+    ally = set(ally_cells or ())
+    if not ally:
+        return set()
+
+    def neigh(c: int):
+        x, y = c % map_width, c // map_width
+        for nx, ny in ((x + 1, y), (x - 1, y), (x, y + 1), (x, y - 1)):
+            if 0 <= nx < map_width and 0 <= ny < map_width:
+                yield ny * map_width + nx
+    layer = {n for c in owned for n in neigh(c) if n in ally}
+    seen = set(layer)
+    for _ in range(max(depth, 1) - 1):
+        layer = {n for c in layer for n in neigh(c) if n in ally and n not in seen}
+        if not layer:
+            break
+        seen |= layer
+    return seen
+
+
 def scan_map(actions, main: int, uid, map_width: int = 600, focus=None, allies=None) -> dict:
     """Fetch the near chunks and decode EVERY player in them.
 
@@ -177,14 +205,20 @@ def scan_map(actions, main: int, uid, map_width: int = 600, focus=None, allies=N
     for cid in (focus or []):
         fetch(int(cid))
 
-    frontier: set[int] = set()
-    for c in owned:
-        x, y = c % map_width, c // map_width
-        for nx, ny in ((x + 1, y), (x - 1, y), (x, y + 1), (x, y - 1)):
-            if 0 <= nx < map_width and 0 <= ny < map_width:
-                n = ny * map_width + nx
-                if n not in owned and n not in enemy_cells and n not in ally_cells:
-                    frontier.add(n)
+    def around(cells) -> set[int]:
+        out: set[int] = set()
+        for c in cells:
+            x, y = c % map_width, c // map_width
+            for nx, ny in ((x + 1, y), (x - 1, y), (x, y + 1), (x, y - 1)):
+                if 0 <= nx < map_width and 0 <= ny < map_width:
+                    n = ny * map_width + nx
+                    if n not in owned and n not in enemy_cells and n not in ally_cells:
+                        out.add(n)
+        return out
+    frontier = around(owned)
+    # a cell touching an ally's land can be attacked too (a ring of allies must not leave us
+    # nothing to attack) — kept apart so callers that probe each cell can cap how many
+    frontier_ally = around(ally_reach(owned, ally_cells, map_width)) - frontier
     return {"owned": owned, "cities": cities, "enemy_cells": enemy_cells,
-            "enemy_cities": enemy_cities, "frontier": frontier,
+            "enemy_cities": enemy_cities, "frontier": frontier, "frontier_ally": frontier_ally,
             "ally_cells": ally_cells, "ally_cities": ally_cities}

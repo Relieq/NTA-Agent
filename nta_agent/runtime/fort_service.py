@@ -115,7 +115,8 @@ class FortService:
             enemy_cells = sorted([i % mw, i // mw] for i in m.get("enemy_cells", ()))
             enemy_cities = [{"x": i % mw, "y": i // mw, "type": t}
                             for i, t in (m.get("enemy_cities") or {}).items()]
-            frontier = sorted([i % mw, i // mw] for i in m.get("frontier", ()))
+            frontier = sorted([i % mw, i // mw] for i in
+                              set(m.get("frontier", ())) | set(m.get("frontier_ally", ())))
             ally_cells = sorted([i % mw, i // mw] for i in m.get("ally_cells", ()))
             ally_cities = [{"x": i % mw, "y": i // mw, "type": t}
                            for i, t in (m.get("ally_cities") or {}).items()]

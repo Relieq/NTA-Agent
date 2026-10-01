@@ -341,7 +341,11 @@ class DigService:
                 raise _Superseded()
             return None if i in hard else cost.cost(i)
 
-        plan = dp.plan_path(owned, target, step, passable=world.passable, others=others,
+        # the dig may start from a cell touching an ally's land too (the game allows it)
+        from nta_agent.execution.territory import ally_reach
+        ally = set(m.get("ally_cells") or ()) | set((m.get("ally_cities") or {}).keys())
+        plan = dp.plan_path(owned | ally_reach(owned, ally, W), target, step,
+                            passable=world.passable, others=others,
                             enemy=enemy, buffer=buffer, penalty_s=self.penalty_s,
                             margin=self.margin)
         # planned forts whose cell we now hold stay planned until queued (the new path
