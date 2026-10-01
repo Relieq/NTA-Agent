@@ -1469,6 +1469,7 @@ class ClaimTasks:
     _pending: object = None    # (kind, id)
     _last_recheck: float = 0.0
     _state_ref: object = None   # the state of this tick (client-computed progress)
+    _recheck_queue: list = field(default_factory=list)  # (kind, id) still to try this re-check
 
     _KINDS = (("guideTasks", "guide"), ("otherTasks", "other"), ("todayTasks", "today"))
     _TABLE = (("guide", "guideTask"), ("other", "otherTask"), ("today", "todayTask"))
@@ -1563,6 +1564,14 @@ class ClaimTasks:
             if (kind, t["id"]) not in self._seen and self._status(kind, t) == "done":
                 self._pending = (kind, t["id"])
                 return True
+        # 1b) a re-check in progress: try EVERY unfinished task, one per tick (it used to try
+        # only the first one — a task that can never complete, like 'conquer a Lv4 land', sat
+        # first for ever and the finished ones behind it were never claimed)
+        while self._recheck_queue:
+            kind, tid = self._recheck_queue.pop(0)
+            if any(k == kind and t.get("id") == tid for k, t in tasks):
+                self._pending = (kind, tid)
+                return True
         if self._cooldown > 0:
             self._cooldown -= 1
             return False
@@ -1584,6 +1593,7 @@ class ClaimTasks:
                 self._seen.discard((kind, t["id"]))
             if opens:
                 self._pending = (opens[0][0], opens[0][1]["id"])
+                self._recheck_queue = [(k, t["id"]) for k, t in opens[1:]]
                 return True
         return False
 

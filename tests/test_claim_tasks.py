@@ -219,3 +219,23 @@ def test_forge_tasks_are_read_from_the_equips_we_own():
     st3 = _cst([78], equips=[{"uid": "6101_1", "id": 6101}])
     rule2._state_ref = st3
     assert rule2._client_progress(1035, 0) == 1
+
+
+def test_a_recheck_tries_every_unfinished_task_not_only_the_first(monkeypatch):
+    # 'conquer a Lv4 land' can never be claimed and sat first for ever: the finished
+    # task behind it (judged by the server, short of target in OUR progress) was never tried
+    import time
+    clock = [10_000.0]
+    monkeypatch.setattr(time, "time", lambda: clock[0])
+    act = FakeActions(reject={1})                       # task 1 is genuinely not complete
+    rule = ClaimTasks(config=_Cfg())
+    st = _st([(1, 0), (2, 0)])                           # both look unfinished to us
+    assert rule.applies(st, act) is False
+    clock[0] += 61
+    tried = []
+    for _ in range(4):
+        if rule.applies(st, act):
+            rule.act(act)
+            tried.append(act.calls[-1])
+    assert ("guide", 1) in tried and ("guide", 2) in tried       # both got their turn
+    assert len(tried) == 2                                        # and each only once
