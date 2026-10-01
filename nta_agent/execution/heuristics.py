@@ -363,7 +363,6 @@ class OccupyCell:
     """
     name: str = "occupy_cell"
     radius: int = 2
-    min_stamina: int = 1
     discover_every: int = 8   # ticks between discovery sweeps
     fail_cooldown: int = 8
     predictor: object = None
@@ -721,7 +720,10 @@ class OccupyCell:
         return None
 
     def applies(self, state: GameState, actions: Actions) -> bool:
-        if state.resources.stamina < self.min_stamina or not state.main_city_index:
+        # Stamina is NOT a gate: with too little the game still lets us occupy, it just gives no
+        # treasure chest (battle end `noTreasureByNotStamina`); only tonden needs it
+        # (ecode 500233). Expanding must go on at 0 stamina (user 2026-10-01).
+        if not state.main_city_index:
             return False
         if self._cooldown > 0:
             self._cooldown -= 1

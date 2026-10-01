@@ -185,11 +185,27 @@ def test_occupy_rule_defends_contested_border_first():
     assert act.calls[0][1] == center - 1  # defended the contested border cell
 
 
-def test_occupy_rule_skips_when_no_stamina():
-    st = GameState(source="api"); st.user.uid = "me"; st.main_city_index = 1
+def test_occupy_rule_keeps_expanding_at_zero_stamina():
+    # stamina only pays for the treasure chest: without it the game still lets us take the
+    # cell (no chest). It must NOT stop the expansion (user 2026-10-01: 0 stamina = no growth)
+    center = 182 * W + 526
+    st = GameState(source="api")
+    st.user.uid = "me"
+    st.main_city_index = center
     st.resources.stamina = 0
-    rule = OccupyCell()
-    assert rule.applies(st, FakeActions(areas={}, armies=[])) is False
+    areas = {center: _cell(owner="me", city=1001), center - 1: _cell(owner="", pawns=[50])}
+    my_army = [{"index": center, "uid": "A", "pawns": [{"hp": 500}, {"hp": 500}], "state": None}]
+    act = FakeActions(areas=areas, armies=my_army)
+    rule = OccupyCell(radius=1, predictor=BattlePredictor())
+    assert rule.applies(st, act) is True
+    rule.act(act)
+    assert act.calls and act.calls[0][:2] == ("occupy", center - 1)
+
+
+def test_occupy_rule_without_a_city_still_does_nothing():
+    st = GameState(source="api"); st.user.uid = "me"; st.main_city_index = 0
+    st.resources.stamina = 50
+    assert OccupyCell().applies(st, FakeActions(areas={}, armies=[])) is False
 
 
 # ---- sim integration (fake sim; no Node) --------------------------------- #
@@ -388,8 +404,8 @@ def test_occupy_uses_active_preset_group():
     assert used <= {"cung", "tank"} and "extra" not in used and used
 
 
-def test_occupy_skips_discovery_when_stamina_below_min():
-    """Pacing: no get_area probes when stamina can't afford an occupy."""
+def test_occupy_still_discovers_when_stamina_is_zero():
+    """Stamina only pays for the chest: discovery (get_area probes) must go on at 0."""
     from nta_agent.state.schema import User
 
     st = GameState(source="api")
@@ -404,9 +420,9 @@ def test_occupy_skips_discovery_when_stamina_below_min():
             calls.append(i)
             return {"data": {}}
 
-    rule = OccupyCell(min_stamina=1)
-    assert rule.applies(st, Acts()) is False
-    assert calls == []          # no discovery probes when stamina is short
+    rule = OccupyCell()
+    assert rule.applies(st, Acts()) is False      # (nothing to take in this empty world)
+    assert calls                                  # ... but it LOOKED: stamina is not a gate
 
 
 def test_min_occupy_stamina_from_config():
