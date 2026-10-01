@@ -324,3 +324,138 @@ def test_what_the_card_sends_back_confirms(tmp_path):
     assert r["ok"] and [q["op"] for q in r["queued"]] == ["swap", "move", "reorder"]
     swap = r["queued"][0]
     assert swap["pairs"] == out["pawn_moves"][0]["pairs"]      # the same pawns as proposed
+
+
+# ---- armies in different cells: gather at the main city first -----------------------
+CITY = 100          # _armies(): A, B, D at 100; C at 200
+
+
+def test_different_cells_are_kept_with_a_gather_step_when_there_is_a_meeting_cell():
+    ops, notes = sanitize_pawn_moves(
+        [{"op": "swap", "army_a": "A", "pawn_a": 3206, "army_b": "C", "pawn_b": 3305}],
+        _armies(), meet=CITY)
+    assert notes == [] and ops[0]["gather"] is True and ops[0]["index"] == CITY
+    from nta_agent.dashboard.server import pawn_move_label
+    assert "thành chính" in pawn_move_label(ops[0])
+    # same cell: no gather
+    ops, _ = sanitize_pawn_moves([SWAP], _armies(), meet=CITY)
+    assert ops[0]["gather"] is False
+    # no meeting cell known: dropped with the old notice
+    ops, notes = sanitize_pawn_moves(
+        [{"op": "swap", "army_a": "A", "pawn_a": 3206, "army_b": "C", "pawn_b": 3305}],
+        _armies())
+    assert ops == [] and any("cùng ô" in n for n in notes)
+
+
+class MovingActs(Acts):
+    """Armies march one tick after the order, then arrive idle at the target."""
+    def __init__(self, armies):
+        super().__init__(armies)
+        self.arriving = []
+
+    def move_cell_army(self, armies, target):
+        self.calls.append(("move", [a["uid"] for a in armies], target))
+        for a in armies:
+            army = next(x for x in self.armies if x["uid"] == a["uid"])
+            army["state"] = 1
+            self.arriving.append((army, target))
+
+    def land(self):
+        for army, target in self.arriving:
+            army["state"], army["index"] = 0, target
+        self.arriving = []
+
+
+def test_queue_gathers_the_far_army_waits_for_it_then_swaps(tmp_path):
+    ops, _ = sanitize_pawn_moves(
+        [{"op": "swap", "army_a": "A", "pawn_a": 3206, "army_b": "C", "pawn_b": 3305}],
+        _armies(), meet=CITY)
+    q = PawnMoveQueue(tmp_path / "q.json")
+    q.add(ops[0])
+    acts = MovingActs(_armies())
+    ev = []
+    q.process(acts, lambda k, d: ev.append(k))
+    assert acts.calls == [("move", ["C"], CITY)] and ev == ["pawn_move_gather"]
+    q.process(acts, lambda k, d: ev.append(k))            # C is marching: wait, no re-order
+    assert len(acts.calls) == 1
+    acts.land()
+    q.process(acts, lambda k, d: ev.append(k))
+    assert acts.calls[-1][0] == "ex" and acts.calls[-1][1] == CITY and ev[-1] == "pawn_move_done"
+    assert q.pending() == {}
+
+
+def test_both_far_armies_are_called_and_a_busy_one_waits_first(tmp_path):
+    armies = _armies()
+    armies[0]["index"] = 300                                # A is away too
+    armies[0]["state"] = 1                                  # ... and marching
+    ops, _ = sanitize_pawn_moves(
+        [{"op": "swap", "army_a": "A", "pawn_a": 3206, "army_b": "C", "pawn_b": 3305}],
+        armies, meet=CITY)
+    q = PawnMoveQueue(tmp_path / "q.json")
+    q.add(ops[0])
+    acts = MovingActs(armies)
+    q.process(acts, lambda *a: None)
+    assert acts.calls == []                                 # A is busy: nothing is ordered yet
+    armies[0]["state"] = 0
+    q.process(acts, lambda *a: None)
+    assert acts.calls == [("move", ["A", "C"], CITY)]       # both far: both are called
+
+
+def test_gathering_gives_up_after_a_few_orders_that_do_nothing(tmp_path):
+    class Stuck(Acts):
+        def move_cell_army(self, armies, target):
+            self.calls.append(("move",))
+    ops, _ = sanitize_pawn_moves(
+        [{"op": "swap", "army_a": "A", "pawn_a": 3206, "army_b": "C", "pawn_b": 3305}],
+        _armies(), meet=CITY)
+    q = PawnMoveQueue(tmp_path / "q.json")
+    q.add(ops[0])
+    acts, ev = Stuck(_armies()), []
+    for _ in range(6):
+        q.process(acts, lambda k, d: ev.append(k))
+    assert len(acts.calls) == 3 and ev[-1] == "pawn_move_failed" and q.pending() == {}
+
+
+def test_a_stalled_job_is_dropped_and_releases_its_armies(tmp_path):
+    from nta_agent.runtime import pawn_move_queue as pq
+    ops, _ = sanitize_pawn_moves([SWAP], _armies(), meet=CITY)
+    q = PawnMoveQueue(tmp_path / "q.json")
+    q.add(ops[0])
+    assert q.army_uids() == {"A", "B"}
+    armies = _armies()
+    armies[0]["state"] = 3                                   # never idle (e.g. recruiting)
+    acts, ev = Acts(armies), []
+    for _ in range(pq.MAX_AGE + 2):
+        q.process(acts, lambda k, d: ev.append(k))
+    assert ev == ["pawn_move_failed"] and q.army_uids() == set()
+
+
+def test_other_rules_are_kept_off_the_armies_a_job_is_gathering(tmp_path):
+    from nta_agent.runtime.decision_service import DecisionService
+    svc = DecisionService.__new__(DecisionService)
+    svc.pawn_moves = PawnMoveQueue(tmp_path / "pq.json")
+    ops, _ = sanitize_pawn_moves([SWAP, {"op": "reorder", "army": "B", "order": [3305]}],
+                                 _armies(), meet=CITY)
+    for op in ops:
+        svc.pawn_moves.add(op)
+    assert svc.pawn_moves.army_uids() == {"A", "B"}
+
+
+def test_chat_offers_the_gather_and_a_question_gets_no_generic_notice(tmp_path):
+    import json as _json
+    cfg = _cfg(tmp_path)
+    Path(cfg.snapshot_path).write_text(_json.dumps({"main_city_index": CITY}), encoding="utf-8")
+
+    def propose(digest, profile, instruction=None, history=None):
+        return {"pawn_moves": [{"op": "swap", "army_a": "A", "pawn_a": 3206,
+                                "army_b": "C", "pawn_b": 3305}]}
+    out = handle_chat(cfg, "tráo lính", history=[], propose=propose)
+    (m,) = out["pawn_moves"]
+    assert m["gather"] is True and "thành chính" in m["label"] and out["needs_confirm"]
+    r = confirm_pawn_moves(cfg, [m["spec"]])
+    assert r["ok"] and r["queued"][0]["gather"] is True
+
+    def asks(digest, profile, instruction=None, history=None):
+        return {"question": "Bạn muốn đổi lính nào?"}
+    out = handle_chat(cfg, "tráo lính", history=[], propose=asks)
+    assert out["question"] and not any("chưa đề xuất" in n for n in out["notices"])

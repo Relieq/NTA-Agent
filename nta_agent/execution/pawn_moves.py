@@ -65,8 +65,14 @@ def reorder_swaps(army: dict, order) -> list:
     return swaps
 
 
-def sanitize_pawn_moves(raw, armies, cap: int = 9) -> tuple[list, list]:
+def sanitize_pawn_moves(raw, armies, cap: int = 9, meet: int | None = None
+                        ) -> tuple[list, list]:
     """Validate chat-proposed rearrangements into ``(clean, notices)``.
+
+    The game only swaps/moves pawns between armies in the SAME cell. ``meet`` = the cell
+    to gather them at (the main city) when they are not: such an op is kept with
+    ``gather: True`` and the queue calls the armies there first; without ``meet`` it is
+    dropped with a notice.
 
     ``raw`` entries::
 
@@ -94,7 +100,8 @@ def sanitize_pawn_moves(raw, armies, cap: int = 9) -> tuple[list, list]:
                 notes.append(f"Hai bên đều là {a.get('name')} — muốn đổi thứ tự lính trong một đội "
                              "thì hãy nói 'đổi thứ tự', còn tráo thì cần hai đội khác nhau")
                 continue
-            if a.get("index") != b.get("index"):
+            gather = a.get("index") != b.get("index")
+            if gather and meet is None:
                 notes.append(f"{a.get('name')} và {b.get('name')} không ở cùng ô — "
                              "cần tập hợp về cùng một ô trước khi đổi lính")
                 continue
@@ -108,7 +115,8 @@ def sanitize_pawn_moves(raw, armies, cap: int = 9) -> tuple[list, list]:
             out.append({"op": "swap", "a": str(a["uid"]), "b": str(b["uid"]),
                         "name_a": a.get("name") or str(a["uid"]),
                         "name_b": b.get("name") or str(b["uid"]),
-                        "index": int(a.get("index", 0) or 0), "pawn_a": pa, "pawn_b": pb,
+                        "index": int((meet if gather else a.get("index", 0)) or 0),
+                        "gather": gather, "meet": meet, "pawn_a": pa, "pawn_b": pb,
                         "count": n,
                         "pairs": [[str(xs[i]["uid"]), str(ys[i]["uid"])] for i in range(n)],
                         "spec": {"op": "swap", "army_a": str(a["uid"]), "pawn_a": pa,
@@ -122,7 +130,8 @@ def sanitize_pawn_moves(raw, armies, cap: int = 9) -> tuple[list, list]:
             if src is None or (dst is None and dst_uid != "new") or dst is src:
                 notes.append("Không xác định được đội nguồn / đội đích để chuyển lính")
                 continue
-            if dst is not None and src.get("index") != dst.get("index"):
+            gather = dst is not None and src.get("index") != dst.get("index")
+            if gather and meet is None:
                 notes.append(f"{src.get('name')} và {dst.get('name')} không ở cùng ô — "
                              "cần tập hợp về cùng một ô trước khi chuyển lính")
                 continue
@@ -141,7 +150,8 @@ def sanitize_pawn_moves(raw, armies, cap: int = 9) -> tuple[list, list]:
             out.append({"op": "move", "from": str(src["uid"]), "to": dst_uid,
                         "name_from": src.get("name") or str(src["uid"]),
                         "name_to": target_name or dst_uid,
-                        "index": int(src.get("index", 0) or 0), "pawn_id": pid, "count": n,
+                        "index": int((meet if gather else src.get("index", 0)) or 0),
+                        "gather": gather, "meet": meet, "pawn_id": pid, "count": n,
                         "pawn_uids": [str(p["uid"]) for p in pool[:n]],
                         "spec": {"op": "move", "army_from": str(src["uid"]), "army_to": dst_uid,
                                  "pawn_id": pid, "count": n, "pos": _pos(r.get("pos"))}})
@@ -157,7 +167,8 @@ def sanitize_pawn_moves(raw, armies, cap: int = 9) -> tuple[list, list]:
                 continue
             out.append({"op": "reorder", "army": str(a["uid"]),
                         "name": a.get("name") or str(a["uid"]),
-                        "index": int(a.get("index", 0) or 0), "order": order, "swaps": swaps,
+                        "index": int(a.get("index", 0) or 0), "gather": False, "meet": None,
+                        "order": order, "swaps": swaps,
                         "spec": {"op": "reorder", "army": str(a["uid"]), "order": order}})
     return out, notes
 

@@ -16,6 +16,8 @@ from nta_agent.execution.pawn_moves import reorder_swaps
 _ECODE = re.compile(r"ecode\.(\d+)")
 TRANSIENT = {"500036", "500011", "500020", "500000", "500080"}   # busy / moved: later
 PER_TICK = 4
+MAX_AGE = 900        # process() calls (~5s each): a job that cannot finish in ~75 min is dropped
+MAX_GATHERS = 3      # times the armies are called to the meeting cell before giving up
 
 
 def _key(op: dict) -> str:
@@ -57,6 +59,18 @@ class PawnMoveQueue:
             return [job["from"]] + ([] if job["to"] == "new" else [job["to"]])
         return [job["army"]]
 
+    def army_uids(self) -> set:
+        """Armies a pending job needs: the other rules must leave them alone, or one of
+        them marches off to farm between the gathering and the swap."""
+        out: set = set()
+        for job in self.pending().values():
+            out.update(self._armies_of(job))
+        return out
+
+    def _fail(self, d: dict, key: str, job: dict, on_event, **why) -> None:
+        d.pop(key, None)
+        on_event("pawn_move_failed", {"op": job["op"], **why})
+
     def process(self, actions, on_event) -> None:
         d = self.pending()
         if not d:
@@ -64,6 +78,10 @@ class PawnMoveQueue:
         by_uid = {str(a.get("uid")): a for a in (actions.get_player_armys() or [])}
         for key, job in list(d.items()):
             armies = [by_uid.get(u) for u in self._armies_of(job)]
+            job["age"] = job.get("age", 0) + 1
+            if job["age"] > MAX_AGE:
+                self._fail(d, key, job, on_event, reason="quá lâu không thực hiện được")
+                continue
             if any(a is None for a in armies):
                 job["missing"] = job.get("missing", 0) + 1
                 if job["missing"] >= self.give_up_missing:
@@ -77,7 +95,26 @@ class PawnMoveQueue:
             if not all(is_idle(a) for a in armies):
                 continue
             if len({a.get("index") for a in armies}) > 1:
-                continue  # not in the same cell (yet)
+                if job.get("meet") is None:
+                    continue  # not in the same cell (yet) and nowhere to gather them
+                job["gathers"] = job.get("gathers", 0) + 1
+                if job["gathers"] > MAX_GATHERS:
+                    self._fail(d, key, job, on_event, reason="không gọi được các đội về cùng ô")
+                    continue
+                try:
+                    actions.move_cell_army(
+                        [{"uid": str(a["uid"]), "index": int(a.get("index", 0) or 0)}
+                         for a in armies if a.get("index") != job["meet"]], int(job["meet"]))
+                except Exception as e:
+                    m = _ECODE.search(str(e))
+                    if (m.group(1) if m else "") in TRANSIENT:
+                        job["wait"] = self.retry_ticks
+                    else:
+                        self._fail(d, key, job, on_event, error=str(e)[:120])
+                    continue
+                on_event("pawn_move_gather", {"op": job["op"], "to": int(job["meet"])})
+                continue
+            job["index"] = int(armies[0].get("index", 0) or 0)   # where they are now
             try:
                 finished = self._run(actions, job, by_uid)
             except Exception as e:
