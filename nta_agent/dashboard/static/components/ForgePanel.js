@@ -69,6 +69,8 @@ export default {
   const status=(e)=>{
    if(!e.target) return {k:"none", t:"chưa đặt", c:"var(--muted, #8b949e)"};
    if(e.met) return {k:"met", t:"✅ đã đạt", c:"#199e70"};
+   if(v.value.busy && v.value.busy_craft) return {k:"active", t:"⏸ chờ món mới chế tạo xong", c:"#d29922"};
+   if(v.value.recast_held) return {k:"active", t:"⏸ nhường tài nguyên cho món mới", c:"#d29922"};
    if(e.exclusive && !e.pool_known) return {k:"active", t:"⏸ chưa biết danh sách hiệu ứng trận này", c:"#d29922"};
    if(e.blocked) return {k:"active", t:"⛔ "+e.blocked, c:"#da3633"};
    if(v.value.smelting) return {k:"active", t:"⏸ đang dung luyện", c:"#d29922"};
@@ -105,6 +107,10 @@ export default {
    <button @click="help=!help" title="Cách agent rèn lại" style="padding:0 7px">?</button>
    <span class="muted" style="font-size:12px;margin-left:auto">Sắt <b>{{ v.iron }}</b> · Máy cố định <b>{{ v.fixator }}</b>
     <span v-if="v.busy"> · ⏳ đang rèn</span><span v-if="v.smelting" style="color:#d29922"> · ⏳ đang dung luyện</span></span></div>
+  <div v-if="v.busy && v.busy_craft" style="font-size:12px;margin:6px 0;color:#d29922">
+   🔨 Đang chế tạo món mới <b>{{ v.busy_name || "?" }}</b>
+   <span v-if="v.busy.surplusTime"> (còn ~{{ Math.ceil(v.busy.surplusTime/60000) }} phút)</span>
+   <span class="muted"> · vòng rèn lại chờ món này xong — game chỉ rèn một món một lúc</span></div>
   <div v-if="(v.craft_waiting||[]).length" style="font-size:12px;margin:6px 0;color:#d29922">
    ⏳ Chờ chế tạo:
    <span v-for="(w,i) in v.craft_waiting" :key="w.uid">{{ i ? " · " : "" }}<b>{{ w.name }}</b> thiếu

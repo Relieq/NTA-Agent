@@ -17,7 +17,25 @@ from __future__ import annotations
 import re
 from dataclasses import dataclass
 
+
 # CType -> resource name (engine enum, verified: 1 cereal,2 timber,3 stone,9 iron…).
+def busy_craft(busy, crafted_uids, name_of=None) -> dict:
+    """What the running forge is: a CRAFT of a newly unlocked equip (its uid is not among the
+    crafted equips yet) or a recast of one we own. ``{"busy_craft": bool, "busy_name": str}``
+    — the dashboard says the recast loop waits for a craft instead of leaving it unexplained."""
+    if not isinstance(busy, dict) or not busy.get("uid"):
+        return {"busy_craft": False, "busy_name": ""}
+    uid = str(busy["uid"])
+    is_craft = uid not in {str(u) for u in crafted_uids or ()}
+    name = ""
+    if is_craft and name_of is not None:
+        try:
+            name = str(name_of(int(uid.split("_")[0])) or "")
+        except (ValueError, TypeError):
+            name = ""
+    return {"busy_craft": is_craft, "busy_name": name}
+
+
 CTYPE = {1: "cereal", 2: "timber", 3: "stone", 5: "gold", 7: "exp_book",
          9: "iron", 13: "up_scroll", 14: "fixator"}
 

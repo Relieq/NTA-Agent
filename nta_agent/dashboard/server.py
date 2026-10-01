@@ -834,7 +834,8 @@ def read_forge_view(cfg) -> dict:
     return {"equips": equips, "busy": data.get("busy"), "iron": data.get("iron", 0),
             "smelting": data.get("smelting"), "fixator": data.get("fixator", 0),
             "craft_waiting": data.get("craft_waiting") or [],
-            "recast_held": bool(data.get("recast_held"))}
+            "recast_held": bool(data.get("recast_held")),
+            "busy_craft": bool(data.get("busy_craft")), "busy_name": data.get("busy_name") or ""}
 
 
 def _smelt_raw(cfg) -> dict:

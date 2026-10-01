@@ -304,3 +304,15 @@ def test_a_craft_that_only_lacks_gold_does_not_stop_recasting():
     assert rule.applies(st, acts) is True                       # gold is not what a recast spends
     rule.act(acts)
     assert acts.forged == ["6001_1"] and "forge_recast_hold" not in events
+
+
+# ---- the panel must say WHY the recast loop is idle ---------------------------------------
+def test_busy_forge_is_a_craft_when_the_equip_is_not_crafted_yet():
+    from nta_agent.execution.forge import busy_craft
+    names = {6117: "Giáp Mới"}
+    assert busy_craft({"uid": "6117_10"}, {"6005_1"}, names.get) == {
+        "busy_craft": True, "busy_name": "Giáp Mới"}
+    assert busy_craft({"uid": "6005_1"}, {"6005_1"}, names.get) == {
+        "busy_craft": False, "busy_name": ""}                       # a recast of an owned equip
+    assert busy_craft(None, set(), names.get) == {"busy_craft": False, "busy_name": ""}
+    assert busy_craft({"uid": "bad"}, set(), names.get)["busy_name"] == ""   # never raises
