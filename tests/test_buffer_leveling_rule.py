@@ -405,3 +405,39 @@ def test_enough_cereal_levels_and_clears_the_reserve(tmp_path):
     assert rule.cereal_reserve == 346
     _tick(rule, _state(cereal=400), acts)
     assert [c[0] for c in acts.calls if c[0] == "level"] == ["level"] and rule.cereal_reserve == 0
+
+
+# ---- the cereal of a level-up is PER MATCH: PAWN_COST_LV_LIST[lv] x base price -------------
+def test_level_up_cereal_uses_this_matchs_price_not_the_table(tmp_path):
+    # table says 346 for a lv1 IMP; this match's base 312 -> 2 x 312 = 624 (live 2026-10-01:
+    # 346 passed the check at 400 cereal and the game answered 500012 every minute)
+    rule = _rule(tmp_path)
+    rule.pawn_cost_source = lambda: {3305: 312}
+    acts = FakeActions(_recruit_setup(tmp_path, have=9))
+    for _ in range(3):
+        _tick(rule, _state(cereal=400), acts)
+    assert [c for c in acts.calls if c[0] == "level"] == []      # 400 < 624: nothing is sent
+    assert rule.cereal_reserve == 624
+    _tick(rule, _state(cereal=700), acts)
+    assert [c[0] for c in acts.calls if c[0] == "level"] == ["level"] and rule.cereal_reserve == 0
+
+
+def test_without_a_price_list_the_table_cost_is_used(tmp_path):
+    rule = _rule(tmp_path)
+    rule.pawn_cost_source = dict
+    acts = FakeActions(_recruit_setup(tmp_path, have=9))
+    for _ in range(3):
+        _tick(rule, _state(cereal=300), acts)
+    assert rule.cereal_reserve == 346
+
+
+def test_a_broken_price_source_never_blocks_leveling(tmp_path):
+    rule = _rule(tmp_path)
+
+    def boom():
+        raise RuntimeError("x")
+    rule.pawn_cost_source = boom
+    acts = FakeActions(_recruit_setup(tmp_path, have=9))
+    for _ in range(3):
+        _tick(rule, _state(cereal=99999), acts)
+    assert [c for c in acts.calls if c[0] == "level"]
