@@ -14,6 +14,27 @@ from collections import Counter
 
 from nta_agent.execution.army_composer import _is_hero
 
+W = 600  # world map width: cell index = y * W + x
+
+
+def _dist(a: int, b: int) -> int:
+    return abs(a % W - b % W) + abs(a // W - b // W)
+
+
+def choose_meet(cells, owned, *, fallback: int | None = None, occupied=None) -> int | None:
+    """The cell where armies standing at ``cells`` should meet: an OWNED cell (armies can
+    only be sent into our own land) that minimises the longest march — usually halfway
+    between them, or one army's own cell. Ties: shorter total march, then fewer armies
+    already standing there, then the lower index. ``fallback`` (the main city) when no
+    owned cell is known."""
+    cells = [int(c) for c in cells]
+    cand = {int(o) for o in owned or ()} | ({int(fallback)} if fallback else set())
+    if not cand or not cells:
+        return fallback
+    occ = occupied or {}
+    return min(cand, key=lambda c: (max(_dist(c, x) for x in cells),
+                                    sum(_dist(c, x) for x in cells), occ.get(c, 0), c))
+
 
 def _lv(p: dict) -> int:
     return int(p.get("lv", 0) or 0)
@@ -65,14 +86,19 @@ def reorder_swaps(army: dict, order) -> list:
     return swaps
 
 
-def sanitize_pawn_moves(raw, armies, cap: int = 9, meet: int | None = None
-                        ) -> tuple[list, list]:
+def _meet_for(meet, cells):
+    """``meet`` is a fixed cell, or a callable ``cells -> cell`` (see ``choose_meet``)."""
+    return meet(cells) if callable(meet) else meet
+
+
+def sanitize_pawn_moves(raw, armies, cap: int = 9, meet=None) -> tuple[list, list]:
     """Validate chat-proposed rearrangements into ``(clean, notices)``.
 
-    The game only swaps/moves pawns between armies in the SAME cell. ``meet`` = the cell
-    to gather them at (the main city) when they are not: such an op is kept with
-    ``gather: True`` and the queue calls the armies there first; without ``meet`` it is
-    dropped with a notice.
+    The game only swaps/moves pawns between armies in the SAME cell (any cell: it must not
+    be in battle and the armies must not be marching). ``meet`` = where to gather armies
+    that are not (a cell, or a callable picking one from their cells, e.g. halfway): such
+    an op is kept with ``gather: True`` and the queue calls the armies there first;
+    without a meeting cell it is dropped with a notice.
 
     ``raw`` entries::
 
@@ -101,7 +127,8 @@ def sanitize_pawn_moves(raw, armies, cap: int = 9, meet: int | None = None
                              "thì hãy nói 'đổi thứ tự', còn tráo thì cần hai đội khác nhau")
                 continue
             gather = a.get("index") != b.get("index")
-            if gather and meet is None:
+            at = _meet_for(meet, [a.get("index"), b.get("index")]) if gather else None
+            if gather and at is None:
                 notes.append(f"{a.get('name')} và {b.get('name')} không ở cùng ô — "
                              "cần tập hợp về cùng một ô trước khi đổi lính")
                 continue
@@ -115,8 +142,11 @@ def sanitize_pawn_moves(raw, armies, cap: int = 9, meet: int | None = None
             out.append({"op": "swap", "a": str(a["uid"]), "b": str(b["uid"]),
                         "name_a": a.get("name") or str(a["uid"]),
                         "name_b": b.get("name") or str(b["uid"]),
-                        "index": int((meet if gather else a.get("index", 0)) or 0),
-                        "gather": gather, "meet": meet, "pawn_a": pa, "pawn_b": pb,
+                        "index": int((at if gather else a.get("index", 0)) or 0),
+                        "gather": gather, "meet": at,
+                        "travel": [x.get("name") or str(x["uid"]) for x in (a, b)
+                                   if gather and x.get("index") != at],
+                        "pawn_a": pa, "pawn_b": pb,
                         "count": n,
                         "pairs": [[str(xs[i]["uid"]), str(ys[i]["uid"])] for i in range(n)],
                         "spec": {"op": "swap", "army_a": str(a["uid"]), "pawn_a": pa,
@@ -131,7 +161,8 @@ def sanitize_pawn_moves(raw, armies, cap: int = 9, meet: int | None = None
                 notes.append("Không xác định được đội nguồn / đội đích để chuyển lính")
                 continue
             gather = dst is not None and src.get("index") != dst.get("index")
-            if gather and meet is None:
+            at = _meet_for(meet, [src.get("index"), dst.get("index")]) if gather else None
+            if gather and at is None:
                 notes.append(f"{src.get('name')} và {dst.get('name')} không ở cùng ô — "
                              "cần tập hợp về cùng một ô trước khi chuyển lính")
                 continue
@@ -150,8 +181,11 @@ def sanitize_pawn_moves(raw, armies, cap: int = 9, meet: int | None = None
             out.append({"op": "move", "from": str(src["uid"]), "to": dst_uid,
                         "name_from": src.get("name") or str(src["uid"]),
                         "name_to": target_name or dst_uid,
-                        "index": int((meet if gather else src.get("index", 0)) or 0),
-                        "gather": gather, "meet": meet, "pawn_id": pid, "count": n,
+                        "index": int((at if gather else src.get("index", 0)) or 0),
+                        "gather": gather, "meet": at,
+                        "travel": [x.get("name") or str(x["uid"]) for x in (src, dst)
+                                   if gather and x.get("index") != at],
+                        "pawn_id": pid, "count": n,
                         "pawn_uids": [str(p["uid"]) for p in pool[:n]],
                         "spec": {"op": "move", "army_from": str(src["uid"]), "army_to": dst_uid,
                                  "pawn_id": pid, "count": n, "pos": _pos(r.get("pos"))}})

@@ -136,7 +136,7 @@ _CHAT_TOOLS = (
     "\"count\":n,\"pos\":\"last\"|\"first\" (optional)} moves n soldiers into another (or a NEW) army; "
     "{\"op\":\"reorder\",\"army\":uid,\"order\":[pawn id,...]} puts those types first inside ONE "
     "army (front line = first slots). You name armies and TYPES only — the hands pick the "
-    "soldiers (lowest level, never heroes). If the two armies are in different cells that is FINE — do NOT ask about it: the hands call both to the main city first. It is "
+    "soldiers (lowest level, never heroes). If the two armies are in different cells that is FINE — do NOT ask about it: the hands call them to a meeting cell first. It is "
     "shown for CONFIRMATION first; if it would break the active strike goal the player is "
     "told and the goal is cancelled on confirm. Match armies by `troops` like renames and "
     "ASK via `question` when unclear. Never rearrange on your own initiative.\n"
