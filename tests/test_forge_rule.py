@@ -250,3 +250,57 @@ def test_craft_waiting_flags_when_builds_should_yield():
     rule2 = Forge(config=FakeConfig(BASE2), profile=SimpleNamespace(forge={"enabled": True}))
     rule2.applies(st, FakeActions())
     assert rule2.craft_waiting[0]["yield_builds"] is True                  # only timber/stone short
+
+
+# ---- 2026-10-01: a craft that is waiting comes before the recast loop ---------------------
+CRAFT_AND_RECAST = {
+    6001: {"id": 6001, "exclusive_pawn": "", "forge_cost": "2,0,100|3,0,100|9,0,3"},   # recast target
+    6005: {"id": 6005, "exclusive_pawn": "", "forge_cost": "9,0,50"},                  # new unlock
+}
+
+
+def _craft_vs_recast(iron, events, gold_craft=False):
+    base = dict(CRAFT_AND_RECAST)
+    if gold_craft:
+        base[6005] = {"id": 6005, "exclusive_pawn": "", "forge_cost": "5,0,900"}      # gold only (CType 5)
+    st = _state({"1": {"id": 6005, "lv": 1}}, equips=[_eq(150, 20)], iron=iron)
+    rule = Forge(config=FakeConfig2(base, REFF), profile=SimpleNamespace(forge={"enabled": True}),
+                 targets_source=lambda: {"6001_1": {"threshold": 0.8, "budget": 9}},
+                 spend_fn=lambda uid, iron: None, on_event=lambda k, d: events.append(k))
+    return st, rule
+
+
+def test_a_craft_waiting_for_iron_holds_the_recast_loop():
+    events = []
+    st, rule = _craft_vs_recast(iron=10, events=events)         # craft needs 50, recast ~3
+    assert rule.applies(st, FakeActions()) is False             # before: it recast and burned iron
+    assert events == ["forge_recast_hold"]
+    rule._cooldown = 0
+    rule.applies(st, FakeActions())
+    assert events == ["forge_recast_hold"]                      # said once, not every tick
+    st.resources.iron = 60                                      # now the craft is affordable
+    acts = FakeActions()
+    assert rule.applies(st, acts) is True
+    rule.act(acts)
+    assert acts.forged == ["6005_1"]                            # the craft goes first
+
+
+def test_recast_resumes_once_nothing_is_waiting():
+    events = []
+    st, rule = _craft_vs_recast(iron=10, events=events)
+    rule.applies(st, FakeActions())
+    st.raw["player"]["equips"].append({"id": 6005, "uid": "6005_1"})   # crafted by hand meanwhile
+    rule._cooldown = 0
+    acts = FakeActions()
+    assert rule.applies(st, acts) is True and rule._recast_held is False
+    rule.act(acts)
+    assert acts.forged == ["6001_1"]
+
+
+def test_a_craft_that_only_lacks_gold_does_not_stop_recasting():
+    events = []
+    st, rule = _craft_vs_recast(iron=10, events=events, gold_craft=True)
+    acts = FakeActions()
+    assert rule.applies(st, acts) is True                       # gold is not what a recast spends
+    rule.act(acts)
+    assert acts.forged == ["6001_1"] and "forge_recast_hold" not in events

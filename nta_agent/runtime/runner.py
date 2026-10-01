@@ -339,6 +339,7 @@ def run(cfg: RuntimeConfig, *, ticks: int = 0, session=None, engine=None) -> Non
                    for w in (getattr(_forge_rule, "craft_waiting", None) or [])]
         out = {"equips": rows, "busy": player.get("currForgeEquip") or None,
                "craft_waiting": waiting,
+               "recast_held": bool(getattr(_forge_rule, "_recast_held", False)),
                "smelting": player.get("currSmeltEquip") or None,
                "iron": state.resources.iron,
                "fixator": int(getattr(state.resources, "fixator", 0) or 0)}
