@@ -255,3 +255,51 @@ def test_decision_service_hands_the_command_to_the_queue(tmp_path):
     ops, _ = sanitize_pawn_moves([SWAP], _armies())
     svc._execute({"action": "pawn_moves", "ops": ops})
     assert len(svc.pawn_moves.pending()) == 1
+
+
+# ---- feedback + tolerant parsing (live 2026-10-01: a bare op from the brain = silence) ----
+def test_slot_position_picks_the_last_or_first_pawn_of_a_type():
+    out, _ = sanitize_pawn_moves(
+        [{"op": "swap", "army_a": "A", "pawn_a": 3305, "pos_a": "last",
+          "army_b": "B", "pawn_b": 3206, "pos_b": "first"}], _armies())
+    assert out[0]["pairs"] == [["A3", "B2"]]          # A's LAST 3305 slot, B's first 3206
+    out, _ = sanitize_pawn_moves(
+        [{"op": "move", "army_from": "A", "army_to": "B", "pawn_id": 3206, "pos": "last"}],
+        _armies())
+    assert out[0]["pawn_uids"] == ["A1"]
+
+
+def test_every_drop_says_why():
+    _, notes = sanitize_pawn_moves(
+        [{"op": "swap", "army_a": "A", "pawn_a": 3305, "army_b": "A", "pawn_b": 3206},
+         {"op": "swap", "army_a": "A", "pawn_a": 9999, "army_b": "B", "pawn_b": 3206},
+         {"op": "swap", "army_a": "ZZ", "pawn_a": 3305, "army_b": "B", "pawn_b": 3206},
+         {"op": "reorder", "army": "A", "order": [3206]}], _armies())
+    text = " ".join(notes)
+    assert "cùng" in text or "hai đội khác nhau" in text
+    assert "không có lính loại 9999" in text and "Không xác định" in text and "đúng thứ tự" in text
+
+
+def test_a_bare_op_from_the_brain_is_still_proposed(tmp_path):
+    cfg = _cfg(tmp_path)
+
+    def propose(digest, profile, instruction=None, history=None):
+        return dict(SWAP)                                  # no "pawn_moves" wrapper
+    out = handle_chat(cfg, "đổi lính", history=[], propose=propose)
+    assert out["needs_confirm"] and out["pawn_moves"][0]["op"] == "swap"
+
+    def single(digest, profile, instruction=None, history=None):
+        return {"pawn_moves": dict(SWAP)}                  # a dict instead of a list
+    assert handle_chat(cfg, "đổi lính", history=[], propose=single)["pawn_moves"]
+
+
+def test_a_rearrangement_request_is_never_answered_with_silence(tmp_path):
+    cfg = _cfg(tmp_path)
+
+    def nothing(digest, profile, instruction=None, history=None):
+        return {}
+    out = handle_chat(cfg, "Tráo đổi 1 lính thợ săn từ đội D3 với lính cung độc cuối đội 5",
+                      history=[], propose=nothing)
+    assert out["pawn_moves"] == [] and out["notices"]
+    out = handle_chat(cfg, "xây thêm kho lương", history=[], propose=nothing)
+    assert not any("tráo" in n for n in out["notices"])

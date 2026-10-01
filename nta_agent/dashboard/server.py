@@ -181,6 +181,31 @@ def confirm_dismissals(cfg, specs) -> dict:
     return {"ok": True, "queued": clean, "notices": notes}
 
 
+_MOVE_OPS = ("swap", "move", "reorder")
+_MOVE_WORDS = ("tráo", "hoán đổi", "đổi chỗ", "đổi lính", "chuyển lính", "đổi thứ tự", "đưa lính")
+
+
+def _raw_pawn_moves(edits) -> list:
+    """The brain's rearrangements, tolerant of the shapes models actually return: the
+    documented ``{"pawn_moves": [...]}``, a single dict, or one bare op at the top level
+    (live: gpt-4o-mini answered ``{"op": "swap", ...}`` and the request vanished)."""
+    if not isinstance(edits, dict):
+        return []
+    raw = edits.get("pawn_moves")
+    if isinstance(raw, dict):
+        raw = [raw]
+    if isinstance(raw, list) and raw:
+        return raw
+    if edits.get("op") in _MOVE_OPS:
+        return [{k: v for k, v in edits.items() if k != "rationale"}]
+    return []
+
+
+def _asks_for_pawn_move(message) -> bool:
+    m = str(message or "").lower()
+    return any(w in m for w in _MOVE_WORDS)
+
+
 def pawn_move_label(m: dict) -> str:
     """One readable line for a resolved pawn move (the confirm card + chat history)."""
     if m["op"] == "swap":
@@ -365,8 +390,13 @@ def handle_chat(cfg, message, *, history=None, propose=None):
         dismissals.append({**d, "troops": _troops_label(dict(comp), names), "warn": warn,
                            "pawn_name": names.get(str(d["pawn_id"])) if d["pawn_id"] else ""})
     from nta_agent.execution.pawn_moves import sanitize_pawn_moves, strike_conflicts
-    raw_moves = edits.get("pawn_moves") if isinstance(edits, dict) else None
+    raw_moves = _raw_pawn_moves(edits)
     moves, move_notes = sanitize_pawn_moves(raw_moves, armies, cap=_pawn_cap(cfg))
+    if not moves and not move_notes and (raw_moves or _asks_for_pawn_move(message)):
+        # never answer a rearrangement request with silence (live 2026-10-01: the brain
+        # returned a bare op and nothing at all happened on screen)
+        move_notes = [("Brain chưa đề xuất được thao tác tráo/chuyển lính nào — hãy nêu rõ "
+                       "đội nào, loại lính nào (và đầu hay cuối đội).")]
     goal_armies = _strike_uids(cfg)
     pawn_moves = [{**m, "conflict": strike_conflicts([m], armies, goal_armies),
                    "label": pawn_move_label(m)} for m in moves]

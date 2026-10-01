@@ -30,11 +30,21 @@ def _int(v, default=None):
         return default
 
 
-def _pool(army: dict, pawn_id) -> list:
-    """Movable pawns of a type (any type when None): lowest level first, heroes never."""
+def _pool(army: dict, pawn_id, pos: str = "lowest") -> list:
+    """Movable pawns of a type (any type when None), best pick first, heroes never.
+    ``pos``: "lowest" level first (default), "last" / "first" = by slot order — the
+    player's 'the one at the END of the army' (the army's pawn list is in slot order)."""
     ps = [p for p in army.get("pawns") or []
           if not _is_hero(p) and (pawn_id is None or _pid(p) == pawn_id)]
+    if pos == "last":
+        return ps[::-1]
+    if pos == "first":
+        return ps
     return sorted(ps, key=_lv)
+
+
+def _pos(v) -> str:
+    return v if v in ("last", "first") else "lowest"
 
 
 def reorder_swaps(army: dict, order) -> list:
@@ -60,8 +70,10 @@ def sanitize_pawn_moves(raw, armies, cap: int = 9) -> tuple[list, list]:
 
     ``raw`` entries::
 
-        {"op":"swap",   "army_a":uid, "pawn_a":id, "army_b":uid, "pawn_b":id, "count":n}
-        {"op":"move",   "army_from":uid, "army_to":uid|"new", "pawn_id":id?, "count":n}
+        {"op":"swap",   "army_a":uid, "pawn_a":id, "army_b":uid, "pawn_b":id, "count":n,
+                        "pos_a":"last"|"first"?, "pos_b":"last"|"first"?}
+        {"op":"move",   "army_from":uid, "army_to":uid|"new", "pawn_id":id?, "count":n,
+                        "pos":"last"|"first"?}
         {"op":"reorder","army":uid, "order":[pawn id, ...]}
     """
     by_uid = {str(a.get("uid")): a for a in armies or []}
@@ -75,15 +87,23 @@ def sanitize_pawn_moves(raw, armies, cap: int = 9) -> tuple[list, list]:
         if op == "swap":
             a, b = by_uid.get(str(r.get("army_a"))), by_uid.get(str(r.get("army_b")))
             pa, pb = _int(r.get("pawn_a")), _int(r.get("pawn_b"))
-            if a is None or b is None or a is b or pa is None or pb is None:
+            if a is None or b is None or pa is None or pb is None:
+                notes.append("Không xác định được đội hoặc loại lính cần đổi — hãy nêu rõ tên đội và loại lính")
+                continue
+            if a is b:
+                notes.append(f"Hai bên đều là {a.get('name')} — muốn đổi thứ tự lính trong một đội "
+                             "thì hãy nói 'đổi thứ tự', còn tráo thì cần hai đội khác nhau")
                 continue
             if a.get("index") != b.get("index"):
                 notes.append(f"{a.get('name')} và {b.get('name')} không ở cùng ô — "
                              "cần tập hợp về cùng một ô trước khi đổi lính")
                 continue
-            xs, ys = _pool(a, pa), _pool(b, pb)
+            xs = _pool(a, pa, _pos(r.get("pos_a")))
+            ys = _pool(b, pb, _pos(r.get("pos_b")))
             n = min(count, len(xs), len(ys))
             if n < 1:
+                notes.append(f"{a.get('name')} không có lính loại {pa}"
+                             if not xs else f"{b.get('name')} không có lính loại {pb}")
                 continue
             out.append({"op": "swap", "a": str(a["uid"]), "b": str(b["uid"]),
                         "name_a": a.get("name") or str(a["uid"]),
@@ -97,12 +117,13 @@ def sanitize_pawn_moves(raw, armies, cap: int = 9) -> tuple[list, list]:
             dst = None if dst_uid == "new" else by_uid.get(dst_uid)
             pid = _int(r.get("pawn_id"))
             if src is None or (dst is None and dst_uid != "new") or dst is src:
+                notes.append("Không xác định được đội nguồn / đội đích để chuyển lính")
                 continue
             if dst is not None and src.get("index") != dst.get("index"):
                 notes.append(f"{src.get('name')} và {dst.get('name')} không ở cùng ô — "
                              "cần tập hợp về cùng một ô trước khi chuyển lính")
                 continue
-            pool = _pool(src, pid)
+            pool = _pool(src, pid, _pos(r.get("pos")))
             room = cap if dst is None else cap - len(dst.get("pawns") or [])
             target_name = dst.get("name") if dst else "đội mới"
             if room < 1:
@@ -112,6 +133,7 @@ def sanitize_pawn_moves(raw, armies, cap: int = 9) -> tuple[list, list]:
             if n < min(count, len(pool)):
                 notes.append(f"{target_name} chỉ còn chỗ cho {n} lính")
             if n < 1:
+                notes.append(f"{src.get('name')} không có lính loại này để chuyển")
                 continue
             out.append({"op": "move", "from": str(src["uid"]), "to": dst_uid,
                         "name_from": src.get("name") or str(src["uid"]),
@@ -122,9 +144,11 @@ def sanitize_pawn_moves(raw, armies, cap: int = 9) -> tuple[list, list]:
             a = by_uid.get(str(r.get("army")))
             order = [_int(t) for t in r.get("order") or [] if _int(t) is not None]
             if a is None or not order:
+                notes.append("Không xác định được đội hoặc thứ tự lính cần đổi")
                 continue
             swaps = reorder_swaps(a, order)
             if not swaps:
+                notes.append(f"{a.get('name')} đã đúng thứ tự đó rồi")
                 continue
             out.append({"op": "reorder", "army": str(a["uid"]),
                         "name": a.get("name") or str(a["uid"]),
