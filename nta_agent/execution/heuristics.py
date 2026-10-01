@@ -1838,6 +1838,7 @@ class BufferLeveling:
     _pending: object = None        # (label, callable)
     _away: set = field(default_factory=set)
     cereal_reserve: int = 0   # cereal the next level-up waits for (Recruit leaves it alone)
+    _last_trade: dict = field(default_factory=dict)  # buffer uid -> (pawn out, pawn in): no undoing
     pawn_cost_source: object = None  # callable -> {pawn_id: base cost} of THIS match
     _buffers: set = field(default_factory=set)
     _setup_reserved: set = field(default_factory=set)
@@ -1955,6 +1956,11 @@ class BufferLeveling:
                 out |= {str(u) for u in (st.get("buffers") or {})}
         return out
 
+    def _group_order(self) -> dict:
+        """{army uid: position} in the player's saved group order (a stable tie-break)."""
+        grp = self._group()
+        return {str(u): i for i, u in enumerate((grp or {}).get("armies") or [])}
+
     def _plan_travel(self, state, proposal, armies, group_armies, main, target, actions, st):
         """Per buffer: leveling -> travel (to an owned cell next to its target main
         army, re-aimed whenever that army moves) -> swap (the main army steps over;
@@ -1971,9 +1977,6 @@ class BufferLeveling:
         spares_home = [a for a in armies
                        if str(a.get("uid")) not in members and str(a.get("name", "")) not in names
                        and int(a.get("index", 0) or 0) == main and is_idle(a)]
-        weakest = max(group_armies, default=None,
-                      key=lambda a: sum(1 for p in a.get("pawns") or []
-                                        if int(p.get("lv", 0) or 0) < target))
         self._buffers = {str(a["uid"]) for a in bufs}
         recs = st.setdefault("buffers", {})
         queued = leveling_pawn_uids(state)
@@ -1998,13 +2001,24 @@ class BufferLeveling:
                 if bidx != main or not is_idle(buf) or any(
                         str(p["uid"]) in queued for p in buf.get("pawns") or []):
                     continue
-                trades = (bp.reshape(buf, weakest, spares_home, target)
-                          if weakest is not None and spares_home else [])
+                # shape THIS buffer for ITS OWN stable target (designated types, the player's
+                # group order) and never undo the trade it just made: the old shared
+                # `weakest` flipped with the server's army order and the buffers swapped
+                # pawns with a spare back and forth for hours
+                des = next((b.get("types") or {} for b in proposal.get("buffers") or []
+                            if b.get("name") == buf.get("name")), {})
+                own = bp.own_target(group_armies, des, target, self._group_order())
+                trades = (bp.reshape(buf, own, spares_home, target)
+                          if own is not None and spares_home else [])
+                last = self._last_trade.get(uid)
+                if last:
+                    trades = [t for t in trades if not (t[0] == last[1] and t[2] == last[0])]
                 if trades and planned is None:  # fit the buffer's types first (P2)
                     out_uid, spare_uid, in_uid = trades[0]
 
                     def trade(o=out_uid, s=spare_uid, i=in_uid, b=uid):
                         actions.exchange_pawn_army(main, b, o, i, army_uid2=s)
+                        self._last_trade[b] = (o, i)
                         self._emit("buffer_reshape", {"buffer": b, "out": o, "spare": s, "in": i})
                     planned = ("reshape", trade)
                     continue

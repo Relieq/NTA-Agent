@@ -441,3 +441,76 @@ def test_a_broken_price_source_never_blocks_leveling(tmp_path):
     for _ in range(3):
         _tick(rule, _state(cereal=99999), acts)
     assert [c for c in acts.calls if c[0] == "level"]
+
+
+# ---- live 2026-10-01: both buffers swapped pawns with a spare back and forth for hours -------
+def _pongworld(tmp_path):
+    """Group G0 = 9 IMP (3305), G1 = 9 hunters (3201), both weak; buffers designated IMP /
+    hunter but MIXED; a spare D1 with hunters at the city."""
+    import json as _json
+
+    def army(uid, name, kinds, state=0):
+        pawns = [{"uid": f"{uid}-{k}", "id": pid, "lv": 1} for k, pid in enumerate(kinds)]
+        return {"uid": uid, "name": name, "index": MAIN, "state": state, "pawns": pawns}
+    armies = [army("G0", "Đội 1", [3305] * 9), army("G1", "Đội 2", [3201] * 9),
+              army("B1", "Nâng Cấp 1", [3305] * 3 + [3201] * 6),
+              army("B2", "Nâng Cấp 2", [3305] * 6 + [3201] * 3),
+              army("D1", "D1", [3201] * 6)]
+    path = tmp_path / "buffers.json"
+    st = buffers.load(path)
+    st.update(approved=True, setup_done=True, done=[], proposal={
+        "buffers": [{"name": "Nâng Cấp 1", "base_uid": "", "types": {"3305": 9}, "merge": [],
+                     "recruit": {}},
+                    {"name": "Nâng Cấp 2", "base_uid": "", "types": {"3201": 9}, "merge": [],
+                     "recruit": {}}], "dismiss": []})
+    buffers.save(path, st)
+    del _json
+    return armies
+
+
+def test_buffers_are_made_pure_again_and_stop_trading(tmp_path):
+    import random
+    armies = _pongworld(tmp_path)
+    rule = _rule(tmp_path)
+    acts = FakeActions(armies, swap_mutates=True)
+    rng = random.Random(7)
+    trades = []
+    for _ in range(80):
+        rng.shuffle(armies)                   # the server lists armies in a different order each time
+        before = len([c for c in acts.calls if c[0] == "exchange"])
+        _tick(rule, _state(cereal=0), acts)
+        trades.append(len([c for c in acts.calls if c[0] == "exchange"]) - before)
+    b1 = next(a for a in armies if a["uid"] == "B1")
+    b2 = next(a for a in armies if a["uid"] == "B2")
+    assert {p["id"] for p in b1["pawns"]} == {3305} and {p["id"] for p in b2["pawns"]} == {3201}
+    assert sum(trades) <= 12                      # a handful of trades, not 68
+    assert sum(trades[40:]) == 0                  # and it STOPS once the buffers fit
+
+
+def test_a_reshape_is_never_immediately_undone(tmp_path):
+    armies = _pongworld(tmp_path)
+    rule = _rule(tmp_path)
+    acts = FakeActions(armies, swap_mutates=True)
+    for _ in range(40):
+        _tick(rule, _state(cereal=0), acts)
+    ex = [c for c in acts.calls if c[0] == "exchange"]
+    seen = set()
+    for c in ex:                                  # (army, out, in, other): never the reverse pair twice
+        key = (c[3], c[4])
+        assert (c[4], c[3]) not in seen, f"trade {key} undid a previous one"
+        seen.add(key)
+
+
+def test_own_target_is_stable_whatever_order_the_server_lists_armies_in():
+    from nta_agent.execution.buffer_plan import own_target
+
+    def a(uid, kinds):
+        return {"uid": uid, "pawns": [{"uid": f"{uid}{k}", "id": pid, "lv": 1}
+                                      for k, pid in enumerate(kinds)]}
+    g0, g1 = a("G0", [3305] * 9), a("G1", [3201] * 9)
+    order = {"G0": 0, "G1": 1}
+    for armies in ([g0, g1], [g1, g0]):
+        assert own_target(armies, {3305}, 2, order)["uid"] == "G0"     # only G0 needs IMP
+        assert own_target(armies, {3201}, 2, order)["uid"] == "G1"
+        assert own_target(armies, {3305, 3201}, 2, order)["uid"] == "G0"  # tie: the player's order
+    assert own_target([g0], {3201}, 2, order) is None                  # nothing to serve
