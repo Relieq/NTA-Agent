@@ -201,6 +201,26 @@ def meeting_cell(main_index: int, owned, occupancy: dict, cap: int = 5,
     return None
 
 
+def own_target(group_armies, designated, target_lv: int, order=None) -> dict | None:
+    """The main army ONE buffer is shaped for: the one with the most weak pawns (below
+    ``target_lv``) of the buffer's DESIGNATED types, ties broken by the player's group order
+    then uid — never by the order the server happens to list the armies in. (``max`` over the
+    server's list flipped between two equally weak armies, and every flip reshaped the buffers
+    for the other one: 68 swaps in 50 minutes, both buffers left mixed — live 2026-10-01.)"""
+    order = order or {}
+    des = {int(t) for t in designated or ()}
+    best = None
+    for a in group_armies or []:
+        n = sum(1 for p in a.get("pawns") or []
+                if _lv(p) < target_lv and (not des or int(p["id"]) in des))
+        if not n:
+            continue
+        key = (-n, order.get(str(a.get("uid")), 10**6), str(a.get("uid")))
+        if best is None or key < best[0]:
+            best = (key, a)
+    return best[1] if best else None
+
+
 def reshape(buffer_army, target_army, spares_at_city, target_lv: int) -> list[tuple[str, str, str]]:
     """Trades that make the buffer fit ``target_army``'s weak pawns by type:
     ``(buffer pawn out, spare army uid, spare pawn in)``. A buffer pawn of a type
