@@ -36,12 +36,20 @@ sắp xếp** (kéo-thả, có thể bỏ qua công trình không muốn).
 <img src="docs/images/armies.png" alt="Quân đội" width="900">
 
 - Chiếm ô quanh lãnh thổ bằng **mô phỏng trận đánh chính engine của game**: chỉ đánh khi
-  dự đoán thắng trong giới hạn tổn thất bạn đặt.
+  dự đoán thắng trong giới hạn tổn thất bạn đặt. **Thể lực chỉ trả cho rương**: hết thể lực vẫn
+  mở rộng được (chỉ không có rương). Bị đồng minh bao quanh cũng không kẹt: ô kề đất đồng minh
+  cũng đánh được (đúng luật game).
+- Mặc định mỗi đội farm đánh **riêng** khi một mình đủ thắng (dùng ít quân nhất); cả nhóm chỉ ra
+  chung khi một đội không đủ sức.
 - Tự chiêu mộ, hồi sinh, dồn lính cho đủ đội, nâng cấp lính bằng sách EXP.
 - **Nâng lính bằng đội dư:** chọn nhóm đội + chế độ. Agent đề xuất đội dư (dùng lại đội lẻ, dồn lính,
   chiêu mộ, số sách/thời gian cần); bạn xác nhận. Đội dư nâng ở thành rồi ra **ô kề** đội chính **tráo
   lính cùng loại** — đội chính vẫn farm/dig (thiếu 1 đội thì chỉ đánh khi vẫn không mất lính).
-- Chọn **đội farm** để agent quản lý riêng.
+  Mỗi lần nâng 1 cấp tốn cả **lương** (hệ số cấp × giá gốc của trận, vài trăm), nên luật chiêu mộ thường
+  nhường lượng lương đó; agent chỉ nâng **đúng số lính mỗi loại mà nhóm farm đang thiếu** (đội chính
+  8 cung độc + 1 thợ săn thì chỉ nâng 1 thợ săn), không nâng cả đội dư.
+- Chọn **đội farm** để agent quản lý riêng. Mục **Thứ tự vào trận** (thu gọn một dòng) cho đổi thứ tự
+  bằng kéo-thả hoặc ◀ ▶ rồi **Lưu**: đội đầu tiên vào trận trước (1-tile), mô phỏng dig cũng theo thứ tự đó.
 
 ### 🧠 Chat với "bộ não" (tuỳ chọn, cần OpenAI key)
 <img src="docs/images/chat.png" alt="Chat tạo nhóm quân" width="760">
@@ -50,11 +58,21 @@ Ra lệnh bằng tiếng Việt, ví dụ _"Tạo nhóm 5 đội gồm 1 đội 
 Đội 1 đến Đội 5"_. Bộ não đề xuất, **bạn bấm Xác nhận** thì agent mới làm: dồn lính từ các
 đội hỗn hợp, chiêu mộ phần thiếu rồi tự đặt tên. Đổi tên đội, đổi chiến thuật… cũng làm qua chat.
 
+**Tráo lính:** _"Tráo 1 lính thợ săn của Đội 3 với lính cung độc nằm cuối Đội 5"_. Có ba thao tác: **đổi
+chỗ** 2 lính giữa 2 đội, **chuyển** lính sang đội khác (hoặc đội mới), **đổi thứ tự** lính trong một đội.
+Agent chọn lính cấp thấp nhất (hoặc lính ở đầu/cuối đội nếu bạn nói rõ) và hiện thẻ xác nhận. Game chỉ cho
+tráo khi hai đội **cùng một ô**: nếu khác ô, agent gọi chúng tới một ô trong đất của bạn (điểm gặp gần nhất,
+tối đa 5 đội/ô; đội đang sắp đánh thì đứng yên, đội kia đi tới) rồi mới tráo. Nếu việc tráo làm hỏng mục
+tiêu đội hình đang chạy, thẻ báo trước và xác nhận sẽ huỷ mục tiêu đó. Tên đội bạn gõ phải khớp đội có thật,
+nếu không agent hỏi lại thay vì đoán.
+
 ### 🔨 Rèn lại trang bị theo tiêu chí
 <img src="docs/images/forge.png" alt="Rèn lại trang bị" width="760">
 
 Đặt **mức tối thiểu cho từng chỉ số hiệu ứng** (có hiện khoảng roll được, ví dụ 150–180%)
-và **ngân sách sắt** cho mỗi món. Agent rèn lại tới khi đạt, hoặc dừng khi hết ngân sách.
+và **ngân sách sắt** cho mỗi món. Agent rèn lại tới khi đạt, hoặc dừng khi hết ngân sách. Món vừa **mở khoá** được chế tạo **trước** vòng
+rèn lại: nếu nó còn thiếu lương/gỗ/đá/sắt thì vòng rèn lại tạm dừng (rèn lại tiêu đúng các thứ đó), và bảng
+ghi rõ lý do ("đang chế tạo món mới…", "vòng rèn lại tạm dừng…").
 
 **Trang bị chuyên dụng:** bạn chọn món ở ô 10/18 (thấy luôn danh sách hiệu ứng random **của trận này**).
 Khi một dòng mong muốn đạt mức, agent **khoá** dòng đó rồi dùng **máy cố định** (ngân sách riêng) để rèn dòng còn lại.
@@ -66,12 +84,28 @@ Khi một dòng mong muốn đạt mức, agent **khoá** dòng đó rồi dùng
 Bản đồ lãnh thổ trực tiếp: ô đã chiếm, biên giới, quân địch, vùng gợi ý xây **Cứ Điểm**
 (bấm 1 ô là agent xây). Kiểu mở rộng xoắn ốc / bạch tuộc tuỳ tình hình địch.
 
-**⛏ Dig tới một ô:** bấm ô bất kỳ trên bản đồ → *Dig tới đây*. Agent tính đường chiếm ô liên tiếp
-nhanh nhất (hành quân + thời lượng trận theo bộ mô phỏng), giữ khoảng cách an toàn với địch, dự kiến
-chỗ đặt Cứ Điểm (~7 ô một cái, ưu tiên đất cấp 1), rồi cho **xem trước** số ô / thời gian / thể lực.
-Chỉ khi bạn bấm **Xác nhận** nhóm đội farm mới bắt đầu dig; các đội khác vẫn farm như thường. Đích bị
-chiếm → tự đổi sang ô an toàn gần nhất; ô nào chưa thắng nổi trong giới hạn tổn thất → đi vòng, hoặc
-chờ và báo cần chịu bao nhiêu % tổn thất.
+**⛏ Dig theo đường bạn vẽ:** bấm **✏ Vẽ đường dig**, giữ chuột trái và **kéo qua từng ô** (bắt đầu từ đất của
+bạn hoặc ô kề đất đồng minh; kéo ngược để xoá; Shift hoặc chuột phải để di chuyển bản đồ).
+1. **📐 Đánh giá đường:** agent chấm từng ô (địa hình, đất người khác, sát địch, ô nhóm farm đánh không nổi kèm
+   % tổn thất, thời gian, thể lực) và **chưa gửi lệnh nào vào game**. Bạn sửa rồi đánh giá lại tuỳ ý; các ký hiệu
+   được nhớ khi huỷ hoặc xoá bản vẽ (nút **🧹 Xoá ký hiệu** để bỏ).
+2. **✔ Xác nhận đường** → agent đề xuất chỗ đặt Cứ Điểm (~7 ô một cái) → bạn thêm/xoá → **✔ Xác nhận kế hoạch dig**.
+3. Nhóm đội farm dig **đúng đường và đúng thứ tự đã vẽ**; gặp ô chưa đánh nổi hoặc bị chiếm thì **chờ và báo**,
+   không tự đi vòng. Các đội khác vẫn farm như thường.
+
+Nút *Gợi ý đường tới đây* (bấm một ô bất kỳ) vẫn có: agent gợi ý một đường để bạn **✏ Sửa** rồi mới xác nhận.
+Mô phỏng dùng nhóm đội farm theo thứ tự đã lưu (thẻ đánh giá ghi rõ nhóm đã dùng) và mô phỏng lại ở mỗi lần đánh giá.
+
+### 🎁 Nhiệm vụ và phần thưởng miễn phí
+Agent tự nhận thưởng **nhiệm vụ hướng dẫn** khi đạt (kể cả loại game tự tính tiến độ như chọn chính sách, rèn
+trang bị, cấp kiến trúc) và thử lại các nhiệm vụ còn mở mỗi 5 phút. Ngoài ra nó tự nhận, **chỉ nhận chứ không mua
+gì** (không tiêu ingot, không xem quảng cáo):
+
+- **Vòng quay may mắn:** 10 lượt miễn phí mỗi ngày (cộng các lượt thêm nếu còn), giãn cách theo thời gian game báo.
+- **Vàng miễn phí** và **token chiến miễn phí** của cửa hàng, khi hết thời gian chờ.
+- **Gói tân thủ:** từng ngày đến hạn (nếu bạn có gói).
+
+Lịch nhận lưu trong `run\free_rewards.json` và hiện ở tab Tổng quan (dòng **🎁 Phần thưởng miễn phí**).
 
 ### 🧭 Cố vấn và cảnh báo
 <img src="docs/images/advisor.png" alt="Cố vấn" width="760">
@@ -227,6 +261,9 @@ Key được **mã hoá bằng tài khoản Windows của bạn**: copy file san
 - Khi có bản mới, thanh xanh **⬆ Có bản mới** hiện trên cùng. Bấm **Cập nhật**: agent dừng,
   app tải bản mới (kiểm tra checksum), tự khởi động lại sau khoảng 1 phút.
 - Nếu bản mới không khởi động được, app **tự quay về** bản cũ.
+- Nếu cập nhật báo `being used by another process`: đóng cửa sổ Explorer, terminal hay trình soạn thảo đang mở
+  trong thư mục NTA-Agent, bấm **⏹ Stop** agent rồi **Cập nhật** lại (từ bản 0.2.17, trình cập nhật tự dừng các
+  tiến trình của NTA-Agent còn sót và ghi rõ tệp/tiến trình đang giữ khoá vào `run\updater.log`).
 - Muốn quay về bản trước bằng tay: phần Cài đặt → **↩ Quay về bản trước**
   (app giữ 2 bản gần nhất).
 - Cập nhật không đụng tới dữ liệu, key và cài đặt của bạn.
@@ -252,6 +289,9 @@ Mọi thứ của riêng bạn nằm ở `%LOCALAPPDATA%\NTA-Agent\`:
 | Agent chuyển sang CRASHED | Bấm **📄 Xem lỗi**, hoặc xem `run\agent.log` và `run\errors.jsonl`. Lỗi token: xem [Dùng hằng ngày](#dung-hang-ngay). |
 | Game trong giả lập bị đăng xuất | Bình thường: agent và game dùng chung một phiên. |
 | Đổi tên đội chưa thấy tác dụng | Game chỉ cho đổi tên khi đội rảnh; agent tự thử lại khi đội về. |
+| Cập nhật báo "being used by another process" | Đóng Explorer/terminal đang mở trong thư mục NTA-Agent, **Stop** agent rồi thử lại; xem `run\updater.log`. |
+| Lãnh thổ không mở rộng thêm | Thể lực về 0 **không** chặn mở rộng. Thường là mọi ô kề đều vượt giới hạn tổn thất bạn đặt, hoặc các đội đang bận/đang nâng cấp; xem tab Cố vấn và nhật ký. |
+| Tráo lính báo hai đội không ở cùng ô / không có đội tên đó | Nêu đúng tên đội như trong danh sách; hai đội khác ô thì agent tự gọi tới điểm gặp (cần danh sách đất đã quét). |
 | Bước 5 báo "không tìm được khoá" | Game có thể đã đổi cách lưu khoá: báo người chia sẻ app, hoặc nhập XXTEA key thủ công ở Cài đặt. |
 
 ---
@@ -274,6 +314,8 @@ nằm trong `docs/ROADMAP.md`; ghi chú vận hành cho agent nằm trong `CLAUD
 # -> dist/NTA-Agent-<v>-full.zip, dist/NTA-Agent-<v>-app.zip, dist/manifest.json
 gh release create v0.1.0 dist/NTA-Agent-0.1.0-full.zip dist/NTA-Agent-0.1.0-app.zip dist/manifest.json
 ```
+
+`tools/package.py` chỉ giữ bản build mới nhất trong `dist/` (các bản cũ đã có trên GitHub Releases).
 
 App tự cập nhật bằng cách đọc `releases/latest` của repo này. Bản `app` (nhỏ) được dùng khi
 runtime (Python/Node) không đổi, ngược lại dùng bản `full`.
