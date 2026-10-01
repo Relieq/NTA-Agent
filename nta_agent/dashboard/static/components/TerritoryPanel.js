@@ -30,6 +30,26 @@ export default {
   // path the PLAYER draws (cell indices, in order) + whether it changed since it was evaluated
   const drawing=ref(false), route=ref([]), routeDirty=ref(false), fortSel=ref([]);
   let ownedIdx=new Set();
+  // What past evaluations learned about cells (terrain / someone's land / too near an enemy / a cell
+  // the dig group can't take and the loss it would cost). Kept when the drawing is cleared or
+  // cancelled so the player can redraw with them in view; cleared only on request.
+  let mk={}; try{ mk=JSON.parse(localStorage.getItem("nta.digMarks")||"{}")||{}; }catch(e){ mk={}; }
+  const marks=ref(mk);
+  let lastEval=0;
+  function saveMarks(){ try{ localStorage.setItem("nta.digMarks", JSON.stringify(marks.value)); }catch(e){} }
+  function mergeEval(d){
+   if(!d || !d.evaluated_at || d.evaluated_at===lastEval) return;
+   lastEval=d.evaluated_at; const mw=data.mw, m={...marks.value}, ix=(xy)=>xy[1]*mw+xy[0];
+   (d.route||[]).forEach(i=>{ delete m[i]; });
+   (d.errors||[]).forEach(e=>{ m[ix(e.xy)]={k:"err", why:e.why}; });
+   (d.hard||[]).forEach((h,n)=>{ const l=(d.hard_loss||[])[n]; m[ix(h)]={k:"hard", loss:(l==null?null:l)}; });
+   marks.value=m; saveMarks(); }
+  function clearMarks(){ marks.value={}; saveMarks(); render(); }
+  const markCount=()=>Object.keys(marks.value).length;
+  const MARK_TXT={terrain:"địa hình không đi được", taken:"đất của người khác", enemy_near:"quá gần địch",
+   not_connected:"không nối liền"};
+  function markText(i){ const m=marks.value[i]; if(!m) return "";
+   return m.k==="hard" ? ("✕ chưa đánh nổi"+(m.loss!=null?" — tổn thất ~"+Math.round(m.loss)+"%":" — thua")) : ("! "+(MARK_TXT[m.why]||m.why)); }
   let digBuf=2; try{ const v=parseInt(localStorage.getItem("nta.digBuffer")); if(v>=0&&v<=6) digBuf=v; }catch(e){}
   const digBuffer=ref(digBuf);
   let stateMap=new Map(), zoneSet=new Set();
@@ -218,16 +238,21 @@ export default {
       ctx.fillStyle="#39d0d8"; ctx.fillText(String(k+1), sX(x)+scale/2, sY(y)+scale/2);
       ctx.fillStyle="rgba(57,208,216,0.20)"; } });
    }
-   if(dr && !routeDirty.value){
-    ctx.strokeStyle="#da3633"; ctx.lineWidth=2.5;
-    (dr.errors||[]).forEach(e=>{ const [x,y]=e.xy; if(!inView(x,y)) return;
-     ctx.strokeRect(sX(x)+1,sY(y)+1,scale-2,scale-2);
-     if(scale>=14){ ctx.font="bold "+Math.min(14,scale-3)+"px system-ui"; ctx.textAlign="center"; ctx.textBaseline="middle";
-      ctx.fillStyle="#da3633"; ctx.fillText("!", sX(x)+scale/2, sY(y)+scale/2); } });
-    ctx.lineWidth=2;
-    (dr.hard||[]).forEach(([x,y])=>{ if(!inView(x,y)) return; ctx.beginPath();
+   // remembered marks (drawn under the path): ! = unusable cell, ✕ = the dig group can't take it
+   Object.keys(marks.value).forEach(k=>{ const i=+k, x=i%data.mw, y=Math.floor(i/data.mw); if(!inView(x,y)) return;
+    const m=marks.value[k], cx=sX(x)+scale/2, cy=sY(y)+scale/2;
+    if(m.k==="hard"){ ctx.strokeStyle="#da3633"; ctx.lineWidth=2; ctx.beginPath();
      ctx.moveTo(sX(x)+3,sY(y)+3); ctx.lineTo(sX(x)+scale-3,sY(y)+scale-3);
-     ctx.moveTo(sX(x)+scale-3,sY(y)+3); ctx.lineTo(sX(x)+3,sY(y)+scale-3); ctx.stroke(); });
+     ctx.moveTo(sX(x)+scale-3,sY(y)+3); ctx.lineTo(sX(x)+3,sY(y)+scale-3); ctx.stroke();
+     if(scale>=22 && m.loss!=null){ ctx.font="9px system-ui"; ctx.textAlign="center"; ctx.textBaseline="bottom";
+      ctx.fillStyle="#ffb4b0"; ctx.fillText(Math.round(m.loss)+"%", cx, sY(y)+scale-1); } }
+    else { const col=m.why==="terrain" ? "#8b949e" : m.why==="enemy_near" ? "#ff9f1c" : "#da3633";
+     ctx.fillStyle=m.why==="terrain" ? "rgba(139,148,158,0.35)" : "rgba(218,54,51,0.18)"; ctx.fillRect(sX(x)+1,sY(y)+1,scale-2,scale-2);
+     ctx.strokeStyle=col; ctx.lineWidth=2; ctx.strokeRect(sX(x)+2,sY(y)+2,scale-4,scale-4);
+     if(scale>=14){ ctx.font="bold "+Math.min(14,scale-3)+"px system-ui"; ctx.textAlign="center"; ctx.textBaseline="middle";
+      ctx.fillStyle=col; ctx.fillText("!", cx, cy); } } });
+   if(dr && !routeDirty.value){
+    ctx.lineWidth=2;
     if(dr.state==="forts_proposed"){
      (fortSel.value||[]).forEach(i=>{ const x=i%data.mw, y=Math.floor(i/data.mw); if(!inView(x,y)) return;
       box(x,y,"rgba(137,87,229,0.75)");
@@ -316,7 +341,7 @@ export default {
     // valid place to start a path (it counts as "ours" for starting/anchoring only)
     data.ally.forEach(([x,y])=>ownedIdx.add(y*mw+x));
     data.allyCities.forEach(c=>ownedIdx.add(c.y*mw+c.x)); }
-   if(dg && dg.draft){
+   if(dg && dg.draft){ mergeEval(dg.draft);
     if(!route.value.length && !drawing.value) route.value=(dg.draft.route||[]).slice();
     if(!dg.pending) fortSel.value=(dg.draft.fort_idx||[]).slice();
    } else if(dg && !dg.draft && !dg.pending && route.value.length && !drawing.value){
@@ -349,6 +374,7 @@ export default {
    const ac=data.armyCells[idx(c.x,c.y)];
    let txt=`(${c.x}, ${c.y})`+(st?` · ${st.label}`:" · trống");
    if(ac) txt+=` · ${ac.armies.length} đội / ${ac.pawns} lính`;
+   const mt=markText(idx(c.x,c.y)); if(mt) txt+=" · "+mt;
    tip.value={ left:(ev.clientX-r.left)+12, top:(ev.clientY-r.top)+12, text:txt };
    render();
   }
@@ -435,13 +461,15 @@ export default {
   function stopDraw(){ drawing.value=false; render(); }
   function undoCell(){ route.value=route.value.slice(0,-1); routeDirty.value=true; render(); }
   function clearRoute(){ route.value=[]; routeDirty.value=true; render(); }
+  function editRoute(){ drawing.value=true; sel.value=null; render(); }
   async function evaluateRoute(){ if(!route.value.length) return;
    await digCmd("evaluate",{path:route.value, buffer:bufferNow()}); routeDirty.value=false; drawing.value=false; render(); }
   function editSuggestion(){   // load the suggested path into the editor and evaluate it as a draft
    const mw=data.mw; route.value=((dig.value||{}).path||[]).map(([x,y])=>y*mw+x); routeDirty.value=true;
    evaluateRoute(); }
   const confirmPath=()=>digCmd("confirm_path");
-  async function cancelDraft(){ await digCmd("cancel_draft"); route.value=[]; routeDirty.value=false; drawing.value=false; fortSel.value=[]; render(); }
+  async function cancelDraft(){   // drop the drawing + its plan, but KEEP the marks it produced
+   await digCmd("cancel_draft"); route.value=[]; routeDirty.value=false; drawing.value=false; fortSel.value=[]; render(); }
   const draftErrors=()=>{ const d=(dig.value||{}).draft; return d? (d.errors||[]) : []; };
   const digCancel=()=>digCmd("cancel");
   const digReplan=()=>digCmd("replan");
@@ -449,7 +477,7 @@ export default {
   onMounted(()=>{ const cv=canvas.value; if(cv) cv.addEventListener("wheel", onWheel, {passive:false}); });
   onUnmounted(()=>{ const cv=canvas.value; if(cv) cv.removeEventListener("wheel", onWheel); });
 
-  return { drawHint, canvas, tip, sel, built, onDown, onMove, onUp, onLeave, zoomBtn, recenterBtn, fitBtn, buildFort,
+  return { marks, markCount, clearMarks, editRoute, drawHint, canvas, tip, sel, built, onDown, onMove, onUp, onLeave, zoomBtn, recenterBtn, fitBtn, buildFort,
            dig, digBuffer, digMsg, digHere, digConfirm, digCancel, digReplan, fmtDur, DIG_STATE, DIG_REASON,
            drawing, route, routeDirty, startDraw, stopDraw, undoCell, clearRoute, evaluateRoute, editSuggestion,
            confirmPath, cancelDraft, draftErrors, ERR_WHY, DRAFT_STATE };
@@ -461,7 +489,7 @@ export default {
    <span class="muted" style="font-size:12px">Kéo để di chuyển · cuộn để phóng to · bấm ô để xem toạ độ</span>
    <button v-if="!drawing" @click="startDraw" title="Bạn vẽ đường dig, agent chỉ đánh giá và đi đúng đường đó">✏ Vẽ đường dig</button>
    <button v-else @click="stopDraw">⏹ Dừng vẽ</button></div>
-  <div v-if="drawing || route.length || dig.draft" class="digcard" style="border:1px solid #39d0d8;border-radius:6px;
+  <div v-if="drawing || route.length || dig.draft || markCount()" class="digcard" style="border:1px solid #39d0d8;border-radius:6px;
     padding:6px 10px;margin-bottom:6px;font-size:13px">
    <div style="display:flex;gap:10px;flex-wrap:wrap;align-items:center">
     <b>✏ Bản vẽ đường dig</b>
@@ -474,13 +502,18 @@ export default {
     <span class="muted">{{ route.length }} ô</span>
     <label class="muted">cách địch ≥ <input type="number" min="0" max="6" v-model="digBuffer" style="width:3em"> ô</label>
     <button v-if="drawing" :disabled="!route.length" @click="undoCell">↩ Lùi 1 ô</button>
-    <button v-if="drawing" :disabled="!route.length" @click="clearRoute">🗑 Xoá hết</button>
+    <button v-if="!drawing && (dig.draft || route.length)" @click="editRoute"
+      title="Vẽ tiếp / sửa đường đang có: kéo từ ô cuối, hoặc bấm xuống ô giữa đường để cắt rồi vẽ lại">✏ Chỉnh sửa đường</button>
+    <button v-if="drawing" :disabled="!route.length" @click="clearRoute"
+      title="Xoá đường đang vẽ, GIỮ các ký hiệu (địa hình, ô đánh không nổi…)">🗑 Xoá đường</button>
     <button :disabled="!route.length || dig.pending" @click="evaluateRoute">📐 Đánh giá đường</button>
     <button v-if="dig.draft && dig.draft.state==='evaluated' && !routeDirty && !draftErrors().length && dig.draft.cells && !dig.pending"
       @click="confirmPath">✔ Xác nhận đường → đề xuất Cứ Điểm</button>
     <button v-if="dig.draft && dig.draft.state==='forts_proposed' && !routeDirty && !dig.pending"
       @click="digConfirm">✔ Xác nhận kế hoạch dig</button>
-    <button v-if="dig.draft || route.length" @click="cancelDraft">✖ Huỷ bản vẽ</button></div>
+    <button v-if="dig.draft || route.length" @click="cancelDraft"
+      title="Huỷ bản vẽ và kế hoạch, GIỮ các ký hiệu để vẽ lại">✖ Huỷ bản vẽ (giữ ký hiệu)</button>
+    <button v-if="markCount()" @click="clearMarks" title="Xoá các ký hiệu đã nhớ từ những lần đánh giá trước">🧹 Xoá {{ markCount() }} ký hiệu</button></div>
    <div v-if="dig.draft && !routeDirty && dig.draft.state!=='failed'" style="margin-top:4px">
     {{ dig.draft.cells }} ô · ước tính {{ fmtDur(dig.draft.total_s) }}
     <span v-if="dig.draft.stamina"> · ~{{ dig.draft.stamina }} thể lực</span>
@@ -554,7 +587,7 @@ export default {
    <span><b style="color:#da3633">■</b> ô địch</span>
    <span><b style="color:#2f81f7">■</b> ô đồng minh (cùng liên minh)</span>
    <span><b class="muted">▢</b> biên giới trống (xấp xỉ)</span>
-   <span><b style="color:#39d0d8">▢</b> đường bạn đang vẽ (số = thứ tự) · <b style="color:#da3633">!</b> ô lỗi · <b style="color:#ff9f1c">▢</b> đường dig 🎯 đích · <b style="color:#da3633">✕</b> ô chưa đánh nổi</span>
+   <span><b style="color:#39d0d8">▢</b> đường bạn đang vẽ (số = thứ tự) · <b style="color:#da3633">!</b> ô lỗi (xám = địa hình, cam = sát địch) · <b style="color:#da3633">✕</b> ô đánh không nổi (có % tổn thất khi phóng to) — các ký hiệu được nhớ cho đến khi bấm "Xoá ký hiệu" · <b style="color:#ff9f1c">▢</b> đường dig 🎯 đích · <b style="color:#da3633">✕</b> ô chưa đánh nổi</span>
    <span><b style="color:#F5E900">◇</b> vùng bảo vệ/tăng tốc = bán kính 6 ô (Manhattan) quanh thành 2×2 — không cần xây Cứ Điểm bên trong</span>
   </div></div>`
 };
