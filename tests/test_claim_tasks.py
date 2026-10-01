@@ -195,3 +195,27 @@ def test_the_first_recheck_comes_soon_after_a_restart_not_half_an_hour_later(mon
     assert rule.applies(st, act) is True                   # ... after ~1 minute it is tried
     rule.act(act)
     assert act.calls == [("guide", 1)]
+
+
+def test_forge_tasks_are_read_from_the_equips_we_own():
+    # 'Rèn 1 trang bị' (1039) is judged by the client from the number of crafted equips
+    class Cfg(_PolicyCfg):
+        T: ClassVar[dict] = {**_PolicyCfg.T, "guideTask": {
+            10102102: {"cond": "1039,0,1", "show_progress": 1},
+            77: {"cond": "1021,6001,1", "show_progress": 1},
+            78: {"cond": "1035,0,1", "show_progress": 1}}}
+    act = FakeActions()
+    rule = ClaimTasks(config=Cfg())
+    assert rule.applies(_cst([10102102], equips=[]), act) is False            # nothing forged yet
+    st = _cst([10102102], equips=[{"uid": "6001_1", "id": 6001}])
+    assert rule.applies(st, act) is True
+    rule.act(act)
+    assert act.calls == [("guide", 10102102)]
+    rule2 = ClaimTasks(config=Cfg())
+    st2 = _cst([77, 78], equips=[{"uid": "6001_1"}])                         # id derived from the uid
+    rule2._state_ref = st2
+    assert rule2._client_progress(1021, 6001) == 1 and rule2._client_progress(1021, 6002) == 0
+    assert rule2._client_progress(1035, 0) == 0                              # no exclusive equip
+    st3 = _cst([78], equips=[{"uid": "6101_1", "id": 6101}])
+    rule2._state_ref = st3
+    assert rule2._client_progress(1035, 0) == 1
