@@ -213,3 +213,29 @@ def test_draft_survives_an_agent_restart(tmp_path):
     _evaluate(tmp_path, svc, 1, _line(12, 14))
     svc2, _ = _svc(tmp_path, scan)
     assert svc2.draft and svc2.draft["state"] == "evaluated"
+
+
+def test_a_path_may_start_next_to_an_ally(tmp_path):
+    # an ally's cells (not ours) 3 cells east of the city: cells touching them are attackable
+    ally = {I(20, 10), I(20, 11)}
+    scan = {"owned": _owned_block(), "ally": ally}
+    svc, _ = _svc(tmp_path, scan)
+    d = _evaluate(tmp_path, svc, 1, [I(21, 10), I(22, 10)])
+    assert d["errors"] == [] and d["cells"] == 2
+    # not touching ours / the ally / the drawing -> still a gap
+    d = _evaluate(tmp_path, svc, 2, [I(25, 20)])
+    assert d["errors"][0]["why"] == "not_connected"
+    # the ally's own cell can't be dug
+    d = _evaluate(tmp_path, svc, 3, [I(20, 10)])
+    assert d["errors"][0]["why"] == "taken"
+
+
+def test_a_drawn_dig_starting_at_an_ally_digs_its_first_cell(tmp_path):
+    scan = {"owned": _owned_block(), "ally": {I(20, 10)}}
+    svc, _ = _svc(tmp_path, scan)
+    _evaluate(tmp_path, svc, 1, [I(21, 10), I(22, 10)])
+    _req(tmp_path, 2, "confirm_path")
+    svc.tick(_state())
+    _req(tmp_path, 3, "confirm")
+    svc.tick(_state())
+    assert svc.dig["state"] == "active" and svc.next_target() == I(21, 10)

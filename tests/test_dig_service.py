@@ -79,7 +79,8 @@ def _svc(tmp, scan_state, **kw):
     def scan(actions, main, uid, map_width=600, focus=None):
         scan_state["calls"] = scan_state.get("calls", 0) + 1
         return {"owned": set(scan_state["owned"]), "enemy_cells": set(scan_state.get("enemy", ())),
-                "enemy_cities": {}, "cities": {}}
+                "enemy_cities": {}, "cities": {},
+                "ally_cells": set(scan_state.get("ally", ()))}
     svc = DigService(Cfg(tmp), Actions(), world=kw.pop("world", World()), scan=scan,
                      predict_factory=lambda st: (_pred, 60), clock=clock,
                      stamina_fn=lambda i: 2, **kw)

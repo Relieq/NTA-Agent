@@ -387,8 +387,10 @@ class DigService:
         self._save()
 
     def _scan_world(self, state, main: int, uid: str, cells):
-        """(owned, enemy, others, world) around ``main`` + the cells of interest. Hostile
-        land is kept at arm's length (buffer); alliance land is just not ours to dig."""
+        """(owned, enemy, others, ally, world) around ``main`` + the cells of interest.
+        Hostile land is kept at arm's length (buffer); alliance land is not ours to dig
+        but a cell touching it CAN be attacked (the game allows it), so ``ally`` also
+        counts as a place a path may start from."""
         from nta_agent.execution.alliance import ally_uids
         allies = ally_uids(self.actions, state)
         m = self._scan(self.actions, main, uid, map_width=W,
@@ -396,17 +398,19 @@ class DigService:
                        **({"allies": allies} if allies else {}))
         owned = set(m.get("owned") or ())
         enemy = set(m.get("enemy_cells") or ()) | set((m.get("enemy_cities") or {}).keys())
-        others = enemy | set(m.get("ally_cells") or ()) | set((m.get("ally_cities") or {}).keys())
+        ally = set(m.get("ally_cells") or ()) | set((m.get("ally_cities") or {}).keys())
+        others = enemy | ally
         world = self.world()
         if world.name is None:
             world.detect(owned)
-        return owned, enemy, others, world
+        return owned, enemy, others, ally, world
 
-    def _validate_drawing(self, path, owned, enemy, others, world, buffer):
+    def _validate_drawing(self, path, owned, enemy, others, world, buffer, ally=()):
         """Walk the drawing in order: (cells to dig, errors). A cell must be occupiable
-        land, nobody's, beyond ``buffer`` of any enemy and touch our land or a cell drawn
-        before it (an errored cell still counts as drawn, so one gap is reported once)."""
-        drawn = set(owned)
+        land, nobody's, beyond ``buffer`` of any enemy and touch our land, an ally's land
+        or a cell drawn before it (an errored cell still counts as drawn, so one gap is
+        reported once)."""
+        drawn = set(owned) | set(ally)
         cells, errors = [], []
         seen = set()
         for c in path:
@@ -466,8 +470,9 @@ class DigService:
             self.draft = {"state": "failed", "reason": "no_path", "errors": [], "path": [],
                           "fort_idx": [], "forts": []}
             return
-        owned, enemy, others, world = self._scan_world(state, main, uid, path)
-        cells, errors = self._validate_drawing(path, owned, enemy, others, world, buffer)
+        owned, enemy, others, ally, world = self._scan_world(state, main, uid, path)
+        cells, errors = self._validate_drawing(path, owned, enemy, others, world, buffer,
+                                               ally)
         now = self._clock()
         hard = {c for c, t in self._hard.items() if now - t < self.hard_ttl_s}
         info = self._assess(cells, state, main, hard)
@@ -538,7 +543,7 @@ class DigService:
         route = [int(c) for c in dig.get("route") or []]
         if not main or not uid or not route:
             return
-        owned, _enemy, others, world = self._scan_world(state, main, uid, route)
+        owned, _enemy, others, ally, world = self._scan_world(state, main, uid, route)
         remaining = [c for c in route if c not in owned]
         if not remaining:
             dig.update(state="done", path=[], next=None, done_at=now)
@@ -550,7 +555,7 @@ class DigService:
         hard_idx = set(info.pop("hard_idx"))
         taken = [c for c in remaining if c in others]
         frontier = next((c for c in remaining
-                         if any(n in owned for n in dp.neighbors(c))), None)
+                         if any(n in owned or n in ally for n in dp.neighbors(c))), None)
         if taken:
             reason, state_name = "path_taken", "waiting"
         elif frontier is None:
