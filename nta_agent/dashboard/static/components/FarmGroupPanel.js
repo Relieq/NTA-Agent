@@ -33,6 +33,7 @@ export default {
   const byUid = (uid)=> armies.value.find(a=>String(a.uid)===String(uid));
   const nameOf = (uid)=> { const a=byUid(uid); return a ? (a.name||a.uid) : "(đội đã mất)"; };
   const names = ()=> group.value.map(nameOf).join(", ");
+  const orderSummary = ()=> group.value.map(nameOf).join(" → ");
   // Order = the order armies enter a battle in 1-tile (the first goes in first) and the order
   // the dig evaluation simulates them in: move with ▲▼ or drag.
   function move(i, d){
@@ -46,7 +47,7 @@ export default {
    const f=dragFrom.value; dragFrom.value=-1; if(f<0||f===i) return;
    const g=group.value.slice(); const [x]=g.splice(f,1); g.splice(i,0,x); group.value=g; saved.value="";
   }
-  return { armies, group, saved, inGroup, toggle, save, names, move, nameOf, byUid,
+  return { armies, group, saved, inGroup, toggle, save, names, orderSummary, move, nameOf, byUid,
            dragFrom, onDragStart, onDragOver, onDrop };
  },
  template:`<div class="card"><h2>Đội farm (nhóm nâng cấp / farm)</h2>
@@ -62,20 +63,21 @@ export default {
    </label>
   </div>
   <div v-if="!armies.length" class="muted">(chưa có đội)</div>
-  <div v-if="group.length" style="margin-top:10px">
-   <div class="kv" style="color:#8b949e;margin-bottom:4px">Thứ tự vào trận — đội <b>đầu tiên vào trước</b>
-    (chế độ 1-tile; đánh giá đường dig cũng mô phỏng đúng thứ tự này). Kéo thả hoặc dùng ▲▼, rồi bấm Lưu.</div>
-   <div v-for="(u,i) in group" :key="u" draggable="true"
-     @dragstart="onDragStart(i)" @dragover="onDragOver(i,$event)" @drop="onDrop(i)"
-     :style="{display:'flex',alignItems:'center',gap:'8px',margin:'3px 0',padding:'3px 8px',border:'1px solid var(--border-hi, #30363d)',borderRadius:'6px',cursor:'grab',opacity:dragFrom===i?0.5:1}">
-    <span class="muted" style="width:1.5em;text-align:right">{{ i+1 }}.</span>
-    <b>{{ nameOf(u) }}</b>
-    <span class="muted" style="font-size:12px">· {{ ((byUid(u)||{}).pawns||[]).length }} lính</span>
-    <span style="margin-left:auto">
-     <button :disabled="i===0" @click="move(i,-1)" style="padding:0 6px">▲</button>
-     <button :disabled="i===group.length-1" @click="move(i,1)" style="padding:0 6px">▼</button></span>
+  <Collapsible v-if="group.length" id="farm-order" title="Thứ tự vào trận"
+   :summary="orderSummary()">
+   <div class="muted" style="font-size:12px;margin-bottom:4px">Đội <b>đầu tiên vào trước</b> (1-tile; đánh giá dig cũng
+    mô phỏng theo thứ tự này). Kéo thả hoặc ◀ ▶, rồi bấm Lưu.</div>
+   <div style="display:flex;flex-wrap:wrap;gap:4px">
+    <span v-for="(u,i) in group" :key="u" draggable="true"
+      @dragstart="onDragStart(i)" @dragover="onDragOver(i,$event)" @drop="onDrop(i)"
+      :style="{display:'inline-flex',alignItems:'center',gap:'4px',padding:'1px 6px',fontSize:'12px',border:'1px solid var(--border-hi, #30363d)',borderRadius:'12px',cursor:'grab',opacity:dragFrom===i?0.5:1}">
+     <button :disabled="i===0" @click="move(i,-1)" style="padding:0 3px;border:0;background:none">◀</button>
+     <span><span class="muted">{{ i+1 }}.</span> <b>{{ nameOf(u) }}</b>
+      <span class="muted">({{ ((byUid(u)||{}).pawns||[]).length }})</span></span>
+     <button :disabled="i===group.length-1" @click="move(i,1)" style="padding:0 3px;border:0;background:none">▶</button>
+    </span>
    </div>
-  </div>
+  </Collapsible>
   <div style="margin-top:8px">
    <button @click="save">Lưu đội farm ({{ group.length }})</button>
    <span class="kv" style="margin-left:10px;color:#199e70">{{ saved }}</span>
