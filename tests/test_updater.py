@@ -172,3 +172,49 @@ def test_rate_limit_is_not_reported_as_a_token_problem(monkeypatch, tmp_path):
                                      {"X-RateLimit-Remaining": "0"}, None)
     r = updater.cached_check(force=True, fetch=limited)
     assert "giới hạn" in r["error"] and "token" not in r["error"]
+
+
+def test_release_handles_stops_leftover_programs_of_ours(tmp_path, monkeypatch):
+    # a node sidecar / agent that outlived the dashboard keeps files open -> rename fails
+    calls = []
+    monkeypatch.setattr(updater, "_root_processes", lambda root: [(111, "node.exe"), (222, "python.exe")])
+    monkeypatch.setattr(updater.subprocess, "run", lambda args, **kw: calls.append(args))
+    monkeypatch.setattr(updater.time, "sleep", lambda s: None)
+    updater._release_handles(tmp_path, tmp_path / "NTA-Agent")
+    kills = [c for c in calls if c[0] == "taskkill"]
+    assert [c[-1] for c in kills] == ["111", "222"]
+    assert "node.exe(111)" in (tmp_path / "run" / "updater.log").read_text(encoding="utf-8")
+
+
+def test_nothing_is_killed_without_an_install_root(tmp_path, monkeypatch):
+    calls = []
+    monkeypatch.setattr(updater, "_root_processes", lambda root: [(1, "x.exe")])
+    monkeypatch.setattr(updater.subprocess, "run", lambda args, **kw: calls.append(args))
+    updater._release_handles(tmp_path)                       # old call shape: adb only
+    assert calls == []
+
+
+def test_a_refused_rename_is_reported_with_the_file_the_culprits_and_a_hint(tmp_path, monkeypatch):
+    err = PermissionError(13, "The process cannot access the file because it is being used by another process")
+    err.filename = r"D:\NTA-Agent\app"
+    monkeypatch.setattr(updater, "_root_processes", lambda root: [(333, "node.exe")])
+    text = updater._lock_hint(err, tmp_path)
+    assert r"D:\NTA-Agent\app" in text and "node.exe(333)" in text and "Explorer" in text
+    assert updater._lock_hint(ValueError("x"), tmp_path) == ""      # only for lock errors
+
+
+def test_root_processes_never_raises(tmp_path, monkeypatch):
+    def boom(*a, **k):
+        raise OSError("no powershell")
+    monkeypatch.setattr(updater.subprocess, "run", boom)
+    assert updater._root_processes(tmp_path) == []
+
+
+def test_run_update_failure_log_carries_the_hint(tmp_path, monkeypatch):
+    err = PermissionError(13, "being used by another process")
+    monkeypatch.setattr(updater, "_root_processes", lambda root: [(5, "node.exe")])
+    monkeypatch.setattr(updater, "_download", lambda url, dst: (_ for _ in ()).throw(err))
+    monkeypatch.setattr(updater, "_launch", lambda root: None)
+    assert updater.run_update(tmp_path / "root", tmp_path / "data", {"manifest.json": "u"}, 1) == 1
+    log = (tmp_path / "data" / "run" / "updater.log").read_text(encoding="utf-8")
+    assert "update aborted" in log and "node.exe(5)" in log and "HINT" in log
