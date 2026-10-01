@@ -1210,6 +1210,7 @@ class Recruit:
     profile: object = None    # Profile: fill armies toward army.composition
     locked_source: object = None  # callable -> army-uid set the ArmyComposer owns (skip them)
     pawn_cost_source: object = None  # callable -> {pawn_id: base cost} of THIS match
+    reserve_source: object = None    # callable -> {"cereal": n} kept for the player's leveling order
     _pending: object = None   # (build_uid, pawn_id, army_uid, army_name, pawn_count)
     _cooldown: int = 0
     # Armies the server rejected as full (ecode.500019), by uid -> pawn count when
@@ -1244,7 +1245,18 @@ class Recruit:
         slots = (state.raw or {}).get("player", {}).get("pawnSlots") or {}
         return [int(v["id"]) for v in slots.values() if isinstance(v, dict) and v.get("id")]
 
-    def _affordable(self, state: GameState, pawn_id: int) -> bool:
+    def _reserve(self) -> int:
+        """Cereal the generic top-up must leave alone: a leveling order the player gave is
+        waiting for it (live 2026-10-01: 5800 cereal went into random top-ups while no pawn
+        could be leveled at 346 each)."""
+        if self.reserve_source is None:
+            return 0
+        try:
+            return int((self.reserve_source() or {}).get("cereal", 0) or 0)
+        except Exception:
+            return 0
+
+    def _affordable(self, state: GameState, pawn_id: int, reserve: int = 0) -> bool:
         cfg = self._cfg()
         if not cfg:
             return True  # can't check -> let the server decide
@@ -1257,7 +1269,8 @@ class Recruit:
                 pass
         r = state.resources
         have = {"cereal": r.cereal, "timber": r.timber, "stone": r.stone, "iron": r.iron}
-        return all(have.get(k, 0) >= v for k, v in cost.items())
+        return all(have.get(k, 0) >= v + (reserve if k == "cereal" else 0)
+                   for k, v in cost.items())
 
     def applies(self, state: GameState, actions: Actions) -> bool:
         if self._cooldown > 0:
@@ -1311,6 +1324,13 @@ class Recruit:
                         and len(army.get("pawns", [])) < cap):
                     self._pending = (bu, pid, army_uid, "", len(army.get("pawns", [])))
                     return True
+        # From here on it is the generic top-up: it must leave the cereal a pending leveling
+        # order needs (the profile composition above is the player's own target: unaffected).
+        reserve = self._reserve()
+        if reserve:
+            pawn = next((p for p in unlocked if self._affordable(state, p, reserve)), None)
+            if pawn is None:
+                return False
         # recruit into a non-marching city army that still has room — with THAT army's
         # own main troop type, so a refill never mixes it (live 2026-09-26: a tank army
         # got a Cường Nỏ, the first unlocked type). Its type locked/unaffordable -> skip it.
@@ -1322,7 +1342,7 @@ class Recruit:
             if main is None:
                 room, fill = a, pawn
                 break
-            if main in unlocked and self._affordable(state, main):
+            if main in unlocked and self._affordable(state, main, reserve):
                 room, fill = a, main
                 break
         if room:
@@ -1808,6 +1828,7 @@ class BufferLeveling:
     _cooldown: int = 0
     _pending: object = None        # (label, callable)
     _away: set = field(default_factory=set)
+    cereal_reserve: int = 0   # cereal the next level-up waits for (Recruit leaves it alone)
     _buffers: set = field(default_factory=set)
     _setup_reserved: set = field(default_factory=set)
     _sent: dict = field(default_factory=dict)  # pawn uid -> (sent at, lv, lv_time s)
@@ -1856,6 +1877,7 @@ class BufferLeveling:
             return False
         grp = self._group()
         if grp is None or self.state_path is None or not state.main_city_index:
+            self.cereal_reserve = 0
             return False
         self._cooldown = self.check_every
         from nta_agent.execution import buffer_plan as bp
@@ -2121,6 +2143,7 @@ class BufferLeveling:
 
     def _plan_level(self, state, proposal, armies, group_armies, main, target, actions) -> bool:
         import time as _time
+        self.cereal_reserve = 0
 
         from nta_agent.execution.army_health import leveling_pawn_uids
         from nta_agent.execution.buffer_plan import demand, level_step
@@ -2141,6 +2164,8 @@ class BufferLeveling:
             return False
         queued = queued | set(self._sent)
         books = int(state.resources.exp_book or 0)
+        cereal = int(state.resources.cereal or 0)
+        waiting_cereal = 0   # cheapest level-up that only lacks cereal (the Recruit rule keeps it)
         barracks = self._barracks_lv(state)
         weak_types = set(demand(group_armies, target))
         types = {b["name"]: weak_types | {int(t) for t in (b.get("types") or {})}
@@ -2158,7 +2183,12 @@ class BufferLeveling:
                 step = level_step(self._rows(), int(p["id"]), lv)
                 if step is None or step["barracks_lv"] > barracks or step["books"] > books:
                     continue
+                if step.get("cereal", 0) > cereal:
+                    need = int(step["cereal"])
+                    waiting_cereal = need if not waiting_cereal else min(waiting_cereal, need)
+                    continue
                 cands.append((lv, str(p["uid"]), str(a["uid"]), step["time_s"]))
+        self.cereal_reserve = 0 if cands else waiting_cereal
         if not cands:
             return False
         lv0, pawn, army, secs = min(cands)

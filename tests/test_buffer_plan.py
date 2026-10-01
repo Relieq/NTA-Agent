@@ -21,8 +21,10 @@ ROWS = {  # pawnAttr subset (live values 2026-09-25)
 
 
 def test_level_step_reads_books_time_and_barracks():
-    assert level_step(ROWS, 3305, 1) == {"books": 1, "time_s": 488, "barracks_lv": 1}
-    assert level_step(ROWS, 3202, 2) == {"books": 2, "time_s": 698, "barracks_lv": 5}
+    assert level_step(ROWS, 3305, 1) == {"books": 1, "cereal": 346, "time_s": 488,
+                                         "barracks_lv": 1}
+    assert level_step(ROWS, 3202, 2) == {"books": 2, "cereal": 461, "time_s": 698,
+                                         "barracks_lv": 5}
     assert level_step(ROWS, 3305, 9) is None
 
 

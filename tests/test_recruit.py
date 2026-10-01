@@ -224,3 +224,31 @@ def test_pawn_cost_helper_and_loader(tmp_path):
     p.write_text(json.dumps({"exclusive": {}, "pawn_cost": {"3305": 312}}), encoding="utf-8")
     assert world_random.load_pawn_costs(p) == {3305: 312}
     assert world_random.load_pawn_costs(tmp_path / "missing.json") == {}
+
+
+# ---- the player's leveling order comes before the generic top-up -----------------------------
+def _reserve_world(cereal):
+    from nta_agent.data.config import GameConfig
+    st = _state([3305], cereal=cereal)
+    act = FakeActions(st, armys=[{"uid": "A", "pawns": [{"id": 3305}] * 3, "state": None}])
+    return st, act, Recruit(config=GameConfig.load())
+
+
+def test_generic_top_up_leaves_the_cereal_a_leveling_order_waits_for():
+    st, act, r = _reserve_world(cereal=500)                      # a 3305 costs ~100-300
+    r.reserve_source = lambda: {"cereal": 346}
+    assert r.applies(st, act) is False                           # 500 < price + 346: wait
+    st, act, r = _reserve_world(cereal=500)
+    assert r.applies(st, act) is True                            # no order waiting: tops up
+    st, act, r = _reserve_world(cereal=9000)
+    r.reserve_source = lambda: {"cereal": 346}
+    assert r.applies(st, act) is True                            # plenty left over: tops up
+
+
+def test_a_broken_reserve_source_never_blocks_recruiting():
+    st, act, r = _reserve_world(cereal=9000)
+
+    def boom():
+        raise RuntimeError("x")
+    r.reserve_source = boom
+    assert r.applies(st, act) is True
