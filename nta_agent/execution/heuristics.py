@@ -1460,13 +1460,15 @@ class ClaimTasks:
     """
     name: str = "claim_tasks"
     sweep_every: int = 20     # ticks between attempts on tasks of unknown status
-    recheck_s: float = 1800.0  # also try "unfinished" tasks this often (stale progress)
+    recheck_s: float = 300.0   # also try "unfinished" tasks this often (stale progress)
+    first_recheck_s: float = 60.0  # ... the first one this long after the agent starts
     config: object = None      # GameConfig (lazy); False = unavailable
     _seen: set = field(default_factory=set)   # (kind,id) already attempted this cycle
     _sig: tuple = ()          # task-SET signature; changes reset _seen
     _cooldown: int = 0
     _pending: object = None    # (kind, id)
     _last_recheck: float = 0.0
+    _state_ref: object = None   # the state of this tick (client-computed progress)
 
     _KINDS = (("guideTasks", "guide"), ("otherTasks", "other"), ("todayTasks", "today"))
     _TABLE = (("guide", "guideTask"), ("other", "otherTask"), ("today", "todayTask"))
@@ -1484,6 +1486,32 @@ class ClaimTasks:
                 self.config = False
         return self.config or None
 
+    def _client_progress(self, ctype: int, cid: int):
+        """Progress the CLIENT computes from its own data (the server's ``progress`` of these
+        task types stays 0 — and a protobuf 0 is not even sent): e.g. 'enact 1 policy' = the
+        number of studied policy slots (engine ``checkTaskCondition``). None = unknown type."""
+        st = self._state_ref
+        player = ((getattr(st, "raw", None) or {}).get("player") or {}) if st else {}
+        if ctype == 1022:   # STUDY_TYPE_APPOINT: 1 policy, 2 pawn, 3 equip, 4 exclusive equip
+            key = {1: "policySlots", 2: "pawnSlots", 3: "equipSlots", 4: "equipSlots"}.get(cid)
+            if key is None:
+                return None
+            slots = [v for v in (player.get(key) or {}).values() if isinstance(v, dict)]
+            slots = [v for v in slots if int(v.get("id", 0) or 0) > 0]
+            if cid == 4:
+                cfg = self._cfg()
+                try:
+                    base = cfg.table("equipBase") if cfg else {}
+                except Exception:
+                    base = {}
+                slots = [v for v in slots
+                         if str((base.get(int(v["id"])) or {}).get("exclusive_pawn") or "")]
+            return len(slots)
+        if ctype == 4 and st is not None:   # BUILD_LV: the highest level of that building
+            return max((int(b.lv) for b in getattr(st, "builds", None) or []
+                        if int(b.id) == cid), default=0)
+        return None
+
     def _status(self, kind: str, task: dict) -> str:
         """"done" / "open" (short of target) / "unknown"."""
         cfg = self._cfg()
@@ -1497,10 +1525,18 @@ class ClaimTasks:
         if not row.get("show_progress") or len(parts) < 3 or not parts[2].strip().isdigit():
             return "unknown"
         target = int(parts[2])
-        return "done" if int(task.get("progress", 0) or 0) >= target else "open"
+        progress = int(task.get("progress", 0) or 0)
+        try:
+            mine = self._client_progress(int(parts[0]), int(parts[1]))
+        except (TypeError, ValueError):
+            mine = None
+        if mine is not None:
+            progress = max(progress, mine)
+        return "done" if progress >= target else "open"
 
     def applies(self, state: GameState, actions: Actions) -> bool:
         import time as _time
+        self._state_ref = state
         sig = tuple(sorted((kind, t.get("id")) for key, kind in self._KINDS
                            for t in self._tasks(state, key)))
         if sig != self._sig:
@@ -1524,7 +1560,9 @@ class ClaimTasks:
         # 3) "unfinished" ones now and then, in case our progress is stale
         now = _time.time()
         if not self._last_recheck:
-            self._last_recheck = now          # first re-check one period from now
+            # soon after (re)start, not a whole period later: the agent restarts often and a
+            # 30-minute first wait meant a finished client-judged task was never tried
+            self._last_recheck = now - self.recheck_s + self.first_recheck_s
         elif now - self._last_recheck >= self.recheck_s:
             self._last_recheck = now
             opens = [(k, t) for k, t in tasks if self._status(k, t) == "open"]

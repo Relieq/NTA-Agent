@@ -121,3 +121,77 @@ def test_unfinished_tasks_are_not_tried_and_progress_churn_does_not_restart():
     assert rule.applies(st, act) is True
     rule.act(act)
     assert act.calls == [("guide", 1)]
+
+
+# ---- 2026-10-01: progress the CLIENT computes (the server's stays 0) ----------------------------
+class _PolicyCfg:
+    T: ClassVar[dict] = {"guideTask": {
+        10102301: {"cond": "1022,1,1", "show_progress": 1},    # enact 1 policy
+        10000401: {"cond": "4,2001,5", "show_progress": 1},    # main city level 5
+        10000402: {"cond": "4,2008,9", "show_progress": 1},    # a building to level 9
+        55: {"cond": "1022,2,2", "show_progress": 1}},         # study 2 pawn types
+        "equipBase": {6001: {"exclusive_pawn": ""}, 6101: {"exclusive_pawn": "3305"}}}
+
+    def table(self, name):
+        return self.T.get(name, {})
+
+
+def _cst(tasks, **player):
+    st = GameState(source="api")
+    st.raw = {"player": {"guideTasks": [{"id": i} for i in tasks],       # no `progress` at all
+                         "otherTasks": [], "todayTasks": [], **player}}
+    return st
+
+
+def test_an_enacted_policy_is_claimed_although_the_server_progress_is_zero():
+    act = FakeActions()
+    rule = ClaimTasks(config=_PolicyCfg())
+    st = _cst([10102301], policySlots={"1": {"id": 0, "lv": 1}})        # a slot offered, none chosen
+    assert rule.applies(st, act) is False                                # not done yet
+    st = _cst([10102301], policySlots={"1": {"id": 7, "lv": 1}})        # the player chose one
+    assert rule.applies(st, act) is True
+    rule.act(act)
+    assert act.calls == [("guide", 10102301)]
+
+
+def test_pawn_and_exclusive_study_counts_and_building_levels_are_read_from_our_state():
+    from nta_agent.state.schema import Building
+    rule = ClaimTasks(config=_PolicyCfg())
+    st = _cst([55], pawnSlots={"1": {"id": 3305}, "2": {"id": 3201}})
+    rule._state_ref = st
+    assert rule._client_progress(1022, 2) == 2
+    st2 = _cst([], equipSlots={"1": {"id": 6001}, "2": {"id": 6101}})
+    rule._state_ref = st2
+    assert rule._client_progress(1022, 3) == 2 and rule._client_progress(1022, 4) == 1
+    st3 = _cst([])
+    st3.builds = [Building(id=2001, lv=4, uid="a", index=1), Building(id=2001, lv=6, uid="b", index=2)]
+    rule._state_ref = st3
+    assert rule._client_progress(4, 2001) == 6 and rule._client_progress(4, 2008) == 0
+    assert rule._client_progress(99999, 1) is None                       # unknown type: no claim
+
+
+def test_a_building_level_task_is_claimed_when_the_level_is_reached():
+    from nta_agent.state.schema import Building
+    act = FakeActions()
+    rule = ClaimTasks(config=_PolicyCfg())
+    st = _cst([10000401])
+    st.builds = [Building(id=2001, lv=5, uid="a", index=1)]
+    assert rule.applies(st, act) is True
+    rule.act(act)
+    assert act.calls == [("guide", 10000401)]
+
+
+def test_the_first_recheck_comes_soon_after_a_restart_not_half_an_hour_later(monkeypatch):
+    import time
+    clock = [10_000.0]
+    monkeypatch.setattr(time, "time", lambda: clock[0])
+    act = FakeActions()
+    rule = ClaimTasks(config=_Cfg())
+    st = _st([(1, 0)])                                    # unfinished, status 'open'
+    assert rule.applies(st, act) is False                  # the agent has just started
+    clock[0] += 59
+    assert rule.applies(st, act) is False                  # not yet ...
+    clock[0] += 2
+    assert rule.applies(st, act) is True                   # ... after ~1 minute it is tried
+    rule.act(act)
+    assert act.calls == [("guide", 1)]
