@@ -120,7 +120,7 @@ def _move(src: Path, dst: Path) -> None:
     shutil.move(str(src), str(dst))
 
 
-def _rename(src: Path, dst: Path, tries: int = 10) -> None:
+def _rename(src: Path, dst: Path, tries: int = 30) -> None:
     """Atomic same-volume rename, retried while Windows reports the item in use.
     NEVER falls back to copy+delete: that is what emptied app/ on 2026-09-27 (the
     rename failed, the fallback deleted every file, the cleanup deleted the copy)."""
@@ -134,22 +134,57 @@ def _rename(src: Path, dst: Path, tries: int = 10) -> None:
             time.sleep(1.0)
 
 
-def _release_handles(data: Path) -> None:
+def _root_processes(root: Path) -> list[tuple[int, str]]:
+    """``[(pid, name)]`` of the processes running a program from the install folder (our
+    python / node / launcher). Never raises: [] when it cannot ask Windows."""
+    ps = ("Get-CimInstance Win32_Process | Where-Object { $_.ExecutablePath -and "
+          "$_.ExecutablePath.StartsWith($env:NTA_ROOT, [StringComparison]::OrdinalIgnoreCase) } | "
+          "ForEach-Object { \"$($_.ProcessId)|$($_.Name)\" }")
+    try:
+        out = subprocess.run(
+            ["powershell", "-NoProfile", "-NonInteractive", "-Command", ps],
+            env={**os.environ, "NTA_ROOT": str(Path(root)).rstrip("\\") + "\\"},
+            capture_output=True, text=True, timeout=40, creationflags=0x08000000).stdout
+    except (OSError, subprocess.SubprocessError):
+        return []
+    found = []
+    for line in (out or "").splitlines():
+        pid, _, name = line.strip().partition("|")
+        if pid.isdigit() and int(pid) != os.getpid():
+            found.append((int(pid), name))
+    return found
+
+
+def _release_handles(data: Path, root: Path | None = None) -> None:
     """Stop helpers that may hold the install folder: the adb daemon keeps the
     working dir of the adb call that started it (it was app/ — rename then fails).
-    It restarts by itself on the next adb call."""
+    It restarts by itself on the next adb call. Also stops any program of ours still running
+    from the install folder (the agent, the node battle-sim sidecar, a launcher): a process
+    that survived the dashboard's exit keeps files / its working directory open, and
+    Windows then refuses to rename app/ ("being used by another process")."""
     try:
         cfg = json.loads((Path(data) / "settings.json").read_text(encoding="utf-8"))
         adb = cfg.get("adb_path")
     except (OSError, ValueError, AttributeError):
         adb = None
-    if not isinstance(adb, str) or not adb:
+    if isinstance(adb, str) and adb:
+        try:
+            subprocess.run([adb, "kill-server"], cwd=str(Path(adb).parent), capture_output=True,
+                           timeout=15, creationflags=0x08000000)
+        except (OSError, subprocess.SubprocessError):
+            pass
+    if root is None:
         return
-    try:
-        subprocess.run([adb, "kill-server"], cwd=str(Path(adb).parent), capture_output=True,
-                       timeout=15, creationflags=0x08000000)
-    except (OSError, subprocess.SubprocessError):
-        pass
+    left = _root_processes(root)
+    for pid, _name in left:
+        try:
+            subprocess.run(["taskkill", "/F", "/T", "/PID", str(pid)], capture_output=True,
+                           timeout=15, creationflags=0x08000000)
+        except (OSError, subprocess.SubprocessError):
+            pass
+    if left:
+        _log(data, "stopped leftover processes: " + ", ".join(f"{n}({p})" for p, n in left))
+        time.sleep(1.0)
 
 
 def apply(zip_path: Path, root: Path, backups: Path, kind: str) -> Path:
@@ -294,6 +329,24 @@ def _runtime_versions(root: Path) -> dict:
         return {}
 
 
+def _lock_hint(e: Exception, root: Path) -> str:
+    """What to tell the player when Windows refused a rename: the file, the programs of ours
+    still running and the usual culprits (an Explorer window or a terminal opened inside the
+    install folder keeps it in use)."""
+    if not isinstance(e, PermissionError):
+        return ""
+    parts = []
+    if getattr(e, "filename", None):
+        parts.append(f"file: {e.filename}")
+    left = _root_processes(root)
+    if left:
+        parts.append("still running from the install folder: "
+                     + ", ".join(f"{n}({p})" for p, n in left))
+    parts.append("HINT: close any Explorer window / terminal / editor opened inside the "
+                 "NTA-Agent folder (and antivirus scans), then press Cập nhật again")
+    return " | " + " | ".join(parts)
+
+
 def run_update(root: Path, data: Path, assets: dict, port: int) -> int:
     """``assets`` = {asset name: API url} of the release (from :func:`check`)."""
     root, data = Path(root).resolve(), Path(data).resolve()
@@ -311,11 +364,11 @@ def run_update(root: Path, data: Path, assets: dict, port: int) -> int:
         _download(url, zp)
         if not verify(zp, asset["sha256"]):
             raise ValueError("sha256 mismatch — download corrupted or tampered")
-        _release_handles(data)
+        _release_handles(data, root)
         backup = apply(zp, root, backups, kind)
         shutil.rmtree(tmp, ignore_errors=True)
     except Exception as e:  # nothing replaced: just bring the old version back up
-        _log(data, f"update aborted: {e!r}")
+        _log(data, f"update aborted: {e!r}" + _lock_hint(e, root))
         _launch(root)
         return 1
     _launch(root)
@@ -337,7 +390,7 @@ def run_rollback(root: Path, data: Path) -> int:
         _log(data, "rollback: no backup")
         _launch(root)
         return 1
-    _release_handles(data)
+    _release_handles(data, root)
     rollback(root, b)
     _log(data, f"rolled back to {b.name}")
     _launch(root)
