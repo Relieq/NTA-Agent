@@ -52,3 +52,47 @@ def test_allied_cells_are_not_enemies_nor_frontier():
     assert _idx(12, 10) in m["ally_cells"] and _idx(12, 10) not in m["enemy_cells"]
     assert _idx(20, 20) in m["enemy_cells"]
     assert _idx(12, 10) not in m["frontier"]          # can't occupy an ally's cell either
+
+
+# ---- surrounded by allies: cells touching an ally's land are attackable too ---------------
+def test_frontier_goes_through_allied_land_that_touches_ours():
+    # the engine's checkCanOccupyCell: a cell is occupiable if ANY neighbour is ours or an ally's
+    mine = {"indexs1": _rect_bytes(10, 10, 11, 11), "indexs2": b"", "cities": b""}
+    ring = {"indexs1": _rect_bytes(12, 10, 12, 11), "indexs2": b"", "cities": b""}   # touches me
+    far = {"indexs1": _rect_bytes(60, 60, 60, 60), "indexs2": b"", "cities": b""}    # does not
+    m = scan_map(FakeActions({"57696053": mine, "777": ring, "888": far}), main=_idx(10, 10),
+                 uid="57696053", map_width=600, allies={"777", "888"})
+    fa = m["frontier_ally"]
+    assert _idx(13, 10) in fa and _idx(13, 11) in fa                         # beyond the ally
+    assert _idx(12, 9) in fa and _idx(12, 12) in fa                          # above/below it
+    assert _idx(10, 9) in m["frontier"]                                      # next to us: as before
+    assert _idx(12, 10) not in m["frontier"] | fa                            # the ally's own cell
+    assert _idx(61, 60) not in fa and _idx(60, 61) not in fa                 # far ally land
+    assert not (fa & m["frontier"])                                          # kept apart
+
+
+def test_a_ring_of_allies_does_not_empty_the_frontier():
+    # all four sides of our 2x2 block belong to allies: before, the frontier was EMPTY
+    mine = {"indexs1": _rect_bytes(10, 10, 11, 11), "indexs2": b"", "cities": b""}
+    rects = {"771": (9, 9, 12, 9), "772": (9, 12, 12, 12), "773": (9, 10, 9, 11),
+             "774": (12, 10, 12, 11)}
+    cells = {"57696053": mine}
+    for u, r in rects.items():
+        cells[u] = {"indexs1": _rect_bytes(*r), "indexs2": b"", "cities": b""}
+    m = scan_map(FakeActions(cells), main=_idx(10, 10), uid="57696053", map_width=600,
+                 allies=set(rects))
+    assert m["frontier"] == set()                            # nothing touches us any more ...
+    assert m["frontier_ally"], "surrounded by allies must not mean nothing to attack"
+    for c in ((13, 10), (8, 10), (10, 13), (10, 8)):       # ... but the cells beyond the ring are
+        assert _idx(*c) in m["frontier_ally"]
+    assert not (m["frontier_ally"] & m["ally_cells"]) and not (m["frontier_ally"] & m["owned"])
+
+
+def test_ally_reach_is_limited_to_a_few_layers_and_to_land_touching_us():
+    from nta_agent.execution.territory import ALLY_DEPTH, ally_reach
+    owned = {_idx(10, 10)}
+    chain = {_idx(11 + k, 10) for k in range(ALLY_DEPTH + 5)}      # ally land running away from us
+    got = ally_reach(owned, chain)
+    assert _idx(11, 10) in got and _idx(10 + ALLY_DEPTH, 10) in got
+    assert _idx(11 + ALLY_DEPTH, 10) not in got                    # deeper than the limit
+    assert ally_reach(owned, {_idx(50, 50)}) == set() and ally_reach(owned, set()) == set()

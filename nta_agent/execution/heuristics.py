@@ -378,6 +378,7 @@ class OccupyCell:
     locked_source: object = None   # callable -> army-uid set the ArmyComposer is arranging
     lessons_source: object = None  # callable -> active lessons (Inc 3 contextual recall)
     dig_source: object = None      # callable -> the dig's next cell or None (DigService)
+    ally_frontier_max: int = 40    # cells touching ally land probed per sweep (one request each)
     dig_hard_sink: object = None   # callable(cell): the dig group can't win it now
     dig_live_source: object = None  # callable -> bool: a dig is on (reserve its group)
     away_source: object = None      # callable -> uids stepping over to swap with a buffer
@@ -736,8 +737,16 @@ class OccupyCell:
         try:
             from nta_agent.execution.alliance import ally_uids
             from nta_agent.execution.territory import scan_map
-            frontier = scan_map(actions, state.main_city_index, state.user.uid,
-                                allies=ally_uids(actions, state)).get("frontier")
+            scanned = scan_map(actions, state.main_city_index, state.user.uid,
+                               allies=ally_uids(actions, state))
+            frontier = set(scanned.get("frontier") or ())
+            # cells touching an ally's land are attackable too (surrounded by allies the
+            # owned frontier is empty). Each cell costs a request: take the nearest few.
+            main_i = int(state.main_city_index)
+            near_ally = sorted(scanned.get("frontier_ally") or (),
+                               key=lambda c: (abs(c % 600 - main_i % 600)
+                                              + abs(c // 600 - main_i // 600), c))
+            frontier |= set(near_ally[:self.ally_frontier_max])
             if frontier:
                 cands = discover_frontier(get_area, frontier, state.user.uid)
         except Exception:
