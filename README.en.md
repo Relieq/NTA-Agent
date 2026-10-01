@@ -38,13 +38,22 @@ Tracks food, wood, stone, iron, gold… and upgrades buildings following **your 
 <img src="docs/images/armies.png" alt="Armies" width="900">
 
 - Occupies cells around your territory using **a simulation run on the game's own battle
-  engine**: it attacks only when the predicted loss is within your limit.
+  engine**: it attacks only when the predicted loss is within your limit. **Stamina only pays for
+  the treasure chest**: at 0 stamina it keeps expanding (just no chest). Surrounded by allies is not a
+  dead end either: cells touching an ally's land can be attacked too (the game's own rule).
+- By default each farm army attacks **on its own** when it can win alone (fewest troops); the whole
+  group goes out together only when one army isn't enough.
 - Recruits, revives, tops up armies, and levels pawns with EXP books.
 - **Leveling through buffer armies:** pick a group and a mode. The agent proposes buffer armies
   (reusing spare armies, merging, recruiting, books/time needed); you confirm. A buffer levels at the
   city, then meets the main army on an **adjacent cell** and **swaps same-type pawns** — the main group
-  keeps farming/digging (one army short, it attacks only if still lossless).
-- Pick **farm armies** for the agent to manage on its own.
+  keeps farming/digging (one army short, it attacks only if still lossless). Each level-up also costs
+  **cereal** (level factor × this match's base price, a few hundred), so the plain recruit rule leaves that
+  cereal alone; the agent levels **only as many pawns per type as the farm group is short of** (a main army
+  of 8 archers + 1 hunter levels one hunter, not a whole spare army).
+- Pick **farm armies** for the agent to manage on its own. The **Thứ tự vào trận** (battle order) block
+  (one collapsed line) reorders them by drag or ◀ ▶, then **Lưu**: the first army enters a 1-tile battle first,
+  and the dig simulation follows the same order.
 
 ### 🧠 Chat with the "brain" (optional, needs an OpenAI key)
 <img src="docs/images/chat.png" alt="Chat: build a strike group" width="760">
@@ -54,12 +63,23 @@ Give orders in plain language, e.g. _"Create a group of 5 armies: 1 heavy-shield
 does the agent act: it pulls pawns out of mixed armies, recruits what's missing and names the
 armies. Renaming armies and changing tactics also go through chat.
 
+**Swapping pawns:** _"Swap 1 hunter from Đội 3 with the archer at the end of Đội 5"_. Three operations:
+**swap** 2 pawns between two armies, **move** pawns to another (or a new) army, **reorder** pawns inside one
+army. The agent picks the lowest-level pawns (or the first/last slot if you say so) and shows a confirm
+card. The game only swaps between armies in the **same cell**: if they aren't, the agent calls them to a
+cell on your land (the nearest meeting point, at most 5 armies per cell; an army about to attack stays put
+and the other walks over) and then swaps. If the swap would break the running strike goal the card says so
+and confirming cancels that goal. Army names you type must match real armies, otherwise the agent asks
+instead of guessing.
+
 ### 🔨 Criteria-based equipment re-forging
 <img src="docs/images/forge.png" alt="Re-forge" width="760">
 
 Set a **minimum for each effect stat** (the rollable range is shown, e.g. 150–180%) and an
 **iron budget** per item. The agent re-forges until every minimum is met, or stops when the
-budget runs out.
+budget runs out. A newly **unlocked** item is crafted **before** the re-forge loop: if it still lacks
+cereal/wood/stone/iron the loop pauses (re-forging spends those very things), and the panel says why
+("crafting a new item…", "re-forge loop paused…").
 
 **Exclusive equipment:** you pick it at slots 10/18 (with **this match's** random effect pool shown).
 Once a wanted line meets its minimums the agent **locks** it and spends **fixators** (own budget) re-forging
@@ -72,12 +92,31 @@ A live territory map: owned cells, borders, enemies, and the suggested zone for 
 **fort** (click a cell and the agent builds it). Expansion follows a spiral or octopus
 pattern depending on how close the enemy is.
 
-**⛏ Dig to a cell:** click any cell → *Dig tới đây*. The agent plans the fastest chain of occupies
-(march + battle length from the simulator), keeps a safety distance from enemies, plans forts
-(~every 7 cells, on level-1 land when possible) and shows a **preview** (cells / time / stamina).
-Only after you **confirm** does the farm group start digging; other armies keep farming. If the
-target is taken it switches to the nearest safe cell; cells the group can't win within the loss
-limit are routed around, or it waits and tells you what loss % would unblock it.
+**⛏ Dig along a path you draw:** press **✏ Vẽ đường dig**, hold the left button and **drag over the
+cells** (start on your land or on a cell touching an ally's land; drag back to erase; Shift or right-drag pans).
+1. **📐 Đánh giá đường (evaluate):** the agent scores every cell (terrain, someone else's land, too close
+   to an enemy, cells the farm group can't win with the loss %, time, stamina) and **sends nothing to the
+   game**. Redraw and re-evaluate as often as you like; the marks are remembered when you cancel or clear
+   the drawing (**🧹 Xoá ký hiệu** drops them).
+2. **✔ Confirm the path** → the agent proposes fort spots (~every 7 cells) → you add/remove them →
+   **✔ Confirm the dig plan**.
+3. The farm group digs **exactly your path, in your order**; a cell it can't win or that someone else took
+   makes it **wait and tell you**, never detour. Other armies keep farming.
+
+*Gợi ý đường tới đây* (suggest a path to any cell) is still there: the agent suggests one and you
+**✏ edit** it before confirming. The simulation uses the farm group in its saved order (the evaluation
+card names the group used) and re-simulates on every evaluation.
+
+### 🎁 Tasks and free rewards
+The agent claims **guide-task** rewards as soon as they're met (including the kinds the game judges on
+the client side, like choosing a policy, forging gear or reaching a building level) and retries the open
+ones every 5 minutes. It also collects, **claim-only and never buying anything** (no ingot spend, no ads):
+
+- **Lucky wheel:** 10 free spins a day (plus any extra spins left), spaced by the cooldown the game reports.
+- The shop's **free gold** and **free war token**, when their cooldown ends.
+- **Newbie gift pack:** each due day (if you own a pack).
+
+The schedule is kept in `run\free_rewards.json` and shown on the Overview tab (**🎁 Phần thưởng miễn phí**).
 
 ### 🧭 Advisor and alerts
 <img src="docs/images/advisor.png" alt="Advisor" width="760">
@@ -197,6 +236,9 @@ another machine, and the dashboard never shows a key in full.
   **Cập nhật** (Update): the agent stops, the app downloads the update (checksum-verified)
   and restarts in about a minute.
 - If the new version fails to start, the app **rolls back** automatically.
+- If an update says `being used by another process`: close any Explorer window, terminal or editor open
+  inside the NTA-Agent folder, press **⏹ Stop** on the agent and update again (since 0.2.17 the updater stops
+  leftover NTA-Agent processes itself and logs the file/processes holding the lock in `run\updater.log`).
 - To roll back manually: Settings → **↩ Quay về bản trước** (the last 2 versions are kept).
 - Updates never touch your data, keys or settings.
 
@@ -217,6 +259,9 @@ state and logs: `agent.log`, `errors.jsonl`), `backups\` (previous app versions)
 | The agent shows CRASHED | Press **📄 Xem lỗi**, or read `run\agent.log` / `run\errors.jsonl`. Token errors: see [Daily use](#daily-use). |
 | The game on the emulator got logged out | Expected: the agent and the game share one session. |
 | A renamed army keeps its old name | The game only renames idle armies; the agent retries when the army is back. |
+| Update says "being used by another process" | Close Explorer/terminal windows open in the NTA-Agent folder, **Stop** the agent and retry; see `run\updater.log`. |
+| Territory isn't growing | 0 stamina does **not** stop expansion. Usually every adjacent cell exceeds your loss limit, or the armies are busy/leveling; check the Advisor tab and the log. |
+| Pawn swap says the armies aren't in the same cell / no army with that name | Use the army names as listed; armies in different cells are called to a meeting point automatically (needs the scanned territory list). |
 | Step 5 says the key can't be found | The game may have changed how it stores the key: tell whoever shared the app, or enter the XXTEA key in Settings. |
 
 ---
@@ -239,6 +284,8 @@ Building a release (commit first: only git-tracked files are packaged):
 # -> dist/NTA-Agent-<v>-full.zip, dist/NTA-Agent-<v>-app.zip, dist/manifest.json
 gh release create v0.1.0 dist/NTA-Agent-0.1.0-full.zip dist/NTA-Agent-0.1.0-app.zip dist/manifest.json
 ```
+
+`tools/package.py` keeps only the newest build in `dist/` (older ones live on GitHub Releases).
 
 The app updates itself from this repo's `releases/latest`: the small `app` zip is used when
 the bundled runtimes (Python/Node) are unchanged, otherwise the `full` zip.
