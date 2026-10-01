@@ -594,6 +594,17 @@ def read_forts_view(cfg) -> dict:
             "building": data.get("building") or [], "scanned_at": data.get("scanned_at")}
 
 
+def read_free_rewards(cfg) -> dict:
+    """The free extras' schedule (agent-written): when each is next due and what was taken."""
+    try:
+        d = json.loads(Path(cfg.free_rewards_path).read_text(encoding="utf-8"))
+    except (OSError, ValueError):
+        d = {}
+    d = d if isinstance(d, dict) else {}
+    return {"next": d.get("next") or {}, "claimed": d.get("claimed") or {},
+            "last": d.get("last") or {}}
+
+
 def read_dig(cfg) -> dict:
     """The dig status (dig.json, written by the agent's DigService) + whether a
     dashboard request is still waiting for the agent to pick it up."""
@@ -1197,6 +1208,8 @@ class Handler(BaseHTTPRequestHandler):
             self._json(200, read_forts_view(cfg))
         elif parsed.path == "/api/dig":
             self._json(200, read_dig(cfg))
+        elif parsed.path == "/api/free-rewards":
+            self._json(200, read_free_rewards(cfg))
         elif parsed.path == "/api/leveling":
             self._json(200, read_leveling(cfg))
         elif parsed.path == "/api/intel":

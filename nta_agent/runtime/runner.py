@@ -89,6 +89,9 @@ def run(cfg: RuntimeConfig, *, ticks: int = 0, session=None, engine=None) -> Non
     brain = BrainService(profile, cfg, on_event=on_event, actions=agent.actions)
     from nta_agent.runtime.fort_service import FortService
     forts = FortService(cfg, agent.actions, on_event=on_event)
+    # free extras: lucky wheel, free gold / war token, newbie pack days (never buys anything)
+    from nta_agent.runtime.free_rewards import FreeRewards
+    free_rewards = FreeRewards(agent.actions, cfg.free_rewards_path, on_event=on_event)
     # Dig a path to a player-picked cell (dashboard request -> preview -> confirm).
     from nta_agent.runtime.dig_service import (
         DigService,
@@ -392,6 +395,8 @@ def run(cfg: RuntimeConfig, *, ticks: int = 0, session=None, engine=None) -> Non
         # a NEW main city (re-created after capture) = new game: drop stale uid/cell state
         _safe(lambda: check_new_game(profile, cfg, state, on_event, services=[dig]))
         run_services(state, cfg, service, brain, forts, _safe, observer=observer)
+        if read_mode(cfg.control_path) != "pause":
+            _safe(free_rewards.tick, state)
 
     try:
         agent.run(ticks=ticks, interval=cfg.interval, on_tick=on_tick,

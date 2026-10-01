@@ -110,6 +110,36 @@ class Actions:
         self._apply_result(reply, queue="build")
         return reply
 
+    # ---- free extras (lobby routes, answered on the same connection as game/...) ---------- #
+    # Nothing here spends ingots or watches ads: BuyWheelNoCd / BuyFreeForecast are NOT wrapped.
+    def wheel_info(self) -> dict:
+        """LOBBY_HD_GETWHEELINFO: ``info`` {wheelWaitTime ms, wheelResidueCount, wheelCurrCount…}."""
+        return self.session.request("lobby/HD_GetWheelInfo", {})
+
+    def wheel_begin(self) -> dict:
+        """LOBBY_HD_WHEELBEGIN: ``info.wheelWaitTime`` > 0 while the free spin cools down."""
+        return self.session.request("lobby/HD_WheelBegin", {})
+
+    def wheel_ret(self, ok: bool = True) -> dict:
+        """LOBBY_HD_GETWHEELRET {ok}: the spin result (sector ``id``, ``rewards``, records)."""
+        return self.session.request("lobby/HD_GetWheelRet", {"ok": bool(ok)})
+
+    def buy_free_gold(self) -> dict:
+        """LOBBY_HD_BUYFREEGOLD: the shop's free gold -> {gold, buyFreeGoldSurplusTime ms}."""
+        return self.session.request("lobby/HD_BuyFreeGold", {})
+
+    def buy_free_war_token(self) -> dict:
+        """LOBBY_HD_BUYFREEWARTOKEN: the shop's free war token -> {warToken, ...SurplusTime}."""
+        return self.session.request("lobby/HD_BuyFreeWarToken", {})
+
+    def newbie_reward_info(self) -> dict:
+        """LOBBY_HD_GETNEWBIEREWARDINFO: ``list`` of NewbieGiftPackProgress."""
+        return self.session.request("lobby/HD_GetNewbieRewardInfo", {})
+
+    def claim_newbie_reward(self, product_id: str) -> dict:
+        """LOBBY_HD_CLAIMNEWBIEREWARD {productId}: one day of an owned newbie gift pack."""
+        return self.session.request("lobby/HD_ClaimNewbieReward", {"productId": str(product_id)})
+
     def add_build(self, index: int, build_id: int) -> dict:
         """Construct a new IN-CITY building (type 1); server auto-places it
         (GAME_HD_AddAreaBuild). Fort/Cứ Điểm (ui=BuildCity) uses create_city instead.
