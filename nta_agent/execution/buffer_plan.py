@@ -6,6 +6,7 @@ Spec: docs/superpowers/specs/2026-09-25-buffer-leveling-design.md. Costs come fr
 """
 from __future__ import annotations
 
+CEREAL = 1            # CType: a level-up costs cereal too (346 at lv1)
 EXP_BOOK = 7          # CType
 BARRACKS_ID = 2004    # Trại Lính: gates pawn levels (lv_cond)
 
@@ -26,7 +27,8 @@ def level_step(rows, pawn_id: int, lv: int) -> dict | None:
         return None
     cond = [int(x) for x in str(row.get("lv_cond") or "0,0,0").split(",") if x.strip()]
     need = cond[2] if len(cond) == 3 and cond[1] == BARRACKS_ID else 0
-    return {"books": _types(row["lv_cost"]).get(EXP_BOOK, 0),
+    cost = _types(row["lv_cost"])
+    return {"books": cost.get(EXP_BOOK, 0), "cereal": cost.get(CEREAL, 0),
             "time_s": int(row.get("lv_time") or 0), "barracks_lv": need}
 
 

@@ -16,11 +16,12 @@ def _imp(u, lv=1):
     return {"uid": u, "id": 3305, "lv": lv}
 
 
-def _state(exp_book=50, queue=()):
+def _state(exp_book=50, queue=(), cereal=99999):
     st = GameState(source="api")
     st.user = User(uid="me")
     st.main_city_index = MAIN
     st.resources.exp_book = exp_book
+    st.resources.cereal = cereal
     st.builds = [Building(index=MAIN, id=2004, lv=13, uid="bar")]
     st.raw = {"player": {"pawnLevelingQueues": [
         {"index": MAIN, "auid": a, "puid": p} for a, p in queue]}}
@@ -384,3 +385,23 @@ def test_recruiting_still_goes_on_while_the_buffer_is_short(tmp_path):
     acts = FakeActions(_recruit_setup(tmp_path, have=3))
     _tick(rule, _state(), acts)
     assert [c[:3] for c in acts.calls if c[0] == "drill"] == [("drill", 3305, "NC1")]
+
+
+# ---- a level-up costs cereal (346 at lv1): say so, so the generic top-up leaves it ----------
+def test_waiting_for_cereal_sets_a_reserve_and_sends_nothing(tmp_path):
+    rule = _rule(tmp_path)
+    acts = FakeActions(_recruit_setup(tmp_path, have=9))
+    for _ in range(3):
+        _tick(rule, _state(cereal=16), acts)                     # setup completes
+    assert [c for c in acts.calls if c[0] == "level"] == []       # 16 < 346: no useless order
+    assert rule.cereal_reserve == 346
+
+
+def test_enough_cereal_levels_and_clears_the_reserve(tmp_path):
+    rule = _rule(tmp_path)
+    acts = FakeActions(_recruit_setup(tmp_path, have=9))
+    for _ in range(3):
+        _tick(rule, _state(cereal=16), acts)
+    assert rule.cereal_reserve == 346
+    _tick(rule, _state(cereal=400), acts)
+    assert [c[0] for c in acts.calls if c[0] == "level"] == ["level"] and rule.cereal_reserve == 0
