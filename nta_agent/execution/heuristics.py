@@ -1507,6 +1507,20 @@ class ClaimTasks:
                 slots = [v for v in slots
                          if str((base.get(int(v["id"])) or {}).get("exclusive_pawn") or "")]
             return len(slots)
+        if ctype in (1039, 1035, 1021):   # FORGE_EQUIP / FORGE_EXC_EQUIP / FORGE_EQUIP_APPOINT
+            from nta_agent.execution.forge import equip_id
+            equips = [e for e in (player.get("equips") or []) if isinstance(e, dict)]
+            if ctype == 1039:
+                return len(equips)                      # any crafted equip counts
+            if ctype == 1021:
+                return 1 if any(equip_id(e) == cid for e in equips) else 0
+            cfg = self._cfg()
+            try:
+                base = cfg.table("equipBase") if cfg else {}
+            except Exception:
+                base = {}
+            return sum(1 for e in equips
+                       if str((base.get(equip_id(e)) or {}).get("exclusive_pawn") or ""))
         if ctype == 4 and st is not None:   # BUILD_LV: the highest level of that building
             return max((int(b.lv) for b in getattr(st, "builds", None) or []
                         if int(b.id) == cid), default=0)
