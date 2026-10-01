@@ -217,8 +217,10 @@ def pawn_move_label(m: dict) -> str:
     if m.get("gather"):
         at = int(m.get("meet") or 0)
         who = " và ".join(m.get("travel") or []) or "các đội"
-        s += (f" (hai đội đang ở khác ô: agent gọi {who} tới ô ({at % 600}, {at // 600}) "
-              "— điểm gặp gần nhất trong đất của bạn — rồi mới đổi)")
+        stay = m.get("stay") or []
+        s += (f" (hai đội đang ở khác ô: agent gọi {who} tới ô ({at % 600}, {at // 600})"
+              + (f", {' và '.join(stay)} đứng yên" if stay else "")
+              + " — điểm gặp gần nhất trong đất của bạn — rồi mới đổi)")
     return s
 
 
@@ -238,9 +240,23 @@ def _pawn_cap(cfg) -> int:
         return DEFAULT_PAWN_CAP
 
 
+def _attack_uids(cfg) -> set:
+    """Armies about to attack: the active formation group (the farm / dig group) and the
+    armies the ArmyComposer holds for the strike goal."""
+    out = set(_strike_uids(cfg))
+    try:
+        from nta_agent.execution.profile import active_formation, load_profile
+        out |= {str(u) for u in (active_formation(load_profile(cfg.profile_path))
+                                 .get("group") or ())}
+    except Exception:
+        pass
+    return out
+
+
 def _meet_picker(cfg, armies):
-    """cells -> the owned cell halfway between them (see choose_meet); the main city when
-    our territory is not known. Pure of HTTP."""
+    """involved armies -> where they meet (see choose_meet): an owned cell with room, near
+    the army that is about to attack when exactly one of them is (it stays at the front
+    and the other walks over), else halfway. The main city is the fallback. Pure of HTTP."""
     from nta_agent.execution.pawn_moves import choose_meet
     try:
         owned = {int(y) * 600 + int(x) for x, y in
@@ -253,8 +269,13 @@ def _meet_picker(cfg, armies):
     for a in armies or []:
         occ[a.get("index")] = occ.get(a.get("index"), 0) + 1
 
-    def pick(cells):
-        return choose_meet(cells, owned, fallback=main, occupied=occ)
+    attackers = _attack_uids(cfg)
+
+    def pick(involved):
+        hot = [a for a in involved if str(a.get("uid")) in attackers]
+        anchor = int(hot[0].get("index", 0) or 0) if len(hot) == 1 else None
+        return choose_meet([a.get("index") for a in involved], owned, fallback=main,
+                           occupied=occ, anchor=anchor)
     return pick
 
 

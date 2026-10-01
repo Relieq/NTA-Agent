@@ -502,3 +502,64 @@ def test_chat_picks_the_midpoint_from_the_territory_file(tmp_path):
     (m,) = out["pawn_moves"]
     assert m["meet"] == _c(15, 10) and sorted(m["travel"]) == ["Đội 1", "Đội 3"]
     assert "(15, 10)" in m["label"]
+
+
+# ---- 5 armies per cell, and the army about to attack stays at the front -----------------
+def test_a_cell_with_five_armies_is_never_the_meeting_cell():
+    from nta_agent.execution.pawn_moves import choose_meet
+    owned = {_c(x, 10) for x in range(5, 40)}
+    full = {_c(15, 10): 5}                                  # the midpoint is full
+    m = choose_meet([_c(10, 10), _c(20, 10)], owned, occupied=full)
+    assert m != _c(15, 10) and m in owned
+    assert choose_meet([_c(10, 10), _c(20, 10)], owned, occupied=full) in (_c(14, 10), _c(16, 10))
+    # one army already stands on the cell (4 there, itself included) + 1 arriving = 5: allowed
+    assert choose_meet([_c(10, 10), _c(11, 10)], {_c(11, 10)}, occupied={_c(11, 10): 4}) == _c(11, 10)
+    # 5 there already -> a 6th cannot come
+    assert choose_meet([_c(10, 10), _c(11, 10)], {_c(11, 10)}, occupied={_c(11, 10): 5}) is None
+    # both would arrive: 4 + 2 = 6 > 5
+    assert choose_meet([_c(10, 10), _c(12, 10)], {_c(11, 10)}, occupied={_c(11, 10): 4}) is None
+
+
+def test_the_army_about_to_attack_stays_and_the_other_walks_over():
+    from nta_agent.execution.pawn_moves import choose_meet
+    owned = {_c(x, 10) for x in range(5, 40)}
+    # hot army at x=30, the other at x=10: meet where the hot one is (it does not move)
+    assert choose_meet([_c(30, 10), _c(10, 10)], owned, anchor=_c(30, 10)) == _c(30, 10)
+    # its cell has no room -> the closest owned cell to it
+    m = choose_meet([_c(30, 10), _c(10, 10)], owned, anchor=_c(30, 10),
+                    occupied={_c(30, 10): 5})
+    assert m in (_c(29, 10), _c(31, 10))
+
+
+def test_chat_keeps_the_group_army_in_place_and_calls_the_other(tmp_path):
+    import json as _json
+
+    from nta_agent.execution.profile import load_profile, save_profile
+    cfg = _cfg(tmp_path)
+    armies = _armies()
+    armies[0]["index"], armies[2]["index"] = _c(30, 10), _c(10, 10)      # A far east, C west
+    Path(cfg.armies_path).write_text(_json.dumps(armies), encoding="utf-8")
+    Path(cfg.forts_path).write_text(_json.dumps(
+        {"owned_cells": [[x, 10] for x in range(5, 40)]}), encoding="utf-8")
+    prof = load_profile(cfg.profile_path)
+    prof.army["group"] = ["A"]                                            # A = the farm / dig group
+    save_profile(prof, cfg.profile_path)
+
+    def propose(digest, profile, instruction=None, history=None):
+        return {"pawn_moves": [{"op": "swap", "army_a": "A", "pawn_a": 3206,
+                                "army_b": "C", "pawn_b": 3305}]}
+    (m,) = handle_chat(cfg, "tráo lính", history=[], propose=propose)["pawn_moves"]
+    assert m["meet"] == _c(30, 10) and m["travel"] == ["Đội 3"] and m["stay"] == ["Đội 1"]
+    assert "Đội 1 đứng yên" in m["label"]
+    # both armies in the group (or neither): halfway
+    prof.army["group"] = ["A", "C"]
+    save_profile(prof, cfg.profile_path)
+    (m,) = handle_chat(cfg, "tráo lính", history=[], propose=propose)["pawn_moves"]
+    assert m["meet"] == _c(20, 10)
+
+
+def test_no_room_anywhere_says_so(tmp_path):
+    ops, notes = sanitize_pawn_moves(
+        [{"op": "swap", "army_a": "A", "pawn_a": 3206, "army_b": "C", "pawn_b": 3305}],
+        _armies(), meet=lambda involved: None)
+    assert ops == [] and any("đủ chỗ" in n for n in notes)

@@ -21,19 +21,34 @@ def _dist(a: int, b: int) -> int:
     return abs(a % W - b % W) + abs(a // W - b // W)
 
 
-def choose_meet(cells, owned, *, fallback: int | None = None, occupied=None) -> int | None:
+MAX_ARMIES_PER_CELL = 5   # the game lets at most 5 armies stand in one cell
+
+
+def choose_meet(cells, owned, *, fallback: int | None = None, occupied=None,
+                anchor: int | None = None, cap: int = MAX_ARMIES_PER_CELL) -> int | None:
     """The cell where armies standing at ``cells`` should meet: an OWNED cell (armies can
-    only be sent into our own land) that minimises the longest march — usually halfway
-    between them, or one army's own cell. Ties: shorter total march, then fewer armies
-    already standing there, then the lower index. ``fallback`` (the main city) when no
-    owned cell is known."""
+    only be sent into our own land) with ROOM for the arrivals (``cap`` armies per cell,
+    ``occupied`` = armies standing on each cell now). Distance is Manhattan (the game
+    marches along rows/columns). Default: minimise the longest march — usually halfway,
+    or one army's own cell. With ``anchor`` (the cell of an army about to attack, which
+    should not be pulled away from the front): the cell nearest to it — its own cell when
+    there is room, else the closest owned cell — and the other army walks over.
+    Ties: shorter longest/total march, fewer armies there, lower index. ``fallback`` (the
+    main city) is always a candidate; None when no cell has room."""
     cells = [int(c) for c in cells]
     cand = {int(o) for o in owned or ()} | ({int(fallback)} if fallback else set())
-    if not cand or not cells:
-        return fallback
     occ = occupied or {}
-    return min(cand, key=lambda c: (max(_dist(c, x) for x in cells),
-                                    sum(_dist(c, x) for x in cells), occ.get(c, 0), c))
+    pool = [c for c in cand
+            if occ.get(c, 0) + sum(1 for x in cells if x != c) <= cap]
+    if not pool or not cells:
+        return None
+
+    def tail(c):
+        return (max(_dist(c, x) for x in cells), sum(_dist(c, x) for x in cells),
+                occ.get(c, 0), c)
+    if anchor is not None:
+        return min(pool, key=lambda c: (_dist(c, int(anchor)),) + tail(c))
+    return min(pool, key=tail)
 
 
 def _lv(p: dict) -> int:
@@ -86,9 +101,9 @@ def reorder_swaps(army: dict, order) -> list:
     return swaps
 
 
-def _meet_for(meet, cells):
-    """``meet`` is a fixed cell, or a callable ``cells -> cell`` (see ``choose_meet``)."""
-    return meet(cells) if callable(meet) else meet
+def _meet_for(meet, armies):
+    """``meet`` is a fixed cell, or a callable ``armies -> cell`` (see ``choose_meet``)."""
+    return meet(armies) if callable(meet) else meet
 
 
 def sanitize_pawn_moves(raw, armies, cap: int = 9, meet=None) -> tuple[list, list]:
@@ -127,10 +142,10 @@ def sanitize_pawn_moves(raw, armies, cap: int = 9, meet=None) -> tuple[list, lis
                              "thì hãy nói 'đổi thứ tự', còn tráo thì cần hai đội khác nhau")
                 continue
             gather = a.get("index") != b.get("index")
-            at = _meet_for(meet, [a.get("index"), b.get("index")]) if gather else None
+            at = _meet_for(meet, [a, b]) if gather else None
             if gather and at is None:
-                notes.append(f"{a.get('name')} và {b.get('name')} không ở cùng ô — "
-                             "cần tập hợp về cùng một ô trước khi đổi lính")
+                notes.append(f"{a.get('name')} và {b.get('name')} không ở cùng ô và chưa tìm "
+                             "được ô nào trong đất của bạn đủ chỗ (tối đa 5 đội/ô) để gặp nhau")
                 continue
             xs = _pool(a, pa, _pos(r.get("pos_a")))
             ys = _pool(b, pb, _pos(r.get("pos_b")))
@@ -146,6 +161,8 @@ def sanitize_pawn_moves(raw, armies, cap: int = 9, meet=None) -> tuple[list, lis
                         "gather": gather, "meet": at,
                         "travel": [x.get("name") or str(x["uid"]) for x in (a, b)
                                    if gather and x.get("index") != at],
+                        "stay": [x.get("name") or str(x["uid"]) for x in (a, b)
+                                 if gather and x.get("index") == at],
                         "pawn_a": pa, "pawn_b": pb,
                         "count": n,
                         "pairs": [[str(xs[i]["uid"]), str(ys[i]["uid"])] for i in range(n)],
@@ -161,10 +178,10 @@ def sanitize_pawn_moves(raw, armies, cap: int = 9, meet=None) -> tuple[list, lis
                 notes.append("Không xác định được đội nguồn / đội đích để chuyển lính")
                 continue
             gather = dst is not None and src.get("index") != dst.get("index")
-            at = _meet_for(meet, [src.get("index"), dst.get("index")]) if gather else None
+            at = _meet_for(meet, [src, dst]) if gather else None
             if gather and at is None:
-                notes.append(f"{src.get('name')} và {dst.get('name')} không ở cùng ô — "
-                             "cần tập hợp về cùng một ô trước khi chuyển lính")
+                notes.append(f"{src.get('name')} và {dst.get('name')} không ở cùng ô và chưa tìm "
+                             "được ô nào trong đất của bạn đủ chỗ (tối đa 5 đội/ô) để gặp nhau")
                 continue
             pool = _pool(src, pid, _pos(r.get("pos")))
             room = cap if dst is None else cap - len(dst.get("pawns") or [])
@@ -185,6 +202,8 @@ def sanitize_pawn_moves(raw, armies, cap: int = 9, meet=None) -> tuple[list, lis
                         "gather": gather, "meet": at,
                         "travel": [x.get("name") or str(x["uid"]) for x in (src, dst)
                                    if gather and x.get("index") != at],
+                        "stay": [x.get("name") or str(x["uid"]) for x in (src, dst)
+                                 if gather and x.get("index") == at],
                         "pawn_id": pid, "count": n,
                         "pawn_uids": [str(p["uid"]) for p in pool[:n]],
                         "spec": {"op": "move", "army_from": str(src["uid"]), "army_to": dst_uid,
