@@ -325,9 +325,16 @@ export default {
 
   const toCanvas=(ev)=>{ const cv=canvas.value, r=cv.getBoundingClientRect();
    return [ (ev.clientX-r.left)*(cv.width/r.width), (ev.clientY-r.top)*(cv.height/r.height) ]; };
-  function onDown(ev){ dragging=true; moved=0; lastX=ev.clientX; lastY=ev.clientY; }
+  function onDown(ev){
+   if(drawing.value && ev.button===0 && !ev.shiftKey){   // draw mode: the left button PAINTS
+    const [px,py]=toCanvas(ev);
+    if(px>=ML&&py>=MT){ const c=cellAt(px,py); paintStart(c.x,c.y); render(); }
+    return; }
+   dragging=true; moved=0; lastX=ev.clientX; lastY=ev.clientY; }
   function onMove(ev){
    const cv=canvas.value, r=cv.getBoundingClientRect();
+   if(painting){ const [px,py]=toCanvas(ev);
+    if(px>=ML&&py>=MT){ const c=cellAt(px,py); paintMove(c.x,c.y); } }
    if(dragging){ const dx=ev.clientX-lastX, dy=ev.clientY-lastY; moved+=Math.abs(dx)+Math.abs(dy);
     originX += dx*(cv.width/r.width); originY += dy*(cv.height/r.height);
     lastX=ev.clientX; lastY=ev.clientY; render(); return; }
@@ -342,20 +349,38 @@ export default {
    render();
   }
   // ---- drawing the dig path ----------------------------------------------------
-  function drawClick(x,y){
+  // Freehand: hold the left button and DRAG over the cells. Start on our own land (or on
+  // the last cell of the path to carry on); the path follows the cursor cell by cell
+  // (4-connected). Dragging back over the previous cell erases it.
+  let painting=false, paintLast=null;
+  const drawHint=ref("");
+  const nbrs=(i)=>{ const mw=data.mw, x=i%mw, y=Math.floor(i/mw);
+   return [x>0?i-1:-1, x<mw-1?i+1:-1, y>0?i-mw:-1, y<mw-1?i+mw:-1].filter(n=>n>=0); };
+  function paintStart(x,y){
    const mw=data.mw; if(x<0||y<0||x>=mw||y>=mw) return;
-   const i=y*mw+x, r=route.value, pos=r.indexOf(i);
-   if(pos>=0){ route.value = (pos===r.length-1) ? r.slice(0,-1) : r.slice(0,pos+1); routeDirty.value=true; return; }
-   if(ownedIdx.has(i)) return;                       // our own land is not part of the path
-   let sx,sy;
-   if(r.length){ sx=r[r.length-1]%mw; sy=Math.floor(r[r.length-1]/mw); }
-   else{ let best=null;                                // start from our nearest cell
-    ownedIdx.forEach(o=>{ const d=Math.abs(o%mw-x)+Math.abs(Math.floor(o/mw)-y); if(best===null||d<best[0]) best=[d,o]; });
-    if(best===null) return; sx=best[1]%mw; sy=Math.floor(best[1]/mw); }
-   const add=[]; let cx=sx, cy=sy;                   // straight segments: along x, then along y
-   while(cx!==x){ cx+= x>cx?1:-1; add.push(cy*mw+cx); }
-   while(cy!==y){ cy+= y>cy?1:-1; add.push(cy*mw+cx); }
-   route.value=[...r, ...add.filter(c=>!ownedIdx.has(c) && !r.includes(c))]; routeDirty.value=true;
+   const i=y*mw+x, r=route.value, pos=r.indexOf(i); drawHint.value="";
+   if(pos>=0){ if(pos<r.length-1){ route.value=r.slice(0,pos+1); routeDirty.value=true; }
+    painting=true; paintLast=i; return; }                // carry on (or cut and redraw) from here
+   if(ownedIdx.has(i)){ if(!r.length){ painting=true; paintLast=i; } return; }
+   const from=r.length ? [r[r.length-1]] : null;
+   const ok=from ? nbrs(i).includes(from[0]) : nbrs(i).some(n=>ownedIdx.has(n));
+   if(!ok){ drawHint.value="Bắt đầu kéo từ đất của bạn, hoặc từ ô cuối của đường đang vẽ."; return; }
+   route.value=[...r,i]; routeDirty.value=true; painting=true; paintLast=i;
+  }
+  function paintMove(x,y){
+   const mw=data.mw; if(!painting || x<0||y<0||x>=mw||y>=mw) return;
+   let guard=0;
+   while(paintLast!==null && paintLast!==y*mw+x && guard++<40){
+    const lx=paintLast%mw, ly=Math.floor(paintLast/mw), dx=x-lx, dy=y-ly;
+    const nx=Math.abs(dx)>=Math.abs(dy) ? lx+Math.sign(dx) : lx, ny=Math.abs(dx)>=Math.abs(dy) ? ly : ly+Math.sign(dy);
+    const n=ny*mw+nx, r=route.value;
+    if(r.length>=2 && n===r[r.length-2]){ route.value=r.slice(0,-1); routeDirty.value=true; }   // dragged back: erase
+    else if(r.includes(n)){ /* already on the path */ }
+    else if(ownedIdx.has(n)){ if(r.length) { paintLast=n; continue; } }                          // over our land: no cell
+    else if(r.length<300){ route.value=[...r,n]; routeDirty.value=true; }
+    paintLast=n;
+   }
+   render();
   }
   function toggleFort(x,y){
    const i=y*data.mw+x, d=(dig.value||{}).draft; if(!d || !(d.route||[]).includes(i)) return false;
@@ -364,8 +389,9 @@ export default {
    fortSel.value=cur; digCmd("set_forts",{forts:cur}); return true;
   }
   function onUp(ev){ dragging=false;
+   if(painting){ painting=false; paintLast=null; render(); return; }
+   if(drawing.value && ev.button===0 && !ev.shiftKey) return;   // a click in draw mode is not a selection
    if(moved<4){ const [px,py]=toCanvas(ev);
-    if(px>=ML&&py>=MT && drawing.value){ const c=cellAt(px,py); drawClick(c.x,c.y); render(); return; }
     const dd=(dig.value||{}).draft;
     if(px>=ML&&py>=MT && dd && dd.state==="forts_proposed" && !drawing.value){
      const c=cellAt(px,py); if(toggleFort(c.x,c.y)){ render(); return; } }
@@ -378,7 +404,7 @@ export default {
        diggable: !st || st.label==="biên giới trống",
        capReached: data.fortCap>0 && data.fortCount>=data.fortCap,
        left:Math.min(ev.clientX-r.left, r.width-170), top:(ev.clientY-r.top) }; } } }
-  function onLeave(){ hover=null; tip.value=null; render(); }
+  function onLeave(){ painting=false; paintLast=null; hover=null; tip.value=null; render(); }
   function onWheel(ev){ ev.preventDefault(); const [px,py]=toCanvas(ev); zoomAt(px,py, ev.deltaY<0?1.15:1/1.15); }
   function zoomBtn(f){ const cv=canvas.value; zoomAt(cv.width/2, cv.height/2, f); }
   function recenterBtn(){ recenter(canvas.value); render(); }
@@ -419,7 +445,7 @@ export default {
   onMounted(()=>{ const cv=canvas.value; if(cv) cv.addEventListener("wheel", onWheel, {passive:false}); });
   onUnmounted(()=>{ const cv=canvas.value; if(cv) cv.removeEventListener("wheel", onWheel); });
 
-  return { canvas, tip, sel, built, onDown, onMove, onUp, onLeave, zoomBtn, recenterBtn, fitBtn, buildFort,
+  return { drawHint, canvas, tip, sel, built, onDown, onMove, onUp, onLeave, zoomBtn, recenterBtn, fitBtn, buildFort,
            dig, digBuffer, digMsg, digHere, digConfirm, digCancel, digReplan, fmtDur, DIG_STATE, DIG_REASON,
            drawing, route, routeDirty, startDraw, stopDraw, undoCell, clearRoute, evaluateRoute, editSuggestion,
            confirmPath, cancelDraft, draftErrors, ERR_WHY, DRAFT_STATE };
@@ -435,8 +461,9 @@ export default {
     padding:6px 10px;margin-bottom:6px;font-size:13px">
    <div style="display:flex;gap:10px;flex-wrap:wrap;align-items:center">
     <b>✏ Bản vẽ đường dig</b>
-    <span v-if="drawing" class="muted">đang vẽ: bấm ô liền kề để nối thêm · bấm ô xa → tự nối thẳng (ngang rồi dọc) ·
-     bấm lại ô cuối để lùi 1 ô · bấm ô giữa đường để cắt từ đó</span>
+    <span v-if="drawing" class="muted">đang vẽ: GIỮ chuột trái và KÉO qua từng ô — bắt đầu từ đất của bạn (hoặc ô cuối đường để vẽ tiếp) ·
+     kéo ngược để xoá · bấm xuống một ô giữa đường rồi kéo để vẽ lại từ đó · di chuyển bản đồ: giữ Shift (hoặc chuột phải) rồi kéo</span>
+    <span v-if="drawHint" style="color:#e3b341">{{ drawHint }}</span>
     <span v-if="dig.draft && !routeDirty">{{ DRAFT_STATE[dig.draft.state] || dig.draft.state }}</span>
     <span v-if="routeDirty" style="color:#e3b341">đã sửa — bấm "Đánh giá" để agent tính lại</span>
     <span v-if="dig.pending" class="muted">⏳ chờ agent xử lý</span>
@@ -489,8 +516,8 @@ export default {
   </div>
   <div style="position:relative">
    <canvas ref="canvas" class="terrmap" width="640" height="360"
-     @mousedown="onDown" @mousemove="onMove" @mouseup="onUp" @mouseleave="onLeave"
-     style="cursor:grab"></canvas>
+     @mousedown="onDown" @mousemove="onMove" @mouseup="onUp" @mouseleave="onLeave" @contextmenu.prevent
+     :style="{cursor: drawing ? 'crosshair' : 'grab'}"></canvas>
    <div v-if="tip" class="muted" style="position:absolute;background:#0d1117;border:1px solid var(--border-hi);
      border-radius:4px;padding:2px 6px;font-size:11px;pointer-events:none;z-index:6"
      :style="{left:tip.left+'px',top:tip.top+'px'}">{{ tip.text }}</div>
