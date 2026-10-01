@@ -173,6 +173,11 @@ def main(argv=None) -> int:
     ap.add_argument("--cache", default=str(REPO / "build" / "pkgcache"))
     a = ap.parse_args(argv)
     m = build(a.version, Path(a.out), Path(a.cache), a.notes)
+    # older builds are already on the GitHub releases; keep only this version here
+    for old in Path(a.out).glob("NTA-Agent-*.zip"):
+        if not old.name.startswith(f"NTA-Agent-{a.version}-"):
+            old.unlink()
+            print(f"[-] removed old build {old.name}")
     for k, v in m["assets"].items():
         print(f"[+] {k:4} {v['name']}  {v['size'] / 1e6:.1f} MB  sha256={v['sha256'][:12]}…")
     return 0
