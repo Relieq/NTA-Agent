@@ -19,6 +19,11 @@ def _player_subset(raw: dict) -> dict:
         "other_tasks": len(player.get("otherTasks") or []),
         "today_tasks": len(player.get("todayTasks") or []),
         "pawn_slots": pawn_ids,
+        # the tasks themselves (id, progress, ...) — to see WHICH reward is still open
+        "tasks": {kind: [{k: v for k, v in t.items() if isinstance(v, (int, float, str, bool))}
+                         for t in (player.get(key) or []) if isinstance(t, dict)]
+                  for kind, key in (("guide", "guideTasks"), ("other", "otherTasks"),
+                                    ("today", "todayTasks"))},
     }
 
 
