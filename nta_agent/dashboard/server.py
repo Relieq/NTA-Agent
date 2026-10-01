@@ -181,6 +181,64 @@ def confirm_dismissals(cfg, specs) -> dict:
     return {"ok": True, "queued": clean, "notices": notes}
 
 
+def pawn_move_label(m: dict) -> str:
+    """One readable line for a resolved pawn move (the confirm card + chat history)."""
+    if m["op"] == "swap":
+        return f"đổi {m['count']} lính {m['name_a']} ⇄ {m['count']} lính {m['name_b']}"
+    if m["op"] == "move":
+        return f"chuyển {m['count']} lính {m['name_from']} → {m['name_to']}"
+    return f"đổi thứ tự lính trong {m['name']}"
+
+
+def _pawn_cap(cfg) -> int:
+    """Pawns an army may hold, from the main city level in the state snapshot (9 if unknown)."""
+    from types import SimpleNamespace
+
+    from nta_agent.execution.caps import DEFAULT_PAWN_CAP, army_pawn_cap
+    try:
+        st = json.loads(Path(cfg.snapshot_path).read_text(encoding="utf-8"))
+        state = SimpleNamespace(
+            main_city_index=st.get("main_city_index"),
+            builds=[SimpleNamespace(index=b.get("index"), id=b.get("id"), lv=b.get("lv"))
+                    for b in st.get("builds") or []])
+        return army_pawn_cap(state)
+    except Exception:
+        return DEFAULT_PAWN_CAP
+
+
+def _strike_uids(cfg) -> list:
+    """The armies the ArmyComposer holds for the ACTIVE strike goal ([] = no goal)."""
+    try:
+        st = json.loads((Path(cfg.log_dir) / "composition_status.json").read_text(encoding="utf-8"))
+    except (OSError, ValueError, AttributeError):
+        return []
+    return [str(u) for u in st.get("strike") or []] if st.get("active") else []
+
+
+def confirm_pawn_moves(cfg, specs) -> dict:
+    """Queue the pawn rearrangements the player CONFIRMED: re-resolve them against the
+    CURRENT armies. If the active strike goal would UNDO them (a goal army ends up mixed
+    or short of its type), the goal is cancelled first — the player's rearrangement is
+    the final word, and the composer would otherwise move the pawns back. Pure of HTTP."""
+    from nta_agent.execution.pawn_moves import sanitize_pawn_moves, strike_conflicts
+    from nta_agent.execution.profile import apply_edits, load_profile, save_profile
+    armies = _armies_from_disk(cfg)
+    clean, notes = sanitize_pawn_moves(specs, armies, cap=_pawn_cap(cfg))
+    if not clean:
+        return {"ok": False, "error": "Không còn thao tác hợp lệ. " + " ".join(notes)}
+    cancelled = False
+    if strike_conflicts(clean, armies, _strike_uids(cfg)):
+        profile = load_profile(cfg.profile_path)
+        if profile.army.get("strike_target"):
+            edits = {"army": {"strike_target": []}}
+            apply_edits(profile, edits)
+            save_profile(profile, cfg.profile_path)
+            append_command(cfg.commands_path, {"action": "profile_edit", "edits": edits})
+            cancelled = True
+    append_command(cfg.commands_path, {"action": "pawn_moves", "ops": clean})
+    return {"ok": True, "queued": clean, "notices": notes, "cancelled_goal": cancelled}
+
+
 def chat_reply_summary(out: dict) -> str:
     """What the brain answered, in one line, for the next turn's chat history."""
     if not out.get("ok"):
@@ -191,6 +249,9 @@ def chat_reply_summary(out: dict) -> str:
     if out.get("dismissals"):
         parts.append("Đề xuất giải tán (chờ xác nhận): " + ", ".join(
             f"{d['name']} ({d['count']} lính)" for d in out["dismissals"]))
+    if out.get("pawn_moves"):
+        parts.append("Đề xuất tráo/chuyển lính (chờ xác nhận): " + "; ".join(
+            pawn_move_label(m) for m in out["pawn_moves"]))
     if out.get("renames"):
         parts.append("Đề xuất đổi tên: " + ", ".join(
             f"{r.get('current_name') or r['uid']}→{r['name']}" for r in out["renames"]))
@@ -303,10 +364,20 @@ def handle_chat(cfg, message, *, history=None, propose=None):
         comp = Counter(str(p.get("id")) for p in (a.get("pawns") or []))
         dismissals.append({**d, "troops": _troops_label(dict(comp), names), "warn": warn,
                            "pawn_name": names.get(str(d["pawn_id"])) if d["pawn_id"] else ""})
+    from nta_agent.execution.pawn_moves import sanitize_pawn_moves, strike_conflicts
+    raw_moves = edits.get("pawn_moves") if isinstance(edits, dict) else None
+    moves, move_notes = sanitize_pawn_moves(raw_moves, armies, cap=_pawn_cap(cfg))
+    goal_armies = _strike_uids(cfg)
+    pawn_moves = [{**m, "conflict": strike_conflicts([m], armies, goal_armies),
+                   "label": pawn_move_label(m)} for m in moves]
+    if pawn_moves and any(m["conflict"] for m in pawn_moves):
+        # judged together: two harmless-looking moves can still break a goal army
+        joint = strike_conflicts(moves, armies, goal_armies)
+        pawn_moves[0]["conflict"] = pawn_moves[0]["conflict"] or joint
     strike, notices = ([], [])
     if raw_strike:
         strike, notices = sanitize_strike(raw_strike, unlocked, message, pawn_names)
-    notices = list(notices) + dis_notes
+    notices = list(notices) + dis_notes + move_notes
     if strike:
         # Names the player gave belong to the NEW group (renamed once it's assembled),
         # not to whichever existing armies the LLM guessed.
@@ -328,8 +399,9 @@ def handle_chat(cfg, message, *, history=None, propose=None):
             "strike": ({"targets": strike, "summary": strike_summary(strike)}
                        if strike else None),
             "notices": notices,
-            "renames": proposal, "dismissals": dismissals,
-            "needs_confirm": bool(proposal) or bool(strike) or bool(dismissals),
+            "renames": proposal, "dismissals": dismissals, "pawn_moves": pawn_moves,
+            "needs_confirm": (bool(proposal) or bool(strike) or bool(dismissals)
+                              or bool(pawn_moves)),
             "question": question,
             "active": profile.army.get("active", ""),
             "presets": list(profile.army.get("presets") or {}),
@@ -1276,8 +1348,12 @@ class Handler(BaseHTTPRequestHandler):
                 renames = body.get("renames") or []
                 strike = body.get("strike_target") or []
                 dismissals = body.get("dismissals") or []
+                pawn_moves = body.get("pawn_moves") or []
             except (ValueError, TypeError, AttributeError):
                 self._json(400, {"ok": False, "error": "bad json"})
+                return
+            if pawn_moves:
+                self._json(200, confirm_pawn_moves(cfg, pawn_moves))
                 return
             if dismissals:
                 self._json(200, confirm_dismissals(cfg, dismissals))
