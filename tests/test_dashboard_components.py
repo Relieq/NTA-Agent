@@ -150,8 +150,12 @@ def test_forge_panel_wired():
 def test_territory_map_dig_controls():
     terr = _c("TerritoryPanel.js")
     assert "/api/dig" in terr and "/api/dig/" in terr
-    assert "Dig tới đây" in terr and "Xác nhận dig" in terr and "Huỷ mục tiêu" in terr
-    assert "Tìm đường khác" in terr and '"replan"' in terr
+    assert "Gợi ý đường tới đây" in terr and "Xác nhận kế hoạch dig" in terr
+    assert "Huỷ mục tiêu" in terr and "Tìm đường khác" in terr and '"replan"' in terr
+    # the player draws the path: evaluate -> confirm path -> edit forts -> confirm plan
+    for op in ('"evaluate"', '"confirm_path"', '"set_forts"', '"cancel_draft"'):
+        assert op in terr
+    assert "Vẽ đường dig" in terr and "Đánh giá đường" in terr
     assert "path" in terr and "🎯" in terr and "hard" in terr      # path overlay
     assert "nta.digBuffer" in terr                                  # enemy buffer input
 
