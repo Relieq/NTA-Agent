@@ -523,12 +523,32 @@ def read_dig(cfg) -> dict:
 
 
 def dig_command(cfg, op: str, body: dict) -> dict:
-    """request {index, buffer} | confirm | replan | cancel -> dig_request.json (a fresh seq),
-    which the agent's DigService answers in dig.json."""
+    """request {index, buffer} | confirm | replan | cancel, and for a path the player
+    DRAWS: evaluate {path, buffer} | confirm_path | set_forts {forts} | cancel_draft
+    -> dig_request.json (a fresh seq), which the agent's DigService answers in dig.json."""
     import time as _time
-    if op not in ("request", "confirm", "cancel", "replan"):
+    if op not in ("request", "confirm", "cancel", "replan", "evaluate", "confirm_path",
+                  "set_forts", "cancel_draft"):
         return {"ok": False, "error": "thao tác không hợp lệ"}
     req = {"seq": _time.time_ns(), "op": op}
+    if op in ("evaluate", "set_forts"):
+        key = "path" if op == "evaluate" else "forts"
+        raw = body.get(key)
+        try:
+            cells = [int(c) for c in raw] if isinstance(raw, list) else None
+        except (TypeError, ValueError):
+            cells = None
+        if cells is None or (op == "evaluate" and not cells):
+            return {"ok": False, "error": "cần vẽ ít nhất một ô" if op == "evaluate"
+                    else "danh sách Cứ Điểm không hợp lệ"}
+        if len(cells) > 300 or any(not 0 <= c < 600 * 600 for c in cells):
+            return {"ok": False, "error": "đường vẽ quá dài hoặc có ô ngoài bản đồ"}
+        req[key] = cells
+        if op == "evaluate":
+            try:
+                req["buffer"] = max(0, min(6, int(body.get("buffer", 2))))
+            except (TypeError, ValueError):
+                req["buffer"] = 2
     if op == "request":
         try:
             idx = int(body["index"])
@@ -1279,7 +1299,7 @@ class Handler(BaseHTTPRequestHandler):
             # DigService does the work (a preview never sends a game command)
             op = parsed.path[len("/api/dig/"):]
             body = {}
-            if op == "request":
+            if op in ("request", "evaluate", "set_forts"):
                 body = self._body()
                 if body is None:
                     return

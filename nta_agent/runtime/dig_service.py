@@ -13,6 +13,14 @@ owned+target, costs cells with the sim (``CellCost``) and plans with
 a path that now must cross an unbeatable cell waits (retry every
 ``wait_retry_s``), and a Cứ Điểm due on the path is queued once it is ours.
 ``next_target()`` is the one cell OccupyCell should dig next.
+
+PLAYER-DRAWN path (``mode == "drawn"``): the player draws the cells, the agent only
+EVALUATES them (``evaluate`` -> a *draft*: per-cell verdicts, errors, cost), the
+player redraws as often as needed, ``confirm_path`` makes the agent propose Cứ Điểm
+along it, ``set_forts`` lets the player edit them, and the final ``confirm`` turns
+the draft into the live dig. The draft sits beside a running dig and replaces it only
+then. A drawn dig follows the drawing exactly: a cell it can't take or that someone
+else holds makes it WAIT (never detour, never retarget).
 """
 from __future__ import annotations
 
@@ -91,6 +99,8 @@ class DigService:
         self.penalty_s = penalty_s
         self.fort_every = fort_every
         self.dig = _read(cfg.dig_state_path)   # resume an unfinished dig after a restart
+        draft = self.dig.pop("draft", None)    # the path being drawn (not a dig yet)
+        self.draft = draft if isinstance(draft, dict) else None
         self._hard: dict[int, float] = {}      # cell -> reported-unwinnable time
         self._cost: CellCost | None = None
         self._last_plan = None
@@ -136,7 +146,10 @@ class DigService:
 
     def _save(self) -> None:
         self.dig["updated_at"] = self._clock()
-        _write(self.cfg.dig_state_path, self.dig)
+        out = dict(self.dig)
+        if self.draft:
+            out["draft"] = self.draft
+        _write(self.cfg.dig_state_path, out)
 
     def _event(self, kind: str, **detail) -> None:
         self._on_event(kind, detail)
@@ -155,6 +168,7 @@ class DigService:
     def reset_for_new_game(self) -> None:
         """A new match: the old dig's cells/armies no longer exist."""
         self.dig = {}
+        self.draft = None
 
     def tick(self, state) -> None:
         try:
@@ -200,6 +214,27 @@ class DigService:
             self._cost = None
             self._hard.clear()
             self._plan(state, preview=True)
+        elif op == "evaluate":
+            if cur in ("preview", "previewing"):  # a suggestion the player now edits
+                self.dig = {"seq": seq, "state": "idle"}  # nothing was sent: drop it
+            else:
+                self.dig["seq"] = seq
+            self._evaluate_draft(state, req)
+            self._save()
+        elif op == "confirm_path":
+            self.dig["seq"] = seq
+            self._propose_forts(state)
+            self._save()
+        elif op == "set_forts":
+            self.dig["seq"] = seq
+            self._set_forts(req.get("forts"))
+            self._save()
+        elif op == "cancel_draft":
+            self.dig["seq"] = seq
+            self.draft = None
+            self._save()
+        elif op == "confirm" and self.draft and self.draft.get("state") == "forts_proposed":
+            self._promote_draft(seq)
         elif op == "confirm":
             self.dig["seq"] = seq
             if cur == "preview" and self.dig.get("reason") in ("ok", "blocked_by_hard"):
@@ -240,6 +275,9 @@ class DigService:
 
     # ---- planning --------------------------------------------------------------------
     def _plan(self, state, *, preview: bool) -> None:
+        if self.dig.get("mode") == "drawn":
+            self._plan_drawn(state)
+            return
         self._last_plan = self._clock()
         main = int(getattr(state, "main_city_index", 0) or 0)
         uid = str(getattr(getattr(state, "user", None), "uid", "") or "")
@@ -348,6 +386,194 @@ class DigService:
             self._event("dig_failed", target=target, reason=plan.reason)
         self._save()
 
+    def _scan_world(self, state, main: int, uid: str, cells):
+        """(owned, enemy, others, world) around ``main`` + the cells of interest. Hostile
+        land is kept at arm's length (buffer); alliance land is just not ours to dig."""
+        from nta_agent.execution.alliance import ally_uids
+        allies = ally_uids(self.actions, state)
+        m = self._scan(self.actions, main, uid, map_width=W,
+                       focus=self._focus_for(main, cells),
+                       **({"allies": allies} if allies else {}))
+        owned = set(m.get("owned") or ())
+        enemy = set(m.get("enemy_cells") or ()) | set((m.get("enemy_cities") or {}).keys())
+        others = enemy | set(m.get("ally_cells") or ()) | set((m.get("ally_cities") or {}).keys())
+        world = self.world()
+        if world.name is None:
+            world.detect(owned)
+        return owned, enemy, others, world
+
+    def _validate_drawing(self, path, owned, enemy, others, world, buffer):
+        """Walk the drawing in order: (cells to dig, errors). A cell must be occupiable
+        land, nobody's, beyond ``buffer`` of any enemy and touch our land or a cell drawn
+        before it (an errored cell still counts as drawn, so one gap is reported once)."""
+        drawn = set(owned)
+        cells, errors = [], []
+        seen = set()
+        for c in path:
+            if c in seen or c in owned:
+                continue
+            seen.add(c)
+            why = None
+            if not (0 <= c < W * W):
+                why = "terrain"
+            elif c in others:
+                why = "taken"
+            elif not any(n in drawn for n in dp.neighbors(c)):
+                why = "not_connected"
+            elif not world.passable(c):
+                why = "terrain"
+            elif not dp.target_ok(c, passable=world.passable, others=others, enemy=enemy,
+                                  buffer=buffer):
+                why = "enemy_near"
+            if why:
+                errors.append({"xy": _xy(c), "why": why})
+            else:
+                cells.append(c)
+            drawn.add(c)
+        return cells, errors
+
+    def _assess(self, cells, state, main: int, hard: set) -> dict:
+        """Per-cell cost of a drawing: total seconds, stamina, the hard cells and the
+        loss % that would take them. Aborts when a newer dashboard op arrives."""
+        cost = self._cell_cost(state, main)
+        total = 0.0
+        hard_cells = []
+        for n, c in enumerate(cells, start=1):
+            if n % self.abort_check_every == 0 and self._pending_op() not in (None, "confirm"):
+                raise _Superseded()
+            s = None if c in hard else cost.cost(c)
+            if s is None:
+                hard_cells.append(c)
+            else:
+                total += s
+        losses = [None if c in hard else cost.hard_loss(c) for c in hard_cells]
+        need = max(losses) if losses and all(x is not None for x in losses) else None
+        return {"total_s": round(total, 1), "stamina": sum(self._stamina(c) for c in cells),
+                "hard": [_xy(c) for c in hard_cells], "hard_loss": losses, "need_loss": need,
+                "max_loss": self._max_loss(), "rough": bool(cost.rough), "sims": cost.sims,
+                "hard_why": [cost.why.get(c, "reported" if c in hard else "")
+                             for c in hard_cells], "hard_idx": hard_cells}
+
+    def _evaluate_draft(self, state, req: dict) -> None:
+        main = int(getattr(state, "main_city_index", 0) or 0)
+        uid = str(getattr(getattr(state, "user", None), "uid", "") or "")
+        try:
+            path = [int(c) for c in (req.get("path") or [])][:300]
+        except (TypeError, ValueError):
+            path = []
+        buffer = int(req.get("buffer", self.dig.get("buffer", 2)) or 0)
+        if not main or not uid or not path:
+            self.draft = {"state": "failed", "reason": "no_path", "errors": [], "path": [],
+                          "fort_idx": [], "forts": []}
+            return
+        owned, enemy, others, world = self._scan_world(state, main, uid, path)
+        cells, errors = self._validate_drawing(path, owned, enemy, others, world, buffer)
+        now = self._clock()
+        hard = {c for c, t in self._hard.items() if now - t < self.hard_ttl_s}
+        info = self._assess(cells, state, main, hard)
+        info.pop("hard_idx")
+        self.draft = {"state": "evaluated", "mode": "drawn", "route": cells,
+                      "path": [_xy(c) for c in cells], "cells": len(cells), "errors": errors,
+                      "buffer": buffer, "map": world.name, "evaluated_at": now,
+                      "fort_idx": [], "forts": [], **info}
+
+    def _propose_forts(self, state) -> None:
+        d = self.draft
+        if (not d or d.get("state") not in ("evaluated", "forts_proposed") or d.get("errors")
+                or not d.get("route")):
+            return
+        main = int(getattr(state, "main_city_index", 0) or 0)
+        nodes = ([int(f) for f in (self._forts_source() or [])]
+                 + fort_queue.load(self.cfg.pending_forts_path))
+        forts = dp.place_forts(d["route"], nodes, self.world().lv, every=self.fort_every,
+                               main=main or None, main_radius=6)
+        d.update(state="forts_proposed", fort_idx=forts, forts=[_xy(f) for f in forts])
+
+    def _set_forts(self, forts) -> None:
+        d = self.draft
+        if not d or d.get("state") != "forts_proposed":
+            return
+        want = set()
+        for f in forts if isinstance(forts, list) else []:
+            try:
+                want.add(int(f))
+            except (TypeError, ValueError):
+                continue
+        keep = [c for c in d["route"] if c in want]   # only cells ON the path, in order
+        d.update(fort_idx=keep, forts=[_xy(f) for f in keep])
+
+    def _promote_draft(self, seq) -> None:
+        d = self.draft
+        if self.dig.get("state") in LIVE:
+            self._event("dig_cancel", target=self.dig.get("target"), why="replaced")
+        route = list(d["route"])
+        target = route[-1]
+        self.dig = {"seq": seq, "mode": "drawn", "state": "active", "target": target,
+                    "orig_target": target, "target_xy": _xy(target),
+                    "buffer": d.get("buffer", 2), "requested_at": self._clock(),
+                    "retargets": [], "route": route, "path": d["path"], "cells": len(route),
+                    "fort_idx": list(d["fort_idx"]), "forts": list(d["forts"]),
+                    "forts_queued": [], "total_s": d.get("total_s"), "stamina": d.get("stamina"),
+                    "hard": d.get("hard") or [], "hard_loss": d.get("hard_loss") or [],
+                    "need_loss": d.get("need_loss"), "max_loss": d.get("max_loss"),
+                    "rough": d.get("rough"), "map": d.get("map"), "reason": "ok",
+                    "started_at": self._clock(), "dug": 0, "next": route[0]}
+        self.draft = None
+        self._cost = None
+        self._hard.clear()
+        self._dirty = True
+        self._event("dig_start", target=target, cells=len(route), total_s=d.get("total_s"),
+                    drawn=True)
+        self._save()
+
+    def _plan_drawn(self, state) -> None:
+        """Follow the player's drawing: the next cell is the first still-unowned one that
+        touches our land. Never replans around anything — a cell it can't take or that
+        someone else holds makes the dig wait (and tells the player why)."""
+        now = self._clock()
+        self._last_plan = now
+        main = int(getattr(state, "main_city_index", 0) or 0)
+        uid = str(getattr(getattr(state, "user", None), "uid", "") or "")
+        dig = self.dig
+        route = [int(c) for c in dig.get("route") or []]
+        if not main or not uid or not route:
+            return
+        owned, _enemy, others, world = self._scan_world(state, main, uid, route)
+        remaining = [c for c in route if c not in owned]
+        if not remaining:
+            dig.update(state="done", path=[], next=None, done_at=now)
+            self._event("dig_done", target=route[-1], xy=_xy(route[-1]))
+            self._save()
+            return
+        hard = {c for c, t in self._hard.items() if now - t < self.hard_ttl_s}
+        info = self._assess(remaining, state, main, hard)
+        hard_idx = set(info.pop("hard_idx"))
+        taken = [c for c in remaining if c in others]
+        frontier = next((c for c in remaining
+                         if any(n in owned for n in dp.neighbors(c))), None)
+        if taken:
+            reason, state_name = "path_taken", "waiting"
+        elif frontier is None:
+            reason, state_name = "disconnected", "waiting"
+        elif frontier in hard_idx:
+            reason, state_name = "blocked_by_hard", "waiting"
+        else:
+            reason, state_name = "ok", "active"
+        dig.update(info, path=[_xy(c) for c in remaining], cells=len(remaining), reason=reason,
+                   planned_at=now, map=world.name, taken=[_xy(c) for c in taken],
+                   next=frontier if state_name == "active" else None)
+        if state_name == "active":
+            if dig.get("state") == "waiting":
+                self._event("dig_resume", target=route[-1])
+            dig["state"] = "active"
+            self._queue_forts(owned)
+        else:
+            if dig.get("state") != "waiting":
+                self._event("dig_wait", target=route[-1], reason=reason,
+                            hard=info["hard"][:3])
+            dig["state"] = "waiting"
+        self._save()
+
     def _queue_forts(self, owned: set[int]) -> None:
         """Queue each planned Cứ Điểm once, as soon as its cell is ours. The planned
         fort cells stay listed until queued, so a replan that moves them only changes
@@ -361,12 +587,15 @@ class DigService:
         self.dig["forts_queued"] = sorted(queued)
 
     def _focus_chunks(self, main: int, target: int) -> list[int]:
-        """Chunks covering the box main..target (+margin) — scan_map already fetches
+        return self._focus_for(main, [target])
+
+    def _focus_for(self, main: int, cells) -> list[int]:
+        """Chunks covering the box main..cells (+margin) — scan_map already fetches
         the main chunk and the ones our border touches."""
-        mx, my = main % W, main // W
-        tx, ty = target % W, target // W
-        x0, x1 = max(0, min(mx, tx) - self.margin), min(W - 1, max(mx, tx) + self.margin)
-        y0, y1 = max(0, min(my, ty) - self.margin), min(W - 1, max(my, ty) + self.margin)
+        xs = [main % W] + [c % W for c in cells]
+        ys = [main // W] + [c // W for c in cells]
+        x0, x1 = max(0, min(xs) - self.margin), min(W - 1, max(xs) + self.margin)
+        y0, y1 = max(0, min(ys) - self.margin), min(W - 1, max(ys) + self.margin)
         out = set()
         for y in range(y0, y1 + 1, 50):
             for x in range(x0, x1 + 1, 50):
