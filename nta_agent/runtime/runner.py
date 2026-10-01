@@ -315,6 +315,7 @@ def run(cfg: RuntimeConfig, *, ticks: int = 0, session=None, engine=None) -> Non
     def _write_forge_view(state):  # recast panel rows for the dashboard
         if config is None:
             return
+        from nta_agent.execution.forge import busy_craft as _busy_craft
         from nta_agent.execution.forge import forge_view
         from nta_agent.runtime import forge_targets as _ft
         text = config.table("equipText")
@@ -340,6 +341,8 @@ def run(cfg: RuntimeConfig, *, ticks: int = 0, session=None, engine=None) -> Non
         out = {"equips": rows, "busy": player.get("currForgeEquip") or None,
                "craft_waiting": waiting,
                "recast_held": bool(getattr(_forge_rule, "_recast_held", False)),
+               **_busy_craft(player.get("currForgeEquip"), {r["uid"] for r in rows},
+                             lambda i: _vi(f"name_{i}")),
                "smelting": player.get("currSmeltEquip") or None,
                "iron": state.resources.iron,
                "fixator": int(getattr(state.resources, "fixator", 0) or 0)}
