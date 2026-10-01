@@ -215,12 +215,22 @@ class BuildOrder:
     _sig: tuple = ()  # last builds signature; changing it clears blocks (retry)
     _streak: int = 0          # consecutive queue rejections (drives the progressive back-off)
     _qsig: tuple = ()         # last build-queue signature: a change = the world moved
+    # The server keeps saying "queue full" while ours looks free (it holds something we
+    # can't see). Retrying can't help until our view of the queue changes (a push / a finish),
+    # so after the 2nd such rejection in a row stay quiet until it does — or for ``hold_s``.
+    hold_s: float = 1800.0
+    clock: object = None      # callable -> now (tests)
+    _hold: object = None      # (queue signature at rejection, hold-until time)
 
     # Global (not per-build) queue conditions: the drill/recruit task holds the
     # build slot but isn't always synced into our build_queue, so the pre-check
     # passes and the server rejects. Back off quietly instead of churning every
     # tick through the whole build list. 500014 = queue full, 500013 = already queued.
     QUEUE_ECODES = ("ecode.500014", "ecode.500013")
+
+    def _now(self) -> float:
+        import time as _time
+        return float((self.clock or _time.time)())
 
     def _cfg(self):
         if self.config is None:
@@ -275,6 +285,11 @@ class BuildOrder:
         if qsig != self._qsig:   # something started/finished: the server state moved too
             self._qsig = qsig
             self._streak = 0
+        if self._hold is not None:
+            held_sig, until = self._hold
+            if qsig == held_sig and self._now() < until:
+                return False     # still the same picture of a queue the server calls full
+            self._hold = None
         from nta_agent.execution.build_planner import next_build_action
         rt = state.room_type
         seq, skip = self.sequence, None
@@ -325,6 +340,8 @@ class BuildOrder:
                 # later (x2 up to x8) instead of every ~2 min for as long as it stays full.
                 self._cooldown = self.queue_cooldown * min(2 ** self._streak, 8)
                 self._streak += 1
+                if self._streak >= 2:   # asked twice, still full: wait for our view to change
+                    self._hold = (self._qsig, self._now() + self.hold_s)
                 return
             # Otherwise it's a per-step rejection (e.g. 500034 duplicate-not-maxed):
             # block just this step until the builds signature changes, and surface it.
