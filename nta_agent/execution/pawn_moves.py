@@ -144,8 +144,8 @@ def sanitize_pawn_moves(raw, armies, cap: int = 9, meet=None) -> tuple[list, lis
             gather = a.get("index") != b.get("index")
             at = _meet_for(meet, [a, b]) if gather else None
             if gather and at is None:
-                notes.append(f"{a.get('name')} và {b.get('name')} không ở cùng ô và chưa tìm "
-                             "được ô nào trong đất của bạn đủ chỗ (tối đa 5 đội/ô) để gặp nhau")
+                notes.append(f"{a.get('name')} và {b.get('name')} không ở cùng ô và chưa chọn được ô để "
+                             "gặp nhau (chưa đọc được danh sách đất của bạn — thử lại sau ít phút)")
                 continue
             xs = _pool(a, pa, _pos(r.get("pos_a")))
             ys = _pool(b, pb, _pos(r.get("pos_b")))
@@ -180,8 +180,8 @@ def sanitize_pawn_moves(raw, armies, cap: int = 9, meet=None) -> tuple[list, lis
             gather = dst is not None and src.get("index") != dst.get("index")
             at = _meet_for(meet, [src, dst]) if gather else None
             if gather and at is None:
-                notes.append(f"{src.get('name')} và {dst.get('name')} không ở cùng ô và chưa tìm "
-                             "được ô nào trong đất của bạn đủ chỗ (tối đa 5 đội/ô) để gặp nhau")
+                notes.append(f"{src.get('name')} và {dst.get('name')} không ở cùng ô và chưa chọn được ô "
+                             "để gặp nhau (chưa đọc được danh sách đất của bạn — thử lại sau ít phút)")
                 continue
             pool = _pool(src, pid, _pos(r.get("pos")))
             room = cap if dst is None else cap - len(dst.get("pawns") or [])

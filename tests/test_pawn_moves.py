@@ -558,8 +558,8 @@ def test_chat_keeps_the_group_army_in_place_and_calls_the_other(tmp_path):
     assert m["meet"] == _c(20, 10)
 
 
-def test_no_room_anywhere_says_so(tmp_path):
+def test_no_meeting_cell_says_so(tmp_path):
     ops, notes = sanitize_pawn_moves(
         [{"op": "swap", "army_a": "A", "pawn_a": 3206, "army_b": "C", "pawn_b": 3305}],
         _armies(), meet=lambda involved: None)
-    assert ops == [] and any("đủ chỗ" in n for n in notes)
+    assert ops == [] and any("danh sách đất" in n for n in notes)
