@@ -364,6 +364,12 @@ def apply_player_update(state: GameState, item: dict[str, Any]) -> None:
     if t == 18 and isinstance(item.get("data_18"), dict):
         from nta_agent.execution.actions import _set_drill_queues
         _set_drill_queues(state, item["data_18"])
+    # NEW_TREASURE (50): the server's "an army holds a chest" flag, pushed whenever it changes
+    # (engine: reddot treasure_main). We kept the login value for the whole session, so chests
+    # earned LATER never opened the ClaimTreasures gate and were never claimed (live: the other
+    # account) — only a restart picked them up.
+    if t == 50:
+        player["hasNewTreasure"] = bool(item.get("data_50"))
     # EXTRA_BT_QUEUE (95): paid build slots -> 2 + extra (as at login)
     if t == 95:
         n = int(item.get("data_95") or 0)

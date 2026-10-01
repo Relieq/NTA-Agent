@@ -52,3 +52,46 @@ def test_respects_chest_budget():
     rule.act(act)
     opened = next(t for k, t in calls if k == "open")
     assert len(opened) == 1   # budget = 1 -> only one army opened
+
+
+# ---- 2026-10-01: chests earned during the session were never claimed -----------------------
+def test_the_new_treasure_push_sets_and_clears_the_flag():
+    from nta_agent.state.store import apply_player_update
+    st = GameState(source="api")
+    st.raw = {"player": {"hasNewTreasure": False}}
+    apply_player_update(st, {"type": 50, "data_50": True})          # an army earned a chest
+    assert st.raw["player"]["hasNewTreasure"] is True
+    apply_player_update(st, {"type": 50})                            # protobuf drops false
+    assert st.raw["player"]["hasNewTreasure"] is False
+
+
+def test_a_chest_pushed_mid_session_is_claimed():
+    from nta_agent.state.store import apply_player_update
+    st = GameState(source="api")
+    st.raw = {"player": {}}                                          # nothing pending at login
+    armies = [{"uid": "A", "index": 5, "pawns": [{"id": 3101, "treasures": [{"id": 1}]}]}]
+    calls = []
+    rule = ClaimTreasures()
+    act = _actions(armies, calls)
+    assert rule.applies(st, act) is False                            # nothing flagged yet
+    apply_player_update(st, {"type": 50, "data_50": True})           # ... then the push arrives
+    assert rule.applies(st, act) is True
+    rule.act(act)
+    assert [k for k, _ in calls] == ["open", "claim"]
+
+
+def test_a_missed_push_is_made_up_by_a_periodic_look():
+    t = [1000.0]
+    st = GameState(source="api")
+    st.raw = {"player": {}}                                          # the flag never turns on
+    armies = [{"uid": "A", "index": 5, "pawns": [{"id": 3101, "treasures": [{"id": 1}]}]}]
+    fetched = []
+    act = SimpleNamespace(get_player_armys=lambda: fetched.append(1) or armies,
+                          open_armys_treasure=lambda targets: None,
+                          claim_armys_treasure=lambda targets: None)
+    rule = ClaimTreasures(clock=lambda: t[0])
+    assert rule.applies(st, act) is False and fetched == []         # baseline, still cheap
+    t[0] += 300
+    assert rule.applies(st, act) is False and fetched == []         # within the interval
+    t[0] += 301
+    assert rule.applies(st, act) is True and fetched == [1]         # 10 minutes: it looks, finds it

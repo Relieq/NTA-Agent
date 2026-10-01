@@ -1412,7 +1412,10 @@ class ClaimTreasures:
     a batch error (e.g. already-opened) never blocks the loop.
     """
     name: str = "claim_treasures"
+    poll_every_s: float = 600.0   # look for chests even when the flag is off (a missed push)
+    clock: object = None
     _targets: object = None
+    _last_poll: float = 0.0
 
     @staticmethod
     def _pending(armies) -> list[dict]:
@@ -1424,9 +1427,19 @@ class ClaimTreasures:
 
     def applies(self, state: GameState, actions: Actions) -> bool:
         # Cheap gate: only fetch armies when the server flags a new treasure.
+        import time as _time
         player = (state.raw or {}).get("player", {}) or {}
+        now = float((self.clock or _time.time)())
         if not player.get("hasNewTreasure"):
-            return False
+            # The flag is pushed (NEW_TREASURE), but a missed push must not strand a chest for
+            # good: look at the armies every ``poll_every_s`` anyway (the first call only sets
+            # the baseline, so a fresh start with no flag stays cheap).
+            if not self._last_poll:
+                self._last_poll = now
+                return False
+            if now - self._last_poll < self.poll_every_s:
+                return False
+        self._last_poll = now
         try:
             armies = actions.get_player_armys()
         except Exception:
