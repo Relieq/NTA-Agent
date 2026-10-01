@@ -311,7 +311,11 @@ export default {
    {  // our land (+ the main block) as cell indices: drawing starts from the nearest one
     const mx=data.main%mw, my=Math.floor(data.main/mw);
     ownedIdx=new Set(data.owned.map(([x,y])=>y*mw+x));
-    [[mx,my],[mx+1,my],[mx,my+1],[mx+1,my+1]].forEach(([x,y])=>ownedIdx.add(y*mw+x)); }
+    [[mx,my],[mx+1,my],[mx,my+1],[mx+1,my+1]].forEach(([x,y])=>ownedIdx.add(y*mw+x));
+    // an ally's land is not ours to dig, but a cell touching it CAN be attacked: it is a
+    // valid place to start a path (it counts as "ours" for starting/anchoring only)
+    data.ally.forEach(([x,y])=>ownedIdx.add(y*mw+x));
+    data.allyCities.forEach(c=>ownedIdx.add(c.y*mw+c.x)); }
    if(dg && dg.draft){
     if(!route.value.length && !drawing.value) route.value=(dg.draft.route||[]).slice();
     if(!dg.pending) fortSel.value=(dg.draft.fort_idx||[]).slice();
@@ -364,7 +368,7 @@ export default {
    if(ownedIdx.has(i)){ if(!r.length){ painting=true; paintLast=i; } return; }
    const from=r.length ? [r[r.length-1]] : null;
    const ok=from ? nbrs(i).includes(from[0]) : nbrs(i).some(n=>ownedIdx.has(n));
-   if(!ok){ drawHint.value="Bắt đầu kéo từ đất của bạn, hoặc từ ô cuối của đường đang vẽ."; return; }
+   if(!ok){ drawHint.value="Bắt đầu kéo từ đất của bạn, từ đất đồng minh, hoặc từ ô cuối của đường đang vẽ."; return; }
    route.value=[...r,i]; routeDirty.value=true; painting=true; paintLast=i;
   }
   function paintMove(x,y){
@@ -461,7 +465,7 @@ export default {
     padding:6px 10px;margin-bottom:6px;font-size:13px">
    <div style="display:flex;gap:10px;flex-wrap:wrap;align-items:center">
     <b>✏ Bản vẽ đường dig</b>
-    <span v-if="drawing" class="muted">đang vẽ: GIỮ chuột trái và KÉO qua từng ô — bắt đầu từ đất của bạn (hoặc ô cuối đường để vẽ tiếp) ·
+    <span v-if="drawing" class="muted">đang vẽ: GIỮ chuột trái và KÉO qua từng ô — bắt đầu từ đất của bạn, ô kề đất đồng minh (hoặc ô cuối đường để vẽ tiếp) ·
      kéo ngược để xoá · bấm xuống một ô giữa đường rồi kéo để vẽ lại từ đó · di chuyển bản đồ: giữ Shift (hoặc chuột phải) rồi kéo</span>
     <span v-if="drawHint" style="color:#e3b341">{{ drawHint }}</span>
     <span v-if="dig.draft && !routeDirty">{{ DRAFT_STATE[dig.draft.state] || dig.draft.state }}</span>
