@@ -285,7 +285,7 @@ def run(cfg: RuntimeConfig, *, ticks: int = 0, session=None, engine=None) -> Non
             rule.pending_forts_source = lambda: _fq.load(cfg.pending_forts_path)
             rule.on_event = log.append   # build_rejected (#82)
     for _r in _rules:
-        if getattr(_r, "name", "") in ("recruit", "army_composer"):   # pawn price is per match
+        if getattr(_r, "name", "") in ("recruit", "army_composer", "buffer_leveling"):  # per-match price
             from nta_agent.runtime import world_random as _wr_cost
             _r.pawn_cost_source = lambda: _wr_cost.load_pawn_costs(cfg.world_random_path)
     _forge_rule = next((r for r in _rules if getattr(r, "name", "") == "forge"), None)

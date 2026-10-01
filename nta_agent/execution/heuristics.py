@@ -1838,6 +1838,7 @@ class BufferLeveling:
     _pending: object = None        # (label, callable)
     _away: set = field(default_factory=set)
     cereal_reserve: int = 0   # cereal the next level-up waits for (Recruit leaves it alone)
+    pawn_cost_source: object = None  # callable -> {pawn_id: base cost} of THIS match
     _buffers: set = field(default_factory=set)
     _setup_reserved: set = field(default_factory=set)
     _sent: dict = field(default_factory=dict)  # pawn uid -> (sent at, lv, lv_time s)
@@ -2175,6 +2176,12 @@ class BufferLeveling:
         books = int(state.resources.exp_book or 0)
         cereal = int(state.resources.cereal or 0)
         waiting_cereal = 0   # cheapest level-up that only lacks cereal (the Recruit rule keeps it)
+        costs = None
+        if self.pawn_cost_source is not None:
+            try:
+                costs = self.pawn_cost_source()
+            except Exception:
+                costs = None
         barracks = self._barracks_lv(state)
         weak_types = set(demand(group_armies, target))
         types = {b["name"]: weak_types | {int(t) for t in (b.get("types") or {})}
@@ -2192,8 +2199,11 @@ class BufferLeveling:
                 step = level_step(self._rows(), int(p["id"]), lv)
                 if step is None or step["barracks_lv"] > barracks or step["books"] > books:
                     continue
-                if step.get("cereal", 0) > cereal:
-                    need = int(step["cereal"])
+                # the client's getPawnCost: PAWN_COST_LV_LIST[lv] x THIS match's base price
+                # replaces the table's cereal (live: 3305 lv1 costs ~624, the table says 346)
+                from nta_agent.execution.pawn_cost import cereal_cost
+                need = cereal_cost(int(p["id"]), int(step.get("cereal", 0)), costs, lv)
+                if need > cereal:
                     waiting_cereal = need if not waiting_cereal else min(waiting_cereal, need)
                     continue
                 cands.append((lv, str(p["uid"]), str(a["uid"]), step["time_s"]))
