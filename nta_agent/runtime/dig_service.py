@@ -103,6 +103,7 @@ class DigService:
         self.draft = draft if isinstance(draft, dict) else None
         self._hard: dict[int, float] = {}      # cell -> reported-unwinnable time
         self._cost: CellCost | None = None
+        self._group_desc: list = []            # [{name, pawns}] the sim fights with, in order
         self._last_plan = None
         self._last_land = None
         self._dirty = self.dig.get("state") in LIVE
@@ -473,11 +474,15 @@ class DigService:
         owned, enemy, others, ally, world = self._scan_world(state, main, uid, path)
         cells, errors = self._validate_drawing(path, owned, enemy, others, world, buffer,
                                                ally)
+        # every evaluation simulates with the group AS IT IS NOW (its order, its pawn
+        # levels): a memo from an earlier evaluation would answer for the old group
+        self._cost = None
         now = self._clock()
         hard = {c for c, t in self._hard.items() if now - t < self.hard_ttl_s}
         info = self._assess(cells, state, main, hard)
         info.pop("hard_idx")
         self.draft = {"state": "evaluated", "mode": "drawn", "route": cells,
+                      "group": list(self._group_desc),
                       "path": [_xy(c) for c in cells], "cells": len(cells), "errors": errors,
                       "buffer": buffer, "map": world.name, "evaluated_at": now,
                       "fort_idx": [], "forts": [], **info}
@@ -616,7 +621,8 @@ class DigService:
                 got = self._predict_factory(state)
                 predict, speed = got[0], got[1]
                 verify = got[2] if len(got) > 2 else None
-                self.dig["group"] = got[3] if len(got) > 3 else None
+                self._group_desc = (got[3] if len(got) > 3 else None) or []
+                self.dig["group"] = self._group_desc
             if predict is None:
                 def predict(*_a):
                     raise RuntimeError("no battle predictor")
