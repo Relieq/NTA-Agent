@@ -341,3 +341,46 @@ def test_no_swap_when_the_buffer_is_no_longer_in_the_cell(tmp_path):
     _tick(rule, _state(), acts)
     assert not any(c[0] == "exchange" for c in acts.calls)
     assert _phase(tmp_path)["phase"] == "travel"
+
+
+# ---- a recruit step into a buffer that is already full must not loop forever ----------------
+def _recruit_setup(tmp_path, have):
+    """An approved plan that recruits 9 IMP into 'Nâng Cấp 1'; the army holds ``have`` already."""
+    path = tmp_path / "buffers.json"
+    st = buffers.load(path)
+    st.update(approved=True, setup_done=False, done=[], proposal={
+        "buffers": [{"name": "Nâng Cấp 1", "base_uid": "", "types": {"3305": 9}, "merge": [],
+                     "recruit": {"3305": 9}}], "dismiss": []})
+    buffers.save(path, st)
+    buf = {"uid": "NC1", "name": "Nâng Cấp 1", "index": MAIN, "state": 0,
+           "pawns": [_imp(f"n{k}") for k in range(have)]}
+    return _group() + [buf]
+
+
+def test_recruit_steps_are_moot_when_the_buffer_already_holds_the_planned_pawns(tmp_path):
+    rule = _rule(tmp_path)
+    acts = FakeActions(_recruit_setup(tmp_path, have=9))
+    for _ in range(3):
+        _tick(rule, _state(), acts)
+    assert [c for c in acts.calls if c[0] == "drill"] == []        # nothing is recruited
+    assert buffers.load(tmp_path / "buffers.json")["setup_done"] is True
+
+
+def test_a_full_army_answer_ends_the_recruit_steps_instead_of_retrying(tmp_path):
+    class Full(FakeActions):
+        def drill_pawn(self, *a, **k):
+            self.calls.append(("drill",))
+            raise RuntimeError("game/HD_DrillPawn: ecode.500019")
+    rule = _rule(tmp_path)
+    acts = Full(_recruit_setup(tmp_path, have=5))                 # 5 < 9: it does try once
+    for _ in range(4):
+        _tick(rule, _state(), acts)
+    assert len([c for c in acts.calls if c[0] == "drill"]) == 1    # not every minute for hours
+    assert buffers.load(tmp_path / "buffers.json")["setup_done"] is True
+
+
+def test_recruiting_still_goes_on_while_the_buffer_is_short(tmp_path):
+    rule = _rule(tmp_path)
+    acts = FakeActions(_recruit_setup(tmp_path, have=3))
+    _tick(rule, _state(), acts)
+    assert [c[:3] for c in acts.calls if c[0] == "drill"] == [("drill", 3305, "NC1")]

@@ -2084,9 +2084,35 @@ class BufferLeveling:
             elif kind == "recruit":
                 _, name, ptype, _k = step
                 buf = next((a for a in by_uid.values() if a.get("name") == name), None)
-                actions.drill_pawn(actions.building_uid(2004), ptype,
-                                   army_uid=str(buf["uid"]) if buf else "",
-                                   army_name="" if buf else name)
+                prop = next((b for b in (st.get("proposal") or {}).get("buffers") or []
+                             if b.get("name") == name), {})
+
+                def _both(d):   # JSON keys are strings, a fresh proposal's are ints
+                    return int(d.get(str(ptype), d.get(ptype, 0)) or 0)
+
+                def _recruit_moot(why):
+                    # the buffer holds / is full of this type already: the remaining
+                    # recruit steps for it can't (or needn't) run — without this the setup
+                    # retried a full army every minute for hours and leveling never began
+                    for k in range(max(_both(prop.get("recruit") or {}), int(_k) + 1)):
+                        st.setdefault("done", []).append(f"recruit:{name}:{ptype}:{k}")
+                    bstate.save(self.state_path, st)
+                    self._emit("buffer_setup", {"step": sid, "note": why})
+                have = sum(1 for p in (buf or {}).get("pawns") or []
+                           if int(p.get("id", 0) or 0) == int(ptype))
+                want = _both(prop.get("types") or {})
+                if buf and want and have >= want:
+                    _recruit_moot("đội đệm đã đủ lính loại này")
+                    return
+                try:
+                    actions.drill_pawn(actions.building_uid(2004), ptype,
+                                       army_uid=str(buf["uid"]) if buf else "",
+                                       army_name="" if buf else name)
+                except Exception as e:
+                    if "ecode.500019" not in str(e):
+                        raise
+                    _recruit_moot("đội đệm đã đầy (500019)")
+                    return
             st.setdefault("done", []).append(sid)
             bstate.save(self.state_path, st)
             self._emit("buffer_setup", {"step": sid})
