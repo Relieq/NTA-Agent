@@ -563,3 +563,60 @@ def test_no_meeting_cell_says_so(tmp_path):
         [{"op": "swap", "army_a": "A", "pawn_a": 3206, "army_b": "C", "pawn_b": 3305}],
         _armies(), meet=lambda involved: None)
     assert ops == [] and any("danh sách đất" in n for n in notes)
+
+
+# ---- the names the player typed must match the armies the brain picked ------------------
+def _named():
+    return [_army("A", "D1", [(3305, 1)]), _army("B", "Đội 1", [(3201, 1), (3201, 2)]),
+            _army("C", "Đội 5", [(3305, 3), (3305, 4)]), _army("E", "D3", [(3305, 2)])]
+
+
+def test_a_named_army_that_does_not_exist_stops_the_proposal():
+    from nta_agent.execution.pawn_moves import check_names
+    armies = [a for a in _named() if a["uid"] != "A"]                 # there is no "D1" now
+    ops, _ = sanitize_pawn_moves(
+        [{"op": "swap", "army_a": "C", "pawn_a": 3305, "army_b": "B", "pawn_b": 3201}], armies)
+    keep, notes = check_names("Tráo 1 lính IMP từ đội D1 với lính Đao Khiên cuối Đội 1", ops, armies)
+    assert keep == [] and "D1" in notes[0] and "Đội 5" in notes[0]    # lists what exists
+
+
+def test_the_brain_using_other_armies_than_the_named_ones_is_not_accepted():
+    from nta_agent.execution.pawn_moves import check_names
+    armies = _named()
+    wrong, _ = sanitize_pawn_moves(
+        [{"op": "swap", "army_a": "C", "pawn_a": 3305, "army_b": "B", "pawn_b": 3201}], armies)
+    keep, notes = check_names("Tráo đổi 1 lính IMP từ đội D1 với lính cuối Đội 1", wrong, armies)
+    assert keep == [] and notes
+    right, _ = sanitize_pawn_moves(
+        [{"op": "swap", "army_a": "A", "pawn_a": 3305, "army_b": "B", "pawn_b": 3201}], armies)
+    keep, notes = check_names("Tráo đổi 1 lính IMP từ đội D1 với lính cuối Đội 1", right, armies)
+    assert len(keep) == 1 and notes == []
+    # 'D1' is not 'Đội 1', and 'đội 5' / 'Đội 5' / 'doi5' are the same army
+    from nta_agent.execution.pawn_moves import mentioned_armies
+    assert mentioned_armies("đội D1 và đội 5", armies)[0] == ["A", "C"]
+    assert mentioned_armies("doi5", armies)[0] == ["C"]
+    assert mentioned_armies("lính 3D", armies) == ([], [])
+
+
+def test_naming_fewer_armies_than_the_op_uses_is_not_second_guessed():
+    from nta_agent.execution.pawn_moves import check_names
+    armies = _named()
+    ops, _ = sanitize_pawn_moves(
+        [{"op": "swap", "army_a": "E", "pawn_a": 3305, "army_b": "C", "pawn_b": 3305}], armies)
+    keep, notes = check_names("Tráo 1 lính của đội D3 với lính cuối đội IMP bất kỳ", ops, armies)
+    assert len(keep) == 1 and notes == []
+    keep, notes = check_names("tráo lính cho tôi", ops, armies)         # no names at all
+    assert len(keep) == 1 and notes == []
+
+
+def test_chat_refuses_a_guessed_army_and_says_which_names_exist(tmp_path):
+    import json as _json
+    cfg = _cfg(tmp_path)
+    Path(cfg.armies_path).write_text(_json.dumps(_named()[1:]), encoding="utf-8")   # no D1
+
+    def propose(digest, profile, instruction=None, history=None):
+        return {"pawn_moves": [{"op": "swap", "army_a": "C", "pawn_a": 3305,
+                                "army_b": "B", "pawn_b": 3201}]}
+    out = handle_chat(cfg, "Tráo 1 lính IMP từ đội D1 với lính cuối Đội 1", history=[],
+                      propose=propose)
+    assert out["pawn_moves"] == [] and any("Không có đội tên D1" in n for n in out["notices"])
