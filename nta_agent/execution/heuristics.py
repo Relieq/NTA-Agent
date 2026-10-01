@@ -2525,7 +2525,9 @@ class Forge:
     _cooldown: int = 0
     _pending: str = ""   # equip uid to forge
     _recast: object = None  # RecastDecision when _pending is a recast
+    _recast_held: bool = False  # recasting paused: an unlocked equip still waits for its craft
 
+    _RECAST_RES = frozenset({"cereal", "timber", "stone", "iron"})
     FORGE_BUSY_ECODE = "ecode.500058"  # a forge is already running
     LOW_RES_ECODE = "ecode.500012"     # not enough resources (iron) yet
 
@@ -2581,6 +2583,15 @@ class Forge:
             waiting.append({"uid": c["uid"], "id": c["id"], "missing": missing,
                             "yield_builds": _holds_builds(missing)})
         self.craft_waiting = waiting
+        # A craft that waits for cereal/timber/stone/iron comes BEFORE the recast loop: a
+        # recast spends those same resources (forge_cost), so recasting on would keep the
+        # newly unlocked equip waiting for ever (user 2026-10-01). Gold-only waits don't clash.
+        if any(set(w["missing"]) & self._RECAST_RES for w in waiting):
+            if not self._recast_held and self.on_event:
+                self.on_event("forge_recast_hold", {"waiting": [w["uid"] for w in waiting]})
+            self._recast_held = True
+            return False
+        self._recast_held = False
         # 2) recast user-targeted equips toward their effect-quality threshold
         if self.targets_source is None:
             return False
