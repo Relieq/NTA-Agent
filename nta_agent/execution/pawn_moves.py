@@ -226,6 +226,62 @@ def sanitize_pawn_moves(raw, armies, cap: int = 9, meet=None) -> tuple[list, lis
     return out, notes
 
 
+def _fold(text) -> str:
+    """lower-case, no accents / spaces: 'Đội 5' -> 'doi5'."""
+    import unicodedata
+    t = unicodedata.normalize("NFD", str(text or "").lower().replace("đ", "d"))
+    return "".join(c for c in t if not unicodedata.combining(c) and not c.isspace())
+
+
+def mentioned_armies(message, armies):
+    """``(resolved uids, unknown tokens)`` for the army names the player typed ('đội D3',
+    'đội 5', 'D1'). A token that names no army is unknown — the brain may have guessed
+    another one (live 2026-10-01: 'D1' did not exist and the brain picked Đội 5)."""
+    import re
+    keys = {_fold(a.get("name")): str(a.get("uid")) for a in armies or []}
+    folded = unicodedata_fold_spaced(message)
+    found, unknown = [], []
+    for kind, num in re.findall(r"(?<![a-z0-9])(doi|d)\s*(\d+)(?![0-9])", folded):
+        key = next((k for k in keys if re.fullmatch(rf"{kind}0*{int(num)}", k)), None)
+        (found if key else unknown).append(keys[key] if key else
+                                           ("D" if kind == "d" else "Đội ") + str(int(num)))
+    return found, unknown
+
+
+def unicodedata_fold_spaced(text) -> str:
+    """lower-case without accents, keeping spaces (for tokenising a message)."""
+    import unicodedata
+    t = unicodedata.normalize("NFD", str(text or "").lower().replace("đ", "d"))
+    return "".join(c for c in t if not unicodedata.combining(c))
+
+
+def check_names(message, ops, armies) -> tuple[list, list]:
+    """Drop proposals that contradict the army names the player typed: a name that matches
+    no army (all dropped, with the list of existing names), or — when the message names
+    exactly as many armies as an op involves — an op using other armies than those named."""
+    found, unknown = mentioned_armies(message, armies)
+    if unknown:
+        names = ", ".join(str(a.get("name")) for a in armies or [])
+        return [], [(f"Không có đội tên {', '.join(unknown)} (các đội hiện có: {names}) — "
+                     "hãy nêu đúng tên đội.")]
+    if not found:
+        return list(ops), []
+    keep, notes = [], []
+    named = set(found)
+    for m in ops:
+        involved = ({m["a"], m["b"]} if m["op"] == "swap"
+                    else {m["from"], m["to"]} - {"new"} if m["op"] == "move" else {m["army"]})
+        if len(named) == len(involved) and involved != named:
+            names = {str(a.get("uid")): a.get("name") for a in armies or []}
+            notes.append("Bạn nhắc " + ", ".join(str(names.get(u)) for u in found)
+                         + " nhưng đề xuất lại dùng " + ", ".join(str(names.get(u, u))
+                                                                   for u in sorted(involved))
+                         + " — hãy nói lại cho rõ.")
+            continue
+        keep.append(m)
+    return keep, notes
+
+
 def apply_moves(ops, armies) -> list:
     """The armies as they would be after ``ops`` (a copy; the input is untouched)."""
     new = copy.deepcopy(list(armies or []))

@@ -452,6 +452,10 @@ def handle_chat(cfg, message, *, history=None, propose=None):
     raw_moves = _raw_pawn_moves(edits)
     moves, move_notes = sanitize_pawn_moves(raw_moves, armies, cap=_pawn_cap(cfg),
                                             meet=_meet_picker(cfg, armies))
+    from nta_agent.execution.pawn_moves import check_names
+    if moves:
+        moves, name_notes = check_names(message, moves, armies)
+        move_notes = list(move_notes) + name_notes
     if not moves and not move_notes and not question \
             and (raw_moves or _asks_for_pawn_move(message)):
         # never answer a rearrangement request with silence (live 2026-10-01: the brain
