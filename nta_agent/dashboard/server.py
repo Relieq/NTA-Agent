@@ -209,10 +209,14 @@ def _asks_for_pawn_move(message) -> bool:
 def pawn_move_label(m: dict) -> str:
     """One readable line for a resolved pawn move (the confirm card + chat history)."""
     if m["op"] == "swap":
-        return f"đổi {m['count']} lính {m['name_a']} ⇄ {m['count']} lính {m['name_b']}"
-    if m["op"] == "move":
-        return f"chuyển {m['count']} lính {m['name_from']} → {m['name_to']}"
-    return f"đổi thứ tự lính trong {m['name']}"
+        s = f"đổi {m['count']} lính {m['name_a']} ⇄ {m['count']} lính {m['name_b']}"
+    elif m["op"] == "move":
+        s = f"chuyển {m['count']} lính {m['name_from']} → {m['name_to']}"
+    else:
+        return f"đổi thứ tự lính trong {m['name']}"
+    if m.get("gather"):
+        s += " (hai đội đang ở khác ô: agent gọi về thành chính trước, rồi mới đổi)"
+    return s
 
 
 def _pawn_cap(cfg) -> int:
@@ -229,6 +233,16 @@ def _pawn_cap(cfg) -> int:
         return army_pawn_cap(state)
     except Exception:
         return DEFAULT_PAWN_CAP
+
+
+def _main_city(cfg) -> int | None:
+    """Main-city cell from the state snapshot: where armies are gathered for a swap."""
+    try:
+        v = int(json.loads(Path(cfg.snapshot_path).read_text(encoding="utf-8"))
+                .get("main_city_index") or 0)
+    except (OSError, ValueError, TypeError, AttributeError):
+        return None
+    return v or None
 
 
 def _strike_uids(cfg) -> list:
@@ -248,7 +262,7 @@ def confirm_pawn_moves(cfg, specs) -> dict:
     from nta_agent.execution.pawn_moves import sanitize_pawn_moves, strike_conflicts
     from nta_agent.execution.profile import apply_edits, load_profile, save_profile
     armies = _armies_from_disk(cfg)
-    clean, notes = sanitize_pawn_moves(specs, armies, cap=_pawn_cap(cfg))
+    clean, notes = sanitize_pawn_moves(specs, armies, cap=_pawn_cap(cfg), meet=_main_city(cfg))
     if not clean:
         return {"ok": False, "error": "Không còn thao tác hợp lệ. " + " ".join(notes)}
     cancelled = False
@@ -391,8 +405,10 @@ def handle_chat(cfg, message, *, history=None, propose=None):
                            "pawn_name": names.get(str(d["pawn_id"])) if d["pawn_id"] else ""})
     from nta_agent.execution.pawn_moves import sanitize_pawn_moves, strike_conflicts
     raw_moves = _raw_pawn_moves(edits)
-    moves, move_notes = sanitize_pawn_moves(raw_moves, armies, cap=_pawn_cap(cfg))
-    if not moves and not move_notes and (raw_moves or _asks_for_pawn_move(message)):
+    moves, move_notes = sanitize_pawn_moves(raw_moves, armies, cap=_pawn_cap(cfg),
+                                            meet=_main_city(cfg))
+    if not moves and not move_notes and not question \
+            and (raw_moves or _asks_for_pawn_move(message)):
         # never answer a rearrangement request with silence (live 2026-10-01: the brain
         # returned a bare op and nothing at all happened on screen)
         move_notes = [("Brain chưa đề xuất được thao tác tráo/chuyển lính nào — hãy nêu rõ "

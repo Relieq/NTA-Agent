@@ -157,6 +157,12 @@ def run(cfg: RuntimeConfig, *, ticks: int = 0, session=None, engine=None) -> Non
 
     _rules = getattr(agent.engine, "rules", [])
     _composer = next((r for r in _rules if getattr(r, "name", "") == "army_composer"), None)
+
+    def _pawn_move_uids():   # armies a confirmed swap/move is gathering: nobody else sends them off
+        try:
+            return set(service.pawn_moves.army_uids()) if service is not None else set()
+        except Exception:
+            return set()
     _buffers = next((r for r in _rules if getattr(r, "name", "") == "buffer_leveling"), None)
     _spares = next((r for r in _rules if getattr(r, "name", "") == "spare_armies"), None)
 
@@ -195,6 +201,7 @@ def run(cfg: RuntimeConfig, *, ticks: int = 0, session=None, engine=None) -> Non
 
             def _spare_excluded():  # armies other features own right now
                 out = set(getattr(_composer, "locked_uids", set()) if _composer else set())
+                out |= _pawn_move_uids()
                 if _buffers is not None:
                     out |= _buffers.buffer_uids() | _buffers.away_uids()
                 return out
@@ -217,20 +224,26 @@ def run(cfg: RuntimeConfig, *, ticks: int = 0, session=None, engine=None) -> Non
             if _spares is not None:  # spares being gathered/sorted aren't sent out
                 rule.spare_reserved_source = _spares.reserved_uids
             if _composer is not None:  # skip armies the composer is WORKING on (free while it waits for cereal)
-                rule.locked_source = lambda: getattr(_composer, "busy_uids", set())
+                rule.locked_source = lambda: (set(getattr(_composer, "busy_uids", set()))
+                                              | _pawn_move_uids())
+            else:
+                rule.locked_source = _pawn_move_uids
             if config is not None:  # pace discovery by the cheapest occupy cost
                 from nta_agent.execution.occupy_planner import min_occupy_stamina
                 rule.min_stamina = min_occupy_stamina(config)
         elif getattr(rule, "name", "") in ("recruit", "logistics", "heal_routing"):
             # every rule that moves/fills armies must skip the ones the composer owns
             if _composer is not None:
-                rule.locked_source = lambda: getattr(_composer, "locked_uids", set())
+                rule.locked_source = lambda: (set(getattr(_composer, "locked_uids", set()))
+                                              | _pawn_move_uids())
+            else:
+                rule.locked_source = _pawn_move_uids
             if getattr(rule, "name", "") == "logistics" and _buffers is not None:
                 # Logistics packs/moves pawns between armies: keep it off the buffers,
                 # the armies a buffer setup draws from and a main army away swapping
                 rule.locked_source = lambda: (
                     set(getattr(_composer, "locked_uids", set()) if _composer else set())
-                    | _buffers.buffer_uids() | _buffers.away_uids())
+                    | _buffers.buffer_uids() | _buffers.away_uids() | _pawn_move_uids())
             if getattr(rule, "name", "") in ("logistics", "heal_routing"):
                 # treat built forts as heal/relay nodes (fortAutoSupports is empty
                 # for a freshly built fort; detect them from the chunk city decode)
