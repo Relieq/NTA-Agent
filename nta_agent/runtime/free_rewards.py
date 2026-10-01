@@ -12,8 +12,10 @@ How each is judged (from the game client, ``index.js``):
 * free gold / war token — ``isBuyLimitFree*``: ``now - getTime >= surplusTime``; the login user
   carries ``buyFreeGoldSurplusTime`` / ``buyFreeWarTokenSurplusTime`` (ms, absent = 0 = ready) and the
   claim's reply carries the next one;
-* wheel — ``HD_WheelBegin`` answers ``info.wheelWaitTime`` while the free spin cools down, else the
-  spin is on and ``HD_GetWheelRet {ok: true}`` returns the sector and the rewards;
+* wheel — the client's ``checkCanWheel``: ``(wheelResidueCount > 0 || wheelCurrCount < 10) &&
+  wait over``, i.e. 10 FREE spins a day (``wheelCurrCount`` = spins taken today) plus any extra
+  spins left in ``wheelResidueCount``. ``HD_WheelBegin`` answers ``info.wheelWaitTime`` while it
+  cools down, else the spin is on and ``HD_GetWheelRet {ok: true}`` returns the sector + rewards;
 * newbie pack — ``HD_GetNewbieRewardInfo`` lists the packs; one whose ``nextSurplusTime`` has run
   out can be claimed with ``HD_ClaimNewbieReward {productId}``.
 """
@@ -25,6 +27,7 @@ import time
 from pathlib import Path
 
 NAMES = ("gold", "token", "wheel", "newbie")
+WHEEL_DAILY_FREE = 10         # engine checkCanWheel: free spins per day (wheelCurrCount < 10)
 WHEEL_RECHECK_S = 1800.0      # no spin left today / unknown: look again this often
 NEWBIE_RECHECK_S = 6 * 3600.0
 
@@ -132,11 +135,17 @@ class FreeRewards:
         self._claimed("token", now, war_token=r.get("warToken"))
         self._event("free_war_token", war_token=r.get("warToken"), next_in_s=round(wait))
 
+    @staticmethod
+    def _can_spin(info: dict) -> bool:
+        """The client's rule: extra spins left, or fewer than 10 free spins taken today."""
+        return (int(info.get("wheelResidueCount") or 0) > 0
+                or int(info.get("wheelCurrCount") or 0) < WHEEL_DAILY_FREE)
+
     def _wheel(self, state, now: float) -> None:
         if self._wheel_need_info:
             info = (self.actions.wheel_info() or {}).get("info") or {}
             wait = self._ms(info.get("wheelWaitTime"))
-            if int(info.get("wheelResidueCount") or 0) <= 0:      # no free spin left for now
+            if not self._can_spin(info):                          # today's 10 free spins are used
                 self._schedule("wheel", now + (wait or WHEEL_RECHECK_S))
                 return
             self._wheel_need_info = False
@@ -160,10 +169,13 @@ class FreeRewards:
         info = ret.get("info") or {}
         wait = self._ms(info.get("wheelWaitTime"))
         self._schedule("wheel", now + (wait + 1 if wait > 0 else 5))
-        if int(info.get("wheelResidueCount") or 1) <= 0:
+        if info and not self._can_spin(info):          # that was the last spin of the day
             self._wheel_need_info = True
-        self._claimed("wheel", now, sector=ret.get("id"), items=items)
-        self._event("free_wheel", sector=ret.get("id"), items=items, next_in_s=round(wait))
+            self._schedule("wheel", now + max(wait, WHEEL_RECHECK_S))
+        today = info.get("wheelCurrCount")
+        self._claimed("wheel", now, sector=ret.get("id"), items=items, today=today)
+        self._event("free_wheel", sector=ret.get("id"), items=items, next_in_s=round(wait),
+                    today=today, extra_left=info.get("wheelResidueCount"))
 
     def _newbie(self, state, now: float) -> None:
         packs = (self.actions.newbie_reward_info() or {}).get("list") or []

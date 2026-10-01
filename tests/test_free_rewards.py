@@ -249,3 +249,45 @@ def test_the_dashboard_reads_the_schedule(tmp_path):
                                      encoding="utf-8")
     v = read_free_rewards(cfg)
     assert v["next"] == {"gold": 5} and v["claimed"] == {"gold": 2}
+
+
+# ---- 10 free spins a day (engine checkCanWheel) ---------------------------------------------
+def test_ten_free_spins_a_day_even_with_no_extra_spin_left(tmp_path):
+    # residue 0 but only 3 of today's 10 free spins taken -> still spins
+    t = [1000.0]
+    acts = Acts({"wheel_info": {"info": {"wheelCurrCount": 3}},          # residue absent = 0
+                 "wheel_begin": {"info": {}},
+                 "wheel_ret": {"id": 2, "info": {"wheelCurrCount": 4, "wheelWaitTime": 600_000}}})
+    svc, _ = _svc(tmp_path, acts, t)
+    svc.tick(_state())
+    assert len(_calls(acts, "wheel_ret")) == 1
+
+
+def test_it_stops_after_the_tenth_spin_and_looks_again_later(tmp_path):
+    t = [1000.0]
+    acts = Acts({"wheel_info": {"info": {"wheelCurrCount": 9}},
+                 "wheel_begin": {"info": {}},
+                 "wheel_ret": {"id": 1, "info": {"wheelCurrCount": 10}}})   # the 10th, no wait told
+    svc, _ = _svc(tmp_path, acts, t)
+    svc.tick(_state())
+    assert len(_calls(acts, "wheel_ret")) == 1
+    t[0] += 60
+    svc.tick(_state())
+    t[0] += 600
+    svc.tick(_state())
+    assert len(_calls(acts, "wheel_ret")) == 1 and len(_calls(acts, "wheel_begin")) == 1
+    t[0] += 1300                                         # past the re-check: asks the server again
+    acts.replies["wheel_info"] = {"info": {"wheelCurrCount": 0}}     # a new day
+    svc.tick(_state())
+    assert len(_calls(acts, "wheel_info")) == 2 and len(_calls(acts, "wheel_ret")) == 2
+
+
+def test_extra_spins_beyond_ten_are_used_while_residue_lasts(tmp_path):
+    t = [1000.0]
+    acts = Acts({"wheel_info": {"info": {"wheelCurrCount": 10, "wheelResidueCount": 2}},
+                 "wheel_begin": {"info": {}},
+                 "wheel_ret": {"id": 1, "info": {"wheelCurrCount": 11, "wheelResidueCount": 1,
+                                                 "wheelWaitTime": 1000}}})
+    svc, _ = _svc(tmp_path, acts, t)
+    svc.tick(_state())
+    assert len(_calls(acts, "wheel_ret")) == 1
