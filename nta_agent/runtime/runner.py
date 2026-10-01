@@ -228,9 +228,6 @@ def run(cfg: RuntimeConfig, *, ticks: int = 0, session=None, engine=None) -> Non
                                               | _pawn_move_uids())
             else:
                 rule.locked_source = _pawn_move_uids
-            if config is not None:  # pace discovery by the cheapest occupy cost
-                from nta_agent.execution.occupy_planner import min_occupy_stamina
-                rule.min_stamina = min_occupy_stamina(config)
         elif getattr(rule, "name", "") in ("recruit", "logistics", "heal_routing"):
             # every rule that moves/fills armies must skip the ones the composer owns
             if _composer is not None:
