@@ -197,20 +197,43 @@ def _rejecting_acts(ecode="500014"):
     return Busy()
 
 
-def test_queue_rejections_back_off_progressively():
-    # local queue says free (0/2) but the server keeps answering 500014: each retry waits
-    # longer (x2 up to x8) instead of asking every ~2 minutes forever
+def test_queue_rejections_back_off_then_hold_until_the_queue_changes():
+    # local queue says free (0/2) but the server keeps answering 500014: the 2nd retry waits
+    # twice as long, and after the 2nd rejection in a row we stay quiet (a retry can't help
+    # while our picture of the queue is unchanged) instead of asking every few minutes
+    t = [1000.0]
     st = _state([Building(id=2001, lv=10, uid="m", index=109726)])
     act = _rejecting_acts()
-    rule = BuildOrder(sequence=[2016], config=GameConfig.load())
+    rule = BuildOrder(sequence=[2016], config=GameConfig.load(), clock=lambda: t[0])
     waits = []
-    for _ in range(6):
+    for _ in range(2):
         assert rule.applies(st, act) is True
         rule.act(act)
         waits.append(rule._cooldown)
         rule._cooldown = 0                      # fast-forward the wait
-    assert waits == [24, 48, 96, 192, 192, 192]
-    assert len(act.calls) == 6
+    assert waits == [24, 48] and len(act.calls) == 2
+    for _ in range(50):                          # hours of ticks, queue picture unchanged
+        t[0] += 60
+        if t[0] - 1000 > 1700:
+            break
+        assert rule.applies(st, act) is False
+    assert len(act.calls) == 2
+    t[0] = 1000 + 1801                           # hold expired -> one more try
+    assert rule.applies(st, act) is True
+
+
+def test_a_changed_queue_ends_the_hold_at_once():
+    t = [1000.0]
+    st = _state([Building(id=2001, lv=10, uid="m", index=109726)])
+    act = _rejecting_acts()
+    rule = BuildOrder(sequence=[2016], config=GameConfig.load(), clock=lambda: t[0])
+    for _ in range(2):
+        rule.applies(st, act)
+        rule.act(act)
+        rule._cooldown = 0
+    assert rule.applies(st, act) is False        # held
+    st.build_queue = [{"uid": "x"}]              # a push says the queue changed
+    assert rule.applies(st, act) is True
 
 
 def test_backoff_resets_when_the_world_changes_or_a_build_succeeds():
@@ -218,10 +241,12 @@ def test_backoff_resets_when_the_world_changes_or_a_build_succeeds():
     rule = BuildOrder(sequence=[2016], config=GameConfig.load())
     bad = _rejecting_acts()
     for _ in range(3):
+        rule._hold = None
         rule.applies(st, bad)
         rule.act(bad)
         rule._cooldown = 0
     assert rule._streak == 3
+    rule._hold = None
     good = Acts()
     rule.applies(st, good)
     rule.act(good)
