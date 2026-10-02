@@ -561,6 +561,16 @@ class OccupyCell:
         """An agent-managed leveling buffer ("Nâng Cấp N") — never sent to occupy."""
         return str((army or {}).get("name", "")).startswith("Nâng Cấp")
 
+    @staticmethod
+    def _rally_pool(allarmies, grp, excluded) -> list:
+        """Idle armies of the group the rally may call home (never an excluded one)."""
+        from nta_agent.execution.army_health import is_idle
+        return [a for a in allarmies
+                if is_idle(a) and (a.get("pawns"))
+                and not a.get("drillPawns") and not a.get("curingPawns")
+                and (not grp or str(a.get("uid")) in grp)
+                and str(a.get("uid")) not in excluded]
+
     def _away_uids(self) -> set[str]:
         if self.away_source is None:
             return set()
@@ -905,7 +915,6 @@ class OccupyCell:
             # follow next tick — instead of attacking scattered (which loses pawns
             # to staggered arrival). Only fires as a fallback, so it never
             # displaces a real single-army win.
-            from nta_agent.execution.army_health import is_idle
             from nta_agent.execution.occupy_planner import plan_rally
             grp = set()
             if self.profile is not None:
@@ -915,11 +924,16 @@ class OccupyCell:
                 allarmies = actions.get_player_armys()
             except Exception:
                 allarmies = []
-            idle_grp = [a for a in allarmies
-                        if is_idle(a) and (a.get("pawns"))
-                        and not a.get("drillPawns") and not a.get("curingPawns")
-                        and (not grp or str(a.get("uid")) in grp)
-                        and str(a.get("uid")) not in reserved]
+            locked_now = set()
+            if self.locked_source is not None:
+                try:
+                    locked_now = {str(u) for u in (self.locked_source() or ())}
+                except Exception:
+                    locked_now = set()
+            # never pull an army that is swapping with a buffer, is a buffer/spare being
+            # sorted, or is locked by the composer / a chat pawn move (live 2026-10-02: the
+            # rally dragged a swapping army home 30 s into its swaps)
+            idle_grp = self._rally_pool(allarmies, grp, reserved | off_limits | locked_now)
             max_loss = float(self.profile.occupy.get("max_loss", 0) or 0) if self.profile else 0.0
 
             # HEAL first: a wounded army that would clean-win its nearest target at
