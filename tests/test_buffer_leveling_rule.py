@@ -206,6 +206,34 @@ def test_ready_buffer_heads_for_a_cell_next_to_its_target(tmp_path):
     assert acts.calls == [("move", ["B"], FIELD - 1)]        # owned 4-neighbour, lowest index
 
 
+def test_target_on_an_isolated_owned_cell_is_met_on_its_own_cell(tmp_path):
+    # live 2026-10-02: the farm army stood on an owned cell none of whose 4 neighbours is
+    # ours -> no meeting cell -> the buffer sat there for 22 h and nothing was ever swapped
+    _setup_done(tmp_path)
+    rule = _rule(tmp_path)
+    rule.territory_source = lambda: ({FIELD}, [])
+    acts = FakeActions(_field_world())
+    _tick(rule, _state(), acts)
+    assert _phase(tmp_path)["phase"] == "travel" and _phase(tmp_path)["cell"] == FIELD
+    assert acts.calls == [("move", ["B"], FIELD)]
+
+
+def test_unreachable_target_is_replaced_by_another_army_that_can_be_met(tmp_path):
+    _setup_done(tmp_path)
+    rule = _rule(tmp_path)
+    world = _field_world()
+    far = FIELD + 40 * 600                                       # not ours, no owned neighbour
+    world[0]["index"] = far                                      # G0 (the best target) is out there
+    world[1]["index"] = FIELD                                    # G1 sits on our land
+    world[1]["pawns"] = [_imp("v1", 1)]
+    rule.territory_source = lambda: ({FIELD}, [])
+    acts = FakeActions(world)
+    _tick(rule, _state(), acts)                                  # G0 can't be met: re-aim
+    _tick(rule, _state(), acts)                                  # ...and walk to G1
+    assert _phase(tmp_path)["target"] == "G1"
+    assert acts.calls == [("move", ["B"], FIELD)]
+
+
 def test_meeting_cell_follows_the_main_army(tmp_path):
     _setup_done(tmp_path)
     rule = _rule6(tmp_path)
@@ -397,14 +425,15 @@ def test_waiting_for_cereal_sets_a_reserve_and_sends_nothing(tmp_path):
     assert rule.cereal_reserve == 346
 
 
-def test_enough_cereal_levels_and_clears_the_reserve(tmp_path):
+def test_enough_cereal_levels_and_keeps_the_next_ones_cereal(tmp_path):
     rule = _rule(tmp_path)
     acts = FakeActions(_recruit_setup(tmp_path, have=9))
     for _ in range(3):
         _tick(rule, _state(cereal=16), acts)
     assert rule.cereal_reserve == 346
     _tick(rule, _state(cereal=400), acts)
-    assert [c[0] for c in acts.calls if c[0] == "level"] == ["level"] and rule.cereal_reserve == 0
+    # sent; the cereal of the pawns still to level stays reserved (not 0 any more)
+    assert [c[0] for c in acts.calls if c[0] == "level"] == ["level"] and rule.cereal_reserve >= 346
 
 
 # ---- the cereal of a level-up is PER MATCH: PAWN_COST_LV_LIST[lv] x base price -------------
@@ -419,7 +448,30 @@ def test_level_up_cereal_uses_this_matchs_price_not_the_table(tmp_path):
     assert [c for c in acts.calls if c[0] == "level"] == []      # 400 < 624: nothing is sent
     assert rule.cereal_reserve == 624
     _tick(rule, _state(cereal=700), acts)
-    assert [c[0] for c in acts.calls if c[0] == "level"] == ["level"] and rule.cereal_reserve == 0
+    assert [c[0] for c in acts.calls if c[0] == "level"] == ["level"] and rule.cereal_reserve >= 624
+
+
+def test_cereal_for_the_next_level_ups_stays_reserved_while_one_is_sent(tmp_path):
+    # live 2026-10-02: every level-up was affordable, so the reserve was 0 and the generic
+    # top-up spent the cereal before the following level-ups (one per tick) could be sent
+    rule = _rule(tmp_path)
+    acts = FakeActions(_recruit_setup(tmp_path, have=9))
+    for _ in range(3):
+        _tick(rule, _state(cereal=16), acts)
+    _tick(rule, _state(cereal=2000), acts)
+    assert [c[0] for c in acts.calls if c[0] == "level"] == ["level"]   # one sent this tick
+    assert rule.cereal_reserve >= 346                                   # the next one's cereal kept
+
+
+def test_a_full_leveling_queue_still_keeps_the_next_level_ups_cereal(tmp_path):
+    rule = _rule(tmp_path)
+    acts = FakeActions(_recruit_setup(tmp_path, have=9))
+    for _ in range(3):
+        _tick(rule, _state(cereal=16), acts)
+    rule.queue_cap = 0                                                  # nothing can be queued
+    _tick(rule, _state(cereal=2000), acts)
+    assert [c for c in acts.calls if c[0] == "level"] == []
+    assert rule.cereal_reserve >= 346
 
 
 def test_without_a_price_list_the_table_cost_is_used(tmp_path):
