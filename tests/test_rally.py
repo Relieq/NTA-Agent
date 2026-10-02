@@ -44,3 +44,19 @@ def test_rally_none_when_combined_still_loses():
 def test_rally_none_for_single_army():
     out = plan_rally([_army("a", 1200)], 1000, [1001], lambda a, t: _pred(True, 0.0))
     assert out is None
+
+
+def test_rally_never_pulls_an_army_that_is_busy_swapping_or_locked():
+    # live 2026-10-02: 30 s after a buffer swap the rally dragged the swapping army home
+    from nta_agent.execution.heuristics import OccupyCell
+    allarmies = [{**_army(u, 1200), "state": 0} for u in ("a", "swapping", "locked", "buffer")]
+    pool = OccupyCell._rally_pool(allarmies, set(), excluded={"swapping", "locked", "buffer"})
+    assert [a["uid"] for a in pool] == ["a"]
+
+
+def test_rally_pool_keeps_only_idle_group_armies():
+    from nta_agent.execution.heuristics import OccupyCell
+    allarmies = [{**_army("a", 1200), "state": 0}, {**_army("b", 1200), "state": 1},
+                 {**_army("c", 1200), "state": 0}]
+    pool = OccupyCell._rally_pool(allarmies, {"a", "b"}, excluded=set())
+    assert [a["uid"] for a in pool] == ["a"]
