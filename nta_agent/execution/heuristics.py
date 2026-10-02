@@ -2031,8 +2031,15 @@ class BufferLeveling:
                                 grp["target_lv"], actions)
 
     def away_uids(self) -> set[str]:
-        """Main armies currently stepping over to / swapping with a buffer."""
-        return set(self._away)
+        """Main armies currently stepping over to / swapping with a buffer. Also read from
+        buffers.json so it holds right after a restart (OccupyCell runs before this rule)."""
+        out = set(self._away)
+        if self.state_path is not None:
+            from nta_agent.runtime import buffers as bstate
+            for r in (bstate.load(self.state_path).get("buffers") or {}).values():
+                if r.get("phase") == "swap" and r.get("target"):
+                    out.add(str(r["target"]))
+        return out
 
     def buffer_uids(self) -> set[str]:
         """Armies occupy must leave alone: the buffers, and — during setup — the
