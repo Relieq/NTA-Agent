@@ -1911,6 +1911,7 @@ class BufferLeveling:
     # books out, marching, drill ground, already queued, queue full, cell in battle, cell full
     QUIET_ECODES = ("500012", "500020", "500080", "500079", "500101", "500036", "500037")
     territory_source: object = None  # callable -> (owned cells, centers) (runner)
+    ally_source: object = None       # callable -> ally cells an army may also stand on (runner)
     _cooldown: int = 0
     _pending: object = None        # (label, callable)
     _away: set = field(default_factory=set)
@@ -2066,6 +2067,12 @@ class BufferLeveling:
                 owned = set(self.territory_source()[0])
             except Exception:
                 owned = set()
+        ally: set = set()
+        if self.ally_source is not None:
+            try:
+                ally = set(self.ally_source())
+            except Exception:
+                ally = set()
         occupancy: dict[int, int] = {}
         for a in armies:
             occupancy[int(a.get("index", 0) or 0)] = occupancy.get(int(a.get("index", 0) or 0), 0) + 1
@@ -2123,8 +2130,10 @@ class BufferLeveling:
                     rec.update(phase="swap", cell=midx)
                 else:
                     cell = midx if midx == main else bp.meeting_cell(midx, owned, occupancy)
-                    if cell is None and midx in owned and occupancy.get(midx, 0) < 5:
-                        cell = midx   # no owned neighbour: meet on the army's own (owned) cell
+                    if cell is None and midx in owned | ally and occupancy.get(midx, 0) < 5:
+                        cell = midx   # no owned neighbour: meet on the army's own cell
+                    if cell is None and ally:   # the client lets armies stand on ally land too
+                        cell = bp.meeting_cell(midx, ally, occupancy)
                     rec["cell"] = cell
                     if cell is None:
                         # this army can't be met at all (live 2026-10-02: 22 h stuck): aim at

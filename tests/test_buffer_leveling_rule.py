@@ -218,6 +218,28 @@ def test_target_on_an_isolated_owned_cell_is_met_on_its_own_cell(tmp_path):
     assert acts.calls == [("move", ["B"], FIELD)]
 
 
+def test_target_standing_on_ally_land_is_met_there(tmp_path):
+    # the client lets you move onto an ally's cell (move button for `isOneAlliance` cells), so
+    # an army that set out from ally land is met on that cell (user 2026-10-02)
+    _setup_done(tmp_path)
+    rule = _rule(tmp_path)
+    rule.territory_source = lambda: (set(), [])
+    rule.ally_source = lambda: {FIELD}
+    acts = FakeActions(_field_world())
+    _tick(rule, _state(), acts)
+    assert acts.calls == [("move", ["B"], FIELD)]
+
+
+def test_our_own_neighbour_is_preferred_to_ally_land(tmp_path):
+    _setup_done(tmp_path)
+    rule = _rule(tmp_path)
+    rule.territory_source = lambda: ({FIELD + 1}, [])
+    rule.ally_source = lambda: {FIELD, FIELD - 1}
+    acts = FakeActions(_field_world())
+    _tick(rule, _state(), acts)
+    assert acts.calls == [("move", ["B"], FIELD + 1)]
+
+
 def test_unreachable_target_is_replaced_by_another_army_that_can_be_met(tmp_path):
     _setup_done(tmp_path)
     rule = _rule(tmp_path)
