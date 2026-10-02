@@ -293,6 +293,28 @@ def run(cfg: RuntimeConfig, *, ticks: int = 0, session=None, engine=None) -> Non
             from nta_agent.runtime import fort_queue as _fq
             rule.pending_forts_source = lambda: _fq.load(cfg.pending_forts_path)
             rule.on_event = log.append   # build_rejected (#82)
+    # who may touch which army: one priority list (chat > dig > composer > buffers > spares > ...)
+    from nta_agent.execution.claims import ArmyClaims
+    from nta_agent.execution.profile import active_formation as _active_formation
+    from nta_agent.runtime.claims_wiring import wire_claims
+
+    def _dig_group_uids():   # the farm group IS the dig group while a confirmed dig is on
+        try:
+            if not dig.is_live():
+                return set()
+            return {str(u) for u in (_active_formation(profile).get("group") or [])}
+        except Exception:
+            return set()
+    claims = ArmyClaims()
+    claims.register("pawn_moves", _pawn_move_uids)
+    claims.register("dig", _dig_group_uids)
+    if _composer is not None:
+        claims.register("composer", lambda: set(getattr(_composer, "locked_uids", set())))
+    if _buffers is not None:
+        claims.register("buffers", lambda: _buffers.buffer_uids() | _buffers.away_uids())
+    if _spares is not None:
+        claims.register("spares", _spares.reserved_uids)
+    wire_claims(_rules, claims, composer=_composer)
     for _r in _rules:
         if getattr(_r, "name", "") in ("recruit", "army_composer", "buffer_leveling"):  # per-match price
             from nta_agent.runtime import world_random as _wr_cost

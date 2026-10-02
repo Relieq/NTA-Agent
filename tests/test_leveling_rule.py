@@ -177,3 +177,11 @@ def test_direct_group_uses_its_own_armies_and_target():
     acts = FakeActions([_army("F1", [("a", 3)])])
     rule = Leveling(profile=prof)
     assert rule.applies(_state(), acts) is True  # ...the direct group still levels
+
+
+def test_direct_leveling_leaves_an_army_another_owner_holds_alone():
+    # chat pawn moves / a dig / composer outrank direct leveling (ArmyClaims)
+    acts = FakeActions([_army("F1", [("a", 3), ("b", 12)])])
+    rule = Leveling(profile=_prof())
+    rule.excluded_source = lambda: {"F1"}
+    assert rule.applies(_state(), acts) is False
