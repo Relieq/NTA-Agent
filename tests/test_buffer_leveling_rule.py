@@ -652,3 +652,14 @@ def test_the_rule_levels_one_spare_hunter_and_then_goes_to_swap(tmp_path):
         acts.calls.clear()
         rule._sent = {}
     assert len(leveled) <= 1, f"leveled {sorted(leveled)}"        # not the whole spare army
+
+
+def test_away_uids_survive_a_restart(tmp_path):
+    # the swapping army is read from buffers.json, not only from memory: after a restart the
+    # occupy rule runs before this one and must still leave it alone
+    _setup_done(tmp_path)
+    st = buffers.load(tmp_path / "buffers.json")
+    st["buffers"] = {"B": {"name": "Nâng Cấp 1", "phase": "swap", "target": "G0", "cell": FIELD}}
+    buffers.save(tmp_path / "buffers.json", st)
+    fresh = _rule(tmp_path)
+    assert fresh.away_uids() == {"G0"}
