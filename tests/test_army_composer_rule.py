@@ -456,3 +456,32 @@ def test_free_progress_still_happens_while_broke():
     acts = FakeActions([short, donors])
     r.applies(_poor_state(12), acts)
     assert r.status_extra.get("waiting") is None          # a move_pawn op exists
+
+
+def test_composer_never_pulls_pawns_from_or_picks_an_army_another_owner_holds():
+    # the chat's pawn moves outrank the composer: its donor army is left alone
+    armies = [_army("tank", [3206, 3206, 3206]), _army("imp1", [3305]),
+              _army("imp2", [3305, 3305, 3305]), _army("donor", [3305, 3305, 3305], index=250)]
+    r = ArmyComposer(profile=_profile(TARGET))
+    r._strike_uids = ["tank", "imp1", "imp2"]
+    r.excluded_source = lambda: {"donor"}
+    acts = FakeActions(armies)
+    r.applies(_state(), acts)
+    r.act(acts)
+    assert not any("donor" in str(c) for c in acts.calls)
+
+
+def test_composer_tells_how_much_cereal_its_next_recruit_needs():
+    armies = [_army("tank", [3206, 3206, 3206]), _army("imp1", [3305]),
+              _army("imp2", [3305, 3305, 3305])]
+    r = ArmyComposer(profile=_profile(TARGET))
+    r._strike_uids = ["tank", "imp1", "imp2"]
+    r.pawn_cost_source = lambda: {3305: 300}
+    st = _state()
+    st.resources = SimpleNamespace(cereal=10_000)
+    r.applies(st, FakeActions(armies))
+    assert r.cereal_need > 0                      # the recruit is affordable, but still its cereal
+    r._strike_uids, r.locked_uids = [], set()
+    r.profile.army["strike_target"] = []
+    r.applies(st, FakeActions(armies))
+    assert r.cereal_need == 0                     # no goal -> nothing held back for it

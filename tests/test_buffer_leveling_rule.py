@@ -663,3 +663,40 @@ def test_away_uids_survive_a_restart(tmp_path):
     buffers.save(tmp_path / "buffers.json", st)
     fresh = _rule(tmp_path)
     assert fresh.away_uids() == {"G0"}
+
+
+def test_a_main_army_another_owner_holds_is_not_a_swap_target(tmp_path):
+    _setup_done(tmp_path)
+    rule = _rule6(tmp_path)
+    rule.excluded_source = lambda: {"G0", "G1"}               # chat / dig / composer hold them
+    acts = FakeActions(_field_world())
+    _tick(rule, _state(), acts)
+    assert acts.calls == [] and "B" not in buffers.load(tmp_path / "buffers.json")["buffers"] or \
+        _phase(tmp_path)["phase"] == "leveling"
+
+
+def test_a_target_taken_over_mid_trip_is_given_up(tmp_path):
+    _setup_done(tmp_path)
+    rule = _rule6(tmp_path)
+    world = _field_world()
+    acts = FakeActions(world)
+    _tick(rule, _state(), acts)                                # heading to G0
+    assert _phase(tmp_path)["target"] == "G0"
+    rule.excluded_source = lambda: {"G0"}                      # the player's chat now moves G0
+    acts.calls.clear()
+    _tick(rule, _state(), acts)
+    assert _phase(tmp_path)["phase"] in ("home", "leveling") and rule.away_uids() == set()
+
+
+def test_the_composers_cereal_comes_before_a_level_up(tmp_path):
+    rule = _rule(tmp_path)
+    acts = FakeActions(_recruit_setup(tmp_path, have=9))
+    for _ in range(3):
+        _tick(rule, _state(cereal=16), acts)
+    rule.cereal_hold_source = lambda: 1800                     # the composer's next recruit
+    _tick(rule, _state(cereal=2000), acts)                     # 2000 - 1800 < one level-up
+    assert [c for c in acts.calls if c[0] == "level"] == []
+    assert rule.cereal_reserve >= 346
+    rule.cereal_hold_source = lambda: 0
+    _tick(rule, _state(cereal=2000), acts)
+    assert [c[0] for c in acts.calls if c[0] == "level"] == ["level"]

@@ -186,6 +186,17 @@ def _army_pawn_cap(state) -> int:
 _BUILD_RESOURCES = {"timber", "stone", "cereal"}   # what constructions spend
 
 
+def _held_elsewhere(source) -> set[str]:
+    """Uids a higher-priority owner holds right now (``ArmyClaims.blocked_for``); empty when no
+    source is wired or it fails."""
+    if source is None:
+        return set()
+    try:
+        return {str(u) for u in (source() or ())}
+    except Exception:
+        return set()
+
+
 def _holds_builds(missing) -> bool:
     """A waiting craft makes construction yield only if it is short of resources builds
     spend AND of nothing else (iron/gold short -> it can't happen soon either way)."""
@@ -1797,6 +1808,7 @@ class Leveling:
     name: str = "leveling"
     check_every: int = 4
     dig_live_source: object = None  # callable -> bool: a dig is on (leave its group alone)
+    excluded_source: object = None  # callable -> uids a higher-priority owner holds (ArmyClaims)
     on_event: object = None
     profile: object = None
     _cooldown: int = 0
@@ -1826,7 +1838,9 @@ class Leveling:
         group = {str(u) for u in direct["armies"]}
         armies = actions.get_player_armys()
         self._cooldown = self.check_every
-        farm_armies = [a for a in armies if str(a.get("uid")) in group]
+        excl = _held_elsewhere(self.excluded_source)
+        farm_armies = [a for a in armies if str(a.get("uid")) in group
+                       and str(a.get("uid")) not in excl]
         level_army = find_leveling_army(armies)
         if not farm_armies:
             return False
@@ -1926,6 +1940,9 @@ class BufferLeveling:
     QUIET_ECODES = ("500012", "500020", "500080", "500079", "500101", "500036", "500037")
     territory_source: object = None  # callable -> (owned cells, centers) (runner)
     ally_source: object = None       # callable -> ally cells an army may also stand on (runner)
+    excluded_source: object = None   # callable -> uids a higher-priority owner holds (ArmyClaims)
+    cereal_hold_source: object = None  # callable -> cereal the composer's next recruit keeps
+    _excl: set = field(default_factory=set)
     _cooldown: int = 0
     _pending: object = None        # (label, callable)
     _away: set = field(default_factory=set)
@@ -1988,8 +2005,12 @@ class BufferLeveling:
         armies = actions.get_player_armys()
         main = int(state.main_city_index)
         st = bstate.load(self.state_path)
+        # chat pawn moves / a dig / the composer outrank buffer swaps (ArmyClaims): their armies
+        # are neither swap targets nor donors
+        self._excl = _held_elsewhere(self.excluded_source)
         members = {str(u) for u in grp["armies"]}
-        group_armies = [a for a in armies if str(a.get("uid")) in members]
+        group_armies = [a for a in armies if str(a.get("uid")) in members
+                        and str(a.get("uid")) not in self._excl]
 
         if not st["approved"]:
             spares = [a for a in armies if str(a.get("uid")) not in members
@@ -2075,6 +2096,7 @@ class BufferLeveling:
         members = {str(a.get("uid")) for a in group_armies}
         spares_home = [a for a in armies
                        if str(a.get("uid")) not in members and str(a.get("name", "")) not in names
+                       and str(a.get("uid")) not in self._excl
                        and int(a.get("index", 0) or 0) == main and is_idle(a)]
         # only as many pawns per type as the group has weak ones are worth leveling
         worth, _started = bp.levelable(bufs, group_armies, target, names,
@@ -2143,8 +2165,11 @@ class BufferLeveling:
                 rec.update(phase="travel", target=tgt, cell=None)
                 self._emit("buffer_travel", {"buffer": uid, "target": tgt})
             mainarmy = by_uid.get(str(rec.get("target")))
-            if mainarmy is None and rec["phase"] in ("travel", "swap"):
+            if rec["phase"] in ("travel", "swap") and (
+                    mainarmy is None or str(rec.get("target")) in self._excl):
+                # gone, or a higher-priority owner (chat move / dig / composer) took it
                 rec.update(phase="home", target=None, cell=None)
+                mainarmy = None
             if rec["phase"] == "travel":
                 midx = int(mainarmy.get("index", 0) or 0)
                 if bidx == midx:
@@ -2309,6 +2334,11 @@ class BufferLeveling:
         queued = queued | set(self._sent)
         books = int(state.resources.exp_book or 0)
         cereal = int(state.resources.cereal or 0)
+        if self.cereal_hold_source is not None:   # the composer's recruit comes before a level-up
+            try:
+                cereal = max(cereal - int(self.cereal_hold_source() or 0), 0)
+            except Exception:
+                pass
         waiting_cereal = 0   # cheapest level-up that only lacks cereal (the Recruit rule keeps it)
         costs = None
         if self.pawn_cost_source is not None:
@@ -2876,6 +2906,8 @@ class ArmyComposer:
     wait_cooldown: int = 12          # ~1 min between affordability re-checks
     config: object = None            # GameConfig (lazy) for table prices
     pawn_cost_source: object = None  # callable -> {pawn_id: base cost} of THIS match
+    excluded_source: object = None   # callable -> uids a higher-priority owner holds (ArmyClaims)
+    cereal_need: int = 0             # cereal of the next recruit: leveling leaves it alone
     rename_retry_ticks: int = 12      # after a failed rename (e.g. 500036 in battle)
     _rename_wait: dict = field(default_factory=dict)  # uid -> applies() calls to skip
 
@@ -2908,7 +2940,8 @@ class ArmyComposer:
         if self.profile is None:
             return set()
         from nta_agent.execution.profile import active_formation
-        return {str(u) for u in (active_formation(self.profile).get("group") or [])}
+        return ({str(u) for u in (active_formation(self.profile).get("group") or [])}
+                | _held_elsewhere(self.excluded_source))
 
     def applies(self, state: GameState, actions: Actions) -> bool:
         for u in list(self._rename_wait):
@@ -2919,6 +2952,7 @@ class ArmyComposer:
         if not target:  # no goal -> release any lock and stand down — even mid-cooldown
             self.locked_uids = set()   # (a cleared blocked goal kept 5 armies locked ~5 min)
             self._strike_uids = []
+            self.cereal_need = 0
             self._cooldown = 0
             self._status({"active": False})
             return False
@@ -2928,6 +2962,7 @@ class ArmyComposer:
         city = int(getattr(state, "main_city_index", 0) or 0)
         if not city:
             return False
+        self.cereal_need = 0     # set again below when the plan's next step is a recruit
         try:
             armies = actions.get_player_armys() or []
         except Exception:
@@ -3059,6 +3094,7 @@ class ArmyComposer:
             except Exception:
                 costs = None
         need = cereal_cost(pid, table, costs)
+        self.cereal_need = int(need or 0)     # held for the composer whether or not it is short
         have = int(getattr(res, "cereal", 0) or 0)
         if not need or have >= need:
             return None
