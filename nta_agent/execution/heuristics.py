@@ -2123,8 +2123,18 @@ class BufferLeveling:
                     rec.update(phase="swap", cell=midx)
                 else:
                     cell = midx if midx == main else bp.meeting_cell(midx, owned, occupancy)
+                    if cell is None and midx in owned and occupancy.get(midx, 0) < 5:
+                        cell = midx   # no owned neighbour: meet on the army's own (owned) cell
                     rec["cell"] = cell
                     if cell is None:
+                        # this army can't be met at all (live 2026-10-02: 22 h stuck): aim at
+                        # another one the buffer would improve instead of waiting for ever
+                        others = [a for a in group_armies if str(a.get("uid")) != str(rec["target"])]
+                        alt = bp.pick_target(others, buf, target)
+                        if alt is not None:
+                            rec["target"] = alt
+                            self._emit("buffer_travel", {"buffer": uid, "target": alt,
+                                                         "note": "đội đích không hội quân được"})
                         continue
                     if bidx != cell:
                         if is_idle(buf) and planned is None:
@@ -2265,8 +2275,7 @@ class BufferLeveling:
         self._sent = {u: v for u, v in self._sent.items()
                       if now - v[0] < v[2] + 60 and lv_of.get(u, v[1]) <= v[1]}
         in_flight = set(self._sent) - queued
-        if len(queue) + len(in_flight) >= self.queue_cap:
-            return False
+        free = max(self.queue_cap - len(queue) - len(in_flight), 0)
         queued = queued | set(self._sent)
         books = int(state.resources.exp_book or 0)
         cereal = int(state.resources.cereal or 0)
@@ -2307,13 +2316,21 @@ class BufferLeveling:
                 if need > cereal:
                     waiting_cereal = need if not waiting_cereal else min(waiting_cereal, need)
                     continue
-                cands.append((lv, str(p["uid"]), str(a["uid"]), step["time_s"]))
-        self.cereal_reserve = 0 if cands else waiting_cereal
+                cands.append((lv, str(p["uid"]), str(a["uid"]), step["time_s"], need))
         if not cands:
+            self.cereal_reserve = waiting_cereal
             return False
         # finish the ones under way (most advanced first) before starting a new pawn (lowest first)
-        lv0, pawn, army, secs = min(
-            cands, key=lambda c: (0, -c[0], c[1]) if c[1] in started else (1, c[0], c[1]))
+        order = sorted(cands, key=lambda c: (0, -c[0], c[1]) if c[1] in started else (1, c[0], c[1]))
+        # One level-up goes out per check, so the cereal of the NEXT ones stays reserved (the
+        # generic recruit top-up ran in between and spent it — live 2026-10-02); a full queue
+        # keeps the next one's cereal for when it drains.
+        nxt = order if free == 0 else order[1:]
+        keep = nxt[:max(free - 1, 1)] if free == 0 else nxt[:free - 1]
+        self.cereal_reserve = sum(c[4] for c in keep)
+        if free == 0:
+            return False
+        lv0, pawn, army, secs, _need = order[0]
 
         def run():
             try:
