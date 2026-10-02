@@ -151,6 +151,14 @@ def run(cfg: RuntimeConfig, *, ticks: int = 0, session=None, engine=None) -> Non
         centers = ([main, main + 1, main + 600, main + 601] if main else []) + forts
         return owned, centers
 
+    def _ally_cells():
+        # ally land an army may stand on (the client's move button works on `isOneAlliance` cells)
+        try:
+            data = json.loads(cfg.forts_path.read_text(encoding="utf-8"))
+        except Exception:
+            return set()
+        return {int(y) * 600 + int(x) for x, y in (data.get("ally_cells") or [])}
+
     dig._forts_source = _forts_from_json
 
     def _clear_strike_target():
@@ -213,6 +221,7 @@ def run(cfg: RuntimeConfig, *, ticks: int = 0, session=None, engine=None) -> Non
             rule.state_path = cfg.buffers_path  # proposal/approval/phases (dashboard reads it)
             rule.on_event = log.append
             rule.territory_source = _territory_from_forts  # owned cells for the meeting cell
+            rule.ally_source = _ally_cells
         if getattr(rule, "name", "") == "occupy_cell":
             rule.on_event = log.append
             rule.threats_source = _enemy_from_forts  # defend contested border cells (P2)
