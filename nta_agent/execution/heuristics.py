@@ -2268,8 +2268,10 @@ class BufferLeveling:
         from nta_agent.execution.army_health import is_idle
         from nta_agent.runtime import buffers as bstate
         kind = step[0]
-        need = {"dismiss": [step[1]], "merge": [step[2], step[1]],
-                "rename": [step[1]]}.get(kind, [])
+        # (built per kind: a literal holding every kind eagerly read step[2] of a 2-tuple
+        # dismiss step -> IndexError on every check, the setup never moved)
+        need = ([step[2], step[1]] if kind == "merge"
+                else [step[1]] if kind in ("dismiss", "rename") else [])
         present = [by_uid[u] for u in need if u in by_uid]
         if len(present) < len(need):  # an army vanished: skip the step, say so
             self._emit("buffer_error", {"stage": kind, "step": sid, "msg": "army not found"})
