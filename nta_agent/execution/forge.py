@@ -230,7 +230,11 @@ def next_recast(equips, base_of, effect_row, targets, resources, *, busy=False,
         return None
     from nta_agent.execution.exclusive import fixator_per_recast, is_exclusive, natural_effects
     by_uid = {str(e.get("uid")): e for e in (equips or []) if isinstance(e, dict)}
-    for uid, cfg in targets.items():
+    # a free roll (policy 'Đốt Lại Lửa Rèn') is per equip and kept until used: spend it first
+    # (sorted() is stable, so equal items keep the user's order)
+    order = sorted(targets.items(),
+                   key=lambda kv: not bool((by_uid.get(str(kv[0])) or {}).get("nextForgeFree")))
+    for uid, cfg in order:
         e = by_uid.get(str(uid))
         if e is None:
             continue
