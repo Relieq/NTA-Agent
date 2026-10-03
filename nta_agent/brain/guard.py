@@ -472,8 +472,42 @@ _SOLDIER_COUNT = re.compile(r"\b\d+\s*(linh|con|nguoi|quan|pawn|soldier)")
 _FULL_ARMY = 9
 
 
+_NUM_WORDS = {"mot": 1, "hai": 2, "ba": 3, "bon": 4, "nam": 5, "sau": 6, "bay": 7,
+              "tam": 8, "chin": 9}
+_NAME_RANGE = re.compile(
+    r"(?P<p>[^\W\d_]+)\s*(?P<a>\d+)[\"”']?\s*(?:đến|tới|\.{2,}|…|-|–|→)\s*[\"“']?"
+    r"(?:(?P=p)\s*)?(?P<b>\d+)", re.IGNORECASE)
+
+
+def _requested_counts(instruction: str, pawn_names: dict, aliases: dict) -> list:
+    """[(pawn_id, armies)] the player WROTE ('1 đội đao khiên và 4 đội IMP'), in the order
+    they wrote it. Matches a number (digits or 'một'..'chín') + 'đội' + a pawn type's name
+    (without 'Lính') or nickname. Empty when the sentence names no countable type."""
+    text = _fold(instruction)
+    variants = []   # (folded phrase, pawn_id), longest first so 'khien lon' beats 'khien'
+    for pid in set(pawn_names) | set(aliases or {}):
+        phrases = [re.sub(r"^linh\s+", "", _fold(pawn_names[pid]))] if pid in pawn_names else []
+        phrases += [_fold(a) for a in (aliases or {}).get(pid, ())]
+        variants += [(ph.strip(), pid) for ph in phrases if ph.strip()]
+    variants.sort(key=lambda v: -len(v[0]))
+    num = r"(\d+|" + "|".join(_NUM_WORDS) + r")"
+    found = []   # (position, pawn_id, count)
+    taken = []
+    for ph, pid in variants:
+        for m in re.finditer(rf"\b{num}\s*doi\s+(?:linh\s+)?{re.escape(ph)}\b", text):
+            if any(a <= m.start() < b for a, b in taken):
+                continue
+            taken.append((m.start(), m.end()))
+            n = m.group(1)
+            found.append((m.start(), pid, int(n) if n.isdigit() else _NUM_WORDS[n]))
+    out: dict = {}
+    for _, pid, n in sorted(found):
+        out[pid] = out.get(pid, 0) + n
+    return list(out.items())
+
+
 def sanitize_strike(strike, unlocked, instruction: str, pawn_names: dict | None = None,
-                    trust_size: bool = False):
+                    trust_size: bool = False, aliases: dict | None = None):
     """Validate a chat-proposed ``army.strike_target`` BEFORE it is shown for
     confirmation. Returns ``(clean, notes)``:
 
@@ -484,7 +518,10 @@ def sanitize_strike(strike, unlocked, instruction: str, pawn_names: dict | None 
       (live: the LLM invented size 1);
     * optional ``names`` (the names the player gave this entry's armies, in order) are
       trimmed to 12 chars and capped to ``armies``;
-    * each entry gets a readable ``name`` (pawn type) for the confirm card.
+    * each entry gets a readable ``name`` (pawn type) for the confirm card;
+    * the armies-per-type counts, their order and the names are cross-checked against the
+      player's own sentence (``aliases`` = {pawn_id: [nicknames]}): a small model swapped
+      '1 đội đao khiên + 4 đội IMP' into 4 + 1 and mangled the names (live 2026-10-03).
     """
     names = pawn_names or {}
     # trust_size: re-validating an already-confirmed proposal (size was settled then)
@@ -510,4 +547,34 @@ def sanitize_strike(strike, unlocked, instruction: str, pawn_names: dict | None 
         if given:
             entry["names"] = given[:armies]
         clean.append(entry)
+    reqs = [(pid, n) for pid, n in _requested_counts(instruction, names, aliases or {})
+            if unlocked is None or pid in unlocked]
+    if reqs:
+        changed = False
+        by_pid = {t["pawn_id"]: t for t in clean}
+        for pid, n in reqs:
+            t = by_pid.get(pid)
+            if t is None:
+                t = by_pid[pid] = {"pawn_id": pid, "armies": n, "size": _FULL_ARMY,
+                                   "name": names.get(pid) or f"lính {pid}"}
+                changed = True
+            elif t["armies"] != n:
+                t["armies"] = n
+                changed = True
+        want = [pid for pid, _ in reqs]
+        ordered = [by_pid[p] for p in want] + [t for t in clean if t["pawn_id"] not in want]
+        if [t["pawn_id"] for t in ordered] != [t["pawn_id"] for t in clean]:
+            changed = True
+        clean = ordered
+        if changed:
+            notes.append("Đã chỉnh nhóm theo đúng câu của bạn: " + ", ".join(
+                f"{n} đội {by_pid[pid]['name']}" for pid, n in reqs) + ".")
+            for t in clean:
+                t.pop("names", None)   # the LLM's names were for the wrong split
+        total = sum(t["armies"] for t in clean)
+        rng = _NAME_RANGE.search(instruction or "")
+        if rng and int(rng["b"]) - int(rng["a"]) + 1 == total:
+            seq = [f"{rng['p']} {i}" for i in range(int(rng["a"]), int(rng["b"]) + 1)]
+            for t in clean:
+                t["names"], seq = seq[:t["armies"]], seq[t["armies"]:]
     return clean, notes

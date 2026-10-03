@@ -156,11 +156,32 @@ def test_live_strike_request_is_proposed_not_applied(tmp_path):
     assert out["ok"] and out["needs_confirm"] and out["renames"] == []
     assert out["question"] == ""
     assert [(t["pawn_id"], t["armies"], t["size"]) for t in out["strike"]["targets"]] == \
-        [(3305, 4, 9)]
+        [(3202, 1, 9), (3305, 4, 9)]    # locked 3206 dropped; 'khiên lớn' = unlocked 3202
     assert any("3206" in n and "chưa mở khoá" in n for n in out["notices"])
     saved = json.loads(Path(cfg.profile_path).read_text(encoding="utf-8")) \
         if Path(cfg.profile_path).exists() else {}
     assert not (saved.get("army") or {}).get("strike_target")      # nothing applied yet
+
+
+def test_swapped_counts_and_garbled_names_are_corrected_from_the_sentence(tmp_path):
+    """2026-10-03: '1 đội đao khiên và 4 đội imp' came back as 4 × Đao Khiên + 1 × Cường Nỏ
+    named 'Đội Đao Khiê' — twice. The player's own sentence wins."""
+    cfg = _live_setup(tmp_path)
+
+    def fake_propose(digest, profile, instruction=None, history=None):
+        return {"army": {"strike_target": [
+            {"pawn_id": 3201, "armies": 4, "size": 9,
+             "names": ["Đội 1", "Đội 2", "Đội 3", "Đội 4"]},
+            {"pawn_id": 3305, "armies": 1, "size": 9, "names": ["Đội Đao Khiên"]}]}}
+
+    msg = ("Tạo 1 đội lính đao khiên và 4 đội lính imp có tên lần lượt từ \"Đội 1\" "
+           "đến \"Đội 5\"")
+    out = handle_chat(cfg, msg, history=[], propose=fake_propose)
+    tg = out["strike"]["targets"]
+    assert [(t["pawn_id"], t["armies"]) for t in tg] == [(3201, 1), (3305, 4)]
+    assert tg[0]["names"] == ["Đội 1"] and tg[1]["names"][-1] == "Đội 5"
+    assert "1 đội × 9" in out["strike"]["summary"]
+    assert any("Đã chỉnh nhóm" in n for n in out["notices"])
 
 
 def test_confirmed_strike_is_saved_and_sent_to_the_agent(tmp_path):

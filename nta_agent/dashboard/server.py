@@ -471,7 +471,8 @@ def handle_chat(cfg, message, *, history=None, propose=None):
         pawn_moves[0]["conflict"] = pawn_moves[0]["conflict"] or joint
     strike, notices = ([], [])
     if raw_strike:
-        strike, notices = sanitize_strike(raw_strike, unlocked, message, pawn_names)
+        strike, notices = sanitize_strike(raw_strike, unlocked, message, pawn_names,
+                                          aliases=_PAWN_ALIASES)
     notices = list(notices) + dis_notes + move_notes
     if strike:
         # Names the player gave belong to the NEW group (renamed once it's assembled),
