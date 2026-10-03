@@ -1,5 +1,5 @@
-import { postJSON } from "../api.js";
-const { ref } = window.Vue;
+import { getJSON, postJSON } from "../api.js";
+const { ref, onMounted, onUnmounted } = window.Vue;
 export default {
  setup(){
   const tactics=ref(null), log=ref([]), input=ref(""), busy=ref(false);
@@ -8,6 +8,17 @@ export default {
   const dismiss=ref(null);   // proposed dismissals awaiting confirmation (irreversible)
   const moves=ref(null);     // proposed pawn swaps/moves/reorders awaiting confirmation
   function say(who,text){ log.value=[...log.value,{who,text}]; }
+  // what the CONFIRMED jobs did later (queue / dismissals): completions and, above all, failures
+  let since=0, timer=null;
+  async function pollNotices(){
+   try{
+    const r=await getJSON("/api/chat/notices?since="+since);
+    if(r && r.items){ r.items.forEach(i=>say("Brain",i.text)); if(r.now) since=r.now; }
+   }catch(e){}
+  }
+  onMounted(async()=>{ try{ const r=await getJSON("/api/chat/notices?since=1e12"); since=(r&&r.now)||Date.now()/1000; }catch(e){ since=Date.now()/1000; }
+   timer=setInterval(pollNotices, 10000); });
+  onUnmounted(()=>{ if(timer) clearInterval(timer); });
   async function send(){
    const msg=input.value.trim(); if(!msg) return;
    input.value=""; say("Bạn",msg); busy.value=true; pending.value=null; strike.value=null; dismiss.value=null; moves.value=null;

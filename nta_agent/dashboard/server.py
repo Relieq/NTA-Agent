@@ -334,6 +334,39 @@ def confirm_pawn_moves(cfg, specs) -> dict:
     return {"ok": True, "queued": clean, "notices": notes, "cancelled_goal": cancelled}
 
 
+_NOTICE_KINDS = ("pawn_move_failed", "pawn_move_done", "pawn_move_progress",
+                 "dismiss_done", "dismiss_failed")
+
+
+def chat_notices(event_log_path, since: float = 0.0) -> dict:
+    """What the player's CONFIRMED jobs did since ``since`` (queue + dismissals), as chat lines.
+    Until now a failure only reached events.jsonl and nothing on screen told the player."""
+    import time as _time
+    out = []
+    for e in tail_events(Path(event_log_path), 300):
+        ts = float(e.get("ts", 0) or 0)
+        kind = e.get("kind")
+        d = e.get("detail") if isinstance(e.get("detail"), dict) else {}
+        if ts <= since or kind not in _NOTICE_KINDS:
+            continue
+        why = str(d.get("reason") or d.get("error") or d.get("note") or "").strip()
+        name = d.get("name") or d.get("uid") or ""
+        if kind == "pawn_move_failed":
+            text = "⚠️ Lệnh đổi/chuyển lính không thực hiện được" + (f": {why}" if why else "")
+        elif kind == "pawn_move_done":
+            text = "✅ Đã đổi/chuyển lính xong."
+        elif kind == "pawn_move_progress":
+            if not d.get("note"):
+                continue
+            text = f"⏳ {why[0].upper() + why[1:]}."
+        elif kind == "dismiss_done":
+            text = f"✅ Đã giải tán {d.get('count', '')} lính của {name}.".replace("  ", " ")
+        else:
+            text = f"⚠️ Không giải tán được {name}" + (f": {why}" if why else "")
+        out.append({"ts": ts, "text": text})
+    return {"now": _time.time(), "items": out}
+
+
 def chat_reply_summary(out: dict) -> str:
     """What the brain answered, in one line, for the next turn's chat history."""
     if not out.get("ok"):
@@ -1193,6 +1226,13 @@ class Handler(BaseHTTPRequestHandler):
                 for b in state.get("builds", []):
                     b["name"] = build_label(self.server.build_names, b.get("id", 0))
             self._json(200, state)
+        elif parsed.path == "/api/chat/notices":
+            q = parse_qs(parsed.query)
+            try:
+                since = float(q.get("since", ["0"])[0])
+            except ValueError:
+                since = 0.0
+            self._json(200, chat_notices(cfg.event_log_path, since))
         elif parsed.path == "/api/events":
             q = parse_qs(parsed.query)
             try:
