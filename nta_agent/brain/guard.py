@@ -301,6 +301,56 @@ def sanitize_dismissals(raw, armies) -> tuple[list, list]:
     return list(out.values()), notes
 
 
+_ALL_WORDS = re.compile(r"\b(tat ca|toan bo|het)\b")
+
+
+def reconcile_dismissals(raw, instruction, armies) -> tuple[list, list]:
+    """Check chat dismissals against the player's own sentence. When the sentence names
+    exactly ONE existing army ('... trong đội "Nâng cấp 1"'), a pawn dismissal the model
+    aimed at another army is redirected to the named one, and 'tất cả/hết/toàn bộ' means
+    every soldier of that type there (not the model's count). A WHOLE-army dismissal of the
+    wrong army is dropped (never redirected — it is irreversible). Returns ``(raw, notes)``."""
+    if not isinstance(raw, list) or not raw:
+        return raw, []
+    folded = _fold(instruction)
+    compact = re.sub(r"[^a-z0-9]", "", folded)
+    named = [a for a in (armies or []) if _names_army(compact, a.get("name", ""))]
+    if len(named) != 1:
+        return raw, []
+    target = named[0]
+    tuid, tname = str(target.get("uid")), target.get("name") or str(target.get("uid"))
+    want_all = bool(_ALL_WORDS.search(folded))
+    out, notes = [], []
+    for r in raw:
+        if not isinstance(r, dict):
+            continue
+        whole = r.get("scope") in ("army", "all") or r.get("all") is True
+        if whole:
+            if str(r.get("uid")) == tuid:
+                out.append(r)
+            else:
+                notes.append(f"Bạn nói đội \"{tname}\" nhưng đề xuất giải tán CẢ một đội khác — "
+                             "đã bỏ, hãy nói rõ lại.")
+            continue
+        r = dict(r)
+        if str(r.get("uid")) != tuid:
+            r["uid"] = tuid
+            notes.append(f"Đã chỉnh sang đúng đội \"{tname}\" theo câu của bạn.")
+        if want_all:
+            pid = r.get("pawn_id")
+            try:
+                pid = int(pid) if pid not in (None, "") else None
+            except (TypeError, ValueError):
+                pid = None
+            have = [p for p in (target.get("pawns") or [])
+                    if not _is_hero(p) and (pid is None or int(p.get("id", 0) or 0) == pid)]
+            if have and int(r.get("count") or 0) != len(have):
+                r["count"] = len(have)
+                notes.append(f"\"Tất cả\": {len(have)} lính trong \"{tname}\".")
+        out.append(r)
+    return out, list(dict.fromkeys(notes))
+
+
 def sanitize_lessons(edits, ledger, valid_army_uids, valid_build_ids=None) -> list:
     """Validate LLM-proposed lessons into dicts ready for LessonStore.upsert.
 
