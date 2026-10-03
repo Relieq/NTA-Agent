@@ -833,3 +833,54 @@ def test_the_cereal_reserve_is_known_before_the_rule_ever_ran(tmp_path):
     assert rule.reserve_now() >= 100                    # the persisted plan still needs cereal
     buffers.save(tmp_path / "buffers.json", {"approved": True, "setup_done": True, "buffers": {}})
     assert _rule(tmp_path).reserve_now() == 0           # finished setup: nothing kept
+
+
+# ---- two buffers (IMP + hunter) serving the SAME main army, ready at the same time ----------
+class MovingActions(FakeActions):
+    """Armies really march (``march_ticks`` ticks, state 1 meanwhile) and pawns really swap."""
+    march_ticks = 3
+
+    def __init__(self, *a, **k):
+        super().__init__(*a, **k)
+        self.arriving = {}      # uid -> [ticks left, destination]
+
+    def move_cell_army(self, armies, target, **kw):
+        super().move_cell_army(armies, target, **kw)
+        for m in armies:
+            army = next(a for a in self.armies if a["uid"] == m["uid"])
+            army["state"] = 1
+            self.arriving[m["uid"]] = [self.march_ticks, target]
+
+    def advance(self):
+        for uid, slot in list(self.arriving.items()):
+            slot[0] -= 1
+            if slot[0] <= 0:
+                army = next(a for a in self.armies if a["uid"] == uid)
+                army["index"], army["state"] = slot[1], 0
+                del self.arriving[uid]
+
+
+def test_two_buffers_serve_the_same_army_without_ping_pong(tmp_path):
+    hunter = lambda u, lv: {"uid": u, "id": 3304, "lv": lv}   # noqa: E731
+    g0 = {"uid": "G0", "name": "Đội 0", "index": FIELD, "state": 0,
+          "pawns": [_imp("w1", 1), _imp("w2", 1), hunter("wh", 1), _imp("ok", 3)]}
+    b1 = {"uid": "B", "name": "Nâng Cấp 1", "index": MAIN, "state": 0,
+          "pawns": [_imp("r1", 3), _imp("r2", 3)]}
+    b3 = {"uid": "H", "name": "Nâng Cấp 3", "index": MAIN, "state": 0,
+          "pawns": [hunter("h1", 3)]}
+    buffers.save(tmp_path / "buffers.json", {
+        "proposal": {"buffers": [
+            {"name": "Nâng Cấp 1", "base_uid": "B", "types": {"3305": 2}, "merge": [], "recruit": {}},
+            {"name": "Nâng Cấp 3", "base_uid": "H", "types": {"3304": 1}, "merge": [], "recruit": {}}],
+            "dismiss": []},
+        "approved": True, "setup_done": True, "buffers": {}})
+    rule = _rule(tmp_path)
+    rule.territory_source = lambda: (OWNED, [])
+    acts = MovingActions([g0, b1, b3], swap_mutates=True)
+    for _ in range(300):
+        acts.advance()
+        _tick(rule, _state(), acts)
+    moves = [c for c in acts.calls if c[0] == "move"]
+    assert {p["uid"] for p in g0["pawns"]} == {"r1", "r2", "h1", "ok"}     # every weak pawn replaced
+    assert b1["index"] == MAIN and b3["index"] == MAIN                      # both went home again
+    assert len(moves) <= 10, moves                                          # no back-and-forth
