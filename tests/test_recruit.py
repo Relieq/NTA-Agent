@@ -252,3 +252,22 @@ def test_a_broken_reserve_source_never_blocks_recruiting():
         raise RuntimeError("x")
     r.reserve_source = boom
     assert r.applies(st, act) is True
+
+
+# ---- 2026-10-03: the generic top-up kept adding Đao Khiên to the IMP buffer "Nâng Cấp 1"
+# (its main type tied at 2 Đao / 2 IMP) — a buffer's contents are the leveling plan's, not ours.
+def test_never_tops_up_a_buffer_army_by_name_or_by_uid():
+    st = _state([3101])
+    buf = {"uid": "B", "name": "Nâng Cấp 1", "pawns": [{"id": 3101}, {"id": 3305}], "state": None}
+    act = FakeActions(st, armys=[buf])
+    r = Recruit(config=False)
+    r.applies(st, act)
+    r.act(act)
+    assert all(c[2] != "B" for c in act.calls)           # named like a buffer -> left alone
+    other = {"uid": "X", "name": "D7", "pawns": [{"id": 3101}, {"id": 3101}], "state": None}
+    act2 = FakeActions(st, armys=[other])
+    r2 = Recruit(config=False)
+    r2.buffer_source = lambda: {"X"}                      # a buffer base by uid, not yet renamed
+    r2.applies(st, act2)
+    r2.act(act2)
+    assert all(c[2] != "X" for c in act2.calls)
