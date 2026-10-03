@@ -700,3 +700,18 @@ def test_the_composers_cereal_comes_before_a_level_up(tmp_path):
     rule.cereal_hold_source = lambda: 0
     _tick(rule, _state(cereal=2000), acts)
     assert [c[0] for c in acts.calls if c[0] == "level"] == ["level"]
+
+
+# ---- 2026-10-03: a setup whose FIRST step is a dismissal crashed every check
+# ("tuple index out of range": the step table was built eagerly with step[2]) — the
+# approved setup never moved.
+def test_a_dismiss_step_runs_instead_of_crashing(tmp_path):
+    rule = _rule(tmp_path)
+    acts = FakeActions(_group() + _spares())
+    buffers.save(tmp_path / "buffers.json", {
+        "proposal": {"buffers": [{"name": "Nâng Cấp 1", "base_uid": "D5",
+                                  "types": {"3305": 9}, "merge": [], "recruit": {}}],
+                     "dismiss": ["D1"]},
+        "approved": True, "setup_done": False, "buffers": {}})
+    _tick(rule, _state(), acts)
+    assert ("dismiss", "D1") in acts.calls
