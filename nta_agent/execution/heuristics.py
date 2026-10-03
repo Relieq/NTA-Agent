@@ -2930,6 +2930,7 @@ class ArmyComposer:
     pawn_cost_source: object = None  # callable -> {pawn_id: base cost} of THIS match
     excluded_source: object = None   # callable -> uids a higher-priority owner holds (ArmyClaims)
     cereal_need: int = 0             # cereal of the next recruit: leveling leaves it alone
+    assembling: bool = False         # a goal is being built (even with no army locked): Recruit stands down
     rename_retry_ticks: int = 12      # after a failed rename (e.g. 500036 in battle)
     _rename_wait: dict = field(default_factory=dict)  # uid -> applies() calls to skip
 
@@ -2975,6 +2976,7 @@ class ArmyComposer:
             self.locked_uids = set()   # (a cleared blocked goal kept 5 armies locked ~5 min)
             self._strike_uids = []
             self.cereal_need = 0
+            self.assembling = False
             self._cooldown = 0
             self._status({"active": False})
             return False
@@ -2985,6 +2987,7 @@ class ArmyComposer:
         if not city:
             return False
         self.cereal_need = 0     # set again below when the plan's next step is a recruit
+        self.assembling = False  # set again below once the goal is neither blocked, capped nor done
         try:
             armies = actions.get_player_armys() or []
         except Exception:
@@ -3060,6 +3063,7 @@ class ArmyComposer:
             self.locked_uids = set()
             self._strike_uids = []
             return False
+        self.assembling = True
         wait = self._waiting_for_resources(state, plan)
         self.status_extra = {"waiting": wait} if wait else {}
         if wait:

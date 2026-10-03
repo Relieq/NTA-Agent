@@ -485,3 +485,28 @@ def test_composer_tells_how_much_cereal_its_next_recruit_needs():
     r.profile.army["strike_target"] = []
     r.applies(st, FakeActions(armies))
     assert r.cereal_need == 0                     # no goal -> nothing held back for it
+
+
+# ---- 2026-10-03: the lock only covers strike armies still short of their size. With the
+# existing armies all complete and the composer WAITING for cereal to recruit into a NEW
+# army, nothing was locked -> the generic Recruit spent that cereal on lone pawns that
+# became stray 'D1'/'D2' armies. The composer also says it is still assembling.
+def test_assembling_is_true_while_it_waits_even_if_no_army_is_locked():
+    target = [{"pawn_id": 3201, "armies": 2, "size": 9}]
+    r = ArmyComposer(profile=_profile(target), config=_PriceCfg(),
+                     pawn_cost_source=lambda: {3201: 294})
+    acts = FakeActions([_army("A", [3201] * 9)])       # one army done, the 2nd must be recruited
+    assert r.applies(_poor_state(12), acts) is False
+    assert r.locked_uids == set() and r.status_extra.get("waiting")
+    assert r.assembling is True
+
+
+def test_assembling_is_false_without_a_goal_and_once_done():
+    r = ArmyComposer(profile=_profile([]))
+    r.assembling = True
+    r.applies(_state(), FakeActions([]))
+    assert r.assembling is False
+    target = [{"pawn_id": 3201, "armies": 1, "size": 3}]
+    r2 = ArmyComposer(profile=_profile(target))
+    r2.applies(_state((3201,)), FakeActions([_army("A", [3201] * 3)]))
+    assert r2.assembling is False                       # goal met -> cleared

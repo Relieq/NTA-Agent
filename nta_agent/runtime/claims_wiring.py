@@ -29,3 +29,14 @@ def wire_claims(rules, claims: ArmyClaims, composer=None) -> None:
         if getattr(rule, "name", "") == "buffer_leveling" and composer is not None:
             # lương: the composer's next recruit comes before a level-up
             rule.cereal_hold_source = lambda c=composer: int(getattr(c, "cereal_need", 0) or 0)
+
+
+def recruit_locked(composer, others=frozenset()) -> set:
+    """What the generic Recruit must stand down for: the composer's incomplete armies, the
+    chat's pawn moves, and — the whole time a strike goal is being assembled — a marker,
+    because the lock alone is empty while the composer waits for cereal to recruit into a
+    NEW army (live 2026-10-03: Recruit spent that cereal on lone pawns -> stray D1/D2)."""
+    out = set(getattr(composer, "locked_uids", set()) or ()) | set(others)
+    if getattr(composer, "assembling", False):
+        out.add("*composer-goal")
+    return out
