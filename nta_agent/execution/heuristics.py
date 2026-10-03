@@ -420,6 +420,9 @@ class OccupyCell:
     _pending: object = None    # (armies_list, target_index)
     _rally: object = None       # (armies_to_move, city, for_target) — consolidate then attack
     _heal: object = None        # (army_move, node) — route a wounded army to heal first
+    _balance: object = None     # [(army uid, cell, [(uid, uid) swaps])] — level the wear in place
+    _balance_cell: int = 0
+    _balance_block: dict = field(default_factory=dict)  # cell -> retry-after (a swap was refused)
     _cooldown: int = 0
     _state_ref: object = None  # stashed for act()'s formation optimization
     _land_ref: int = 0
@@ -697,6 +700,10 @@ class OccupyCell:
                            target=cell, label=p.label, prediction=None) for p in plans]
             fresh = best_plan([cand], lambda _i: healed, predict, distance=self._plan_dist)
             if fresh is not None and fresh.prediction.loss_percent <= max_loss:
+                # before a trip home: swap the pawns that lost the most hp with healthy
+                # same-type ones (the player's way) — keep digging if the sim then calls it clean
+                if self._balance_try(plans, predict, cell, max_loss):
+                    return "balance"
                 if self.on_event:
                     self.on_event("dig_heal_wait", {"cell": cell, "xy": [cell % 600, cell // 600]})
                 return None
@@ -704,6 +711,39 @@ class OccupyCell:
                 self.dig_hard_sink(cell)
             return None
         return plan
+
+    def _balance_try(self, plans, predict, cell: int, max_loss: float) -> bool:
+        """Find the fewest wounded<->healthy pawn swaps after which the group wins ``cell``
+        within ``max_loss``; remember them in ``self._balance`` (applied by ``act``)."""
+        import time as _time
+
+        from nta_agent.execution.advisor import Plan
+        from nta_agent.execution.balance import apply_swaps, balance_swaps
+        if self._balance_block.get(cell, 0) > _time.time():
+            return False
+        for p in plans:
+            per = [balance_swaps(a.get("pawns") or []) for a in p.armies]
+            kmax = max((len(x) for x in per), default=0)
+            for k in range(1, kmax + 1):
+                chosen = [x[min(k, len(x)) - 1] if x else [] for x in per]
+                armies = [{**a, "pawns": apply_swaps(a.get("pawns") or [], sw)} if sw else a
+                          for a, sw in zip(p.armies, chosen)]
+                try:
+                    pred = predict(Plan(armies=armies, target=cell, label=p.label, prediction=None))
+                except Exception:
+                    return False
+                if pred is not None and pred.win and pred.loss_percent <= max_loss:
+                    self._balance = [(str(a.get("uid")), int(a.get("index", 0) or 0), sw)
+                                     for a, sw in zip(p.armies, chosen) if sw]
+                    self._balance_cell = cell
+                    self._pending = None
+                    if self.on_event:
+                        self.on_event("dig_balance", {
+                            "cell": cell, "xy": [cell % 600, cell // 600],
+                            "armies": [b[0] for b in self._balance],
+                            "pairs": sum(len(b[2]) for b in self._balance)})
+                    return True
+        return False
 
     def _dig_stage(self, cell: int, members) -> int:
         """Where to gather the dig group: the owned 4-neighbour of ``cell`` nearest
@@ -926,7 +966,7 @@ class OccupyCell:
                 plan = self._dig_select(cands, plans_for, predict, int(dig_cell),
                                         all_armies=all_armies,
                                         busy_pawns=leveling_pawn_uids(state))
-                if plan == "gather":  # the group is being assembled next to the cell
+                if plan in ("gather", "balance"):  # assembling the group / levelling its wear
                     return True
         if plan is None:  # the other armies keep farming; the dig group is kept for the dig
             reserved.update(self._dig_reserved() | (self._dig_group() if dig_cell is not None else set()))
@@ -1100,6 +1140,22 @@ class OccupyCell:
                 pass  # never block the occupy
 
     def act(self, actions: Actions) -> None:
+        if self._balance is not None:
+            import time as _time
+            bal, cell, self._balance = self._balance, self._balance_cell, None
+            try:
+                for army_uid, index, swaps in bal:
+                    for a, b in swaps:
+                        actions.exchange_pawn_army(index, army_uid, a, b)
+            except Exception as e:
+                # the game refused (or the army moved): heal the usual way, ask again much later
+                self._balance_block[cell] = _time.time() + 600
+                self._cooldown = self.fail_cooldown
+                if self.on_event:
+                    ecode = str(e).split("ecode.")[-1][:6] if "ecode." in str(e) else ""
+                    self.on_event("dig_balance_error", {"ecode": ecode, "msg": str(e)[:160],
+                                                        "cell": cell})
+            return
         if self._heal is not None:
             move, node, _name = self._heal
             self._heal = None
