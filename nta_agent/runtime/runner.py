@@ -255,7 +255,7 @@ def run(cfg: RuntimeConfig, *, ticks: int = 0, session=None, engine=None) -> Non
             if getattr(rule, "name", "") == "recruit":
                 # the player's leveling order comes before the generic top-up of armies
                 rule.reserve_source = lambda: {
-                    "cereal": int(getattr(_buffers, "cereal_reserve", 0) or 0)} if _buffers else {}
+                    "cereal": int(_buffers.reserve_now() or 0)} if _buffers else {}
             if getattr(rule, "name", "") == "logistics" and _buffers is not None:
                 # Logistics packs/moves pawns between armies: keep it off the buffers,
                 # the armies a buffer setup draws from and a main army away swapping
