@@ -220,6 +220,7 @@ class BuildOrder:
     queue_cooldown: int = 24  # back off when the build queue is busy (~2min)
     on_event: object = None   # on_event(kind, detail): rejected builds are reported (#82)
     _pending: object = None  # BuildAction chosen in applies()
+    _state_ref: object = None  # state seen by the last applies() (for per-id parking)
     _city: int = 0           # main-city index for construction
     _cooldown: int = 0        # global back-off (queue full / already queued)
     _blocked: set = field(default_factory=set)  # server-rejected steps (2 key shapes)
@@ -232,12 +233,17 @@ class BuildOrder:
     hold_s: float = 1800.0
     clock: object = None      # callable -> now (tests)
     _hold: object = None      # (queue signature at rejection, hold-until time)
+    # build id -> (its levels when refused, retry-after): ecode 500013 means THIS building id
+    # is already in the build queue (client rule getBtQueues().has('id', id)) — not that the
+    # queue is busy, so only that id waits (until it changes level / hold_s), the rest go on.
+    _inq: dict = field(default_factory=dict)
 
     # Global (not per-build) queue conditions: the drill/recruit task holds the
     # build slot but isn't always synced into our build_queue, so the pre-check
     # passes and the server rejects. Back off quietly instead of churning every
-    # tick through the whole build list. 500014 = queue full, 500013 = already queued.
-    QUEUE_ECODES = ("ecode.500014", "ecode.500013")
+    # tick through the whole build list. 500014 = queue full (global). 500013 is NOT here:
+    # it is per building id (see ``_inq``).
+    QUEUE_ECODES = ("ecode.500014",)
 
     def _now(self) -> float:
         import time as _time
@@ -310,9 +316,16 @@ class BuildOrder:
             order = list(b.get("order") or [])
             rest = sorted(set(cfg.in_city_build_ids(rt)) | {x.id for x in state.builds})
             seq = order + [i for i in rest if i not in order]
+        if self._inq:
+            now = self._now()
+            levels = lambda i: tuple(sorted(b.lv for b in state.builds if b.id == i))
+            self._inq = {i: v for i, v in self._inq.items()
+                         if now < v[1] and levels(i) == v[0]}
+            skip = list(skip or []) + list(self._inq)
         self._pending = next_build_action(state, cfg, seq, self._blocked, skip=skip,
                                           room_type=rt)
         self._city = state.main_city_index
+        self._state_ref = state
         return self._pending is not None
 
     def act(self, actions: Actions) -> None:
@@ -343,6 +356,15 @@ class BuildOrder:
                         resync()
                     except Exception:
                         pass
+            if ecode == "500013":
+                # this building id is already queued (our queue view missed it): park it
+                # alone and let the next tick try the next building — a free slot is not
+                # wasted behind it.
+                bid = what["build_id"]
+                st = self._state_ref
+                lvs = tuple(sorted(b.lv for b in getattr(st, "builds", []) if b.id == bid))
+                self._inq[bid] = (lvs, self._now() + self.hold_s)
+                return
             # Queue busy (full / already-queued) is GLOBAL, not this step's fault —
             # back off for the whole queue rather than blocking one id and churning
             # the rest against the same full queue.

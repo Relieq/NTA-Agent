@@ -258,3 +258,58 @@ def test_backoff_resets_when_the_world_changes_or_a_build_succeeds():
     st.build_queue = []
     rule.applies(st, good)
     assert rule._streak == 0
+
+
+# ---- 2026-10-03: 500013 is "THIS building id is already in the queue" (client rule:
+# getBtQueues().has("id", id)), not "the queue is busy". Treating it as global froze ALL
+# construction for 30 min with 1800 timber/stone idle and a free slot.
+def _picky_acts(refuse_id):
+    from nta_agent.io.api.client import ApiError
+
+    class Picky(Acts):
+        def upgrade_build(self, index, uid=""):
+            self.calls.append(("up", index, uid))
+            if uid == refuse_id:
+                raise ApiError("game/HD_UpAreaBuild: ecode.500013")
+            return {}
+
+        def resync_city_builds(self):
+            pass
+    return Picky()
+
+
+def _two_builds():
+    return _state([Building(id=2001, lv=4, uid="main", index=109726),
+                   Building(id=2008, lv=2, uid="b8", index=109726)])
+
+
+def test_in_queue_rejection_blocks_only_that_building_and_the_next_one_goes():
+    st = _two_builds()
+    act = _picky_acts("main")
+    rule = BuildOrder(sequence=[2001, 2008], config=GameConfig.load())
+    assert rule.applies(st, act) is True
+    rule.act(act)                                   # main hall: 500013, swallowed
+    assert rule._cooldown == 0 and rule._hold is None   # NOT a global back-off
+    assert rule.applies(st, act) is True            # very next tick tries the next one
+    rule.act(act)
+    assert [c[2] for c in act.calls] == ["main", "b8"]
+
+
+def test_in_queue_block_holds_until_that_building_changes_level_or_time_passes():
+    t = [1000.0]
+    st = _two_builds()
+    act = _picky_acts("main")
+    rule = BuildOrder(sequence=[2001], config=GameConfig.load(), clock=lambda: t[0])
+    rule.applies(st, act)
+    rule.act(act)
+    assert rule.applies(st, act) is False           # only candidate is blocked
+    t[0] += 600
+    assert rule.applies(st, act) is False
+    st.builds[0].lv = 5                              # the upgrade finished
+    assert rule.applies(st, act) is True
+    rule2 = BuildOrder(sequence=[2001], config=GameConfig.load(), clock=lambda: t[0])
+    st2 = _two_builds()
+    rule2.applies(st2, act)
+    rule2.act(act)
+    t[0] += 1801                                     # safety net: retry after hold_s
+    assert rule2.applies(st2, act) is True
