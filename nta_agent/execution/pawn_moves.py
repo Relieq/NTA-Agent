@@ -106,7 +106,24 @@ def _meet_for(meet, armies):
     return meet(armies) if callable(meet) else meet
 
 
-def sanitize_pawn_moves(raw, armies, cap: int = 9, meet=None) -> tuple[list, list]:
+def _holder(armies, not_uid, pid, near):
+    """The army (other than ``not_uid``) to take pawns of type ``pid`` from: idle ones first,
+    then the one standing at ``near``, then the one holding the most of that type."""
+    best = None
+    for x in armies or []:
+        if str(x.get("uid")) == str(not_uid):
+            continue
+        n = len(_pool(x, pid, None))
+        if n < 1:
+            continue
+        key = (0 if not x.get("state") else 1, 0 if x.get("index") == near else 1, -n)
+        if best is None or key < best[0]:
+            best = (key, x)
+    return best[1] if best else None
+
+
+def sanitize_pawn_moves(raw, armies, cap: int = 9, meet=None,
+                        pawn_names=None) -> tuple[list, list]:
     """Validate chat-proposed rearrangements into ``(clean, notices)``.
 
     The game only swaps/moves pawns between armies in the SAME cell (any cell: it must not
@@ -134,9 +151,21 @@ def sanitize_pawn_moves(raw, armies, cap: int = 9, meet=None) -> tuple[list, lis
         if op == "swap":
             a, b = by_uid.get(str(r.get("army_a"))), by_uid.get(str(r.get("army_b")))
             pa, pb = _int(r.get("pawn_a")), _int(r.get("pawn_b"))
-            if a is None or b is None or pa is None or pb is None:
+            if a is None or pa is None or pb is None:
                 notes.append("Không xác định được đội hoặc loại lính cần đổi — hãy nêu rõ tên đội và loại lính")
                 continue
+            # The player usually names ONE army ("thay 1 IMP cuối Đội 5 thành 1 Thợ Săn"): the
+            # partner is whoever holds the other type — never a guess of the model's.
+            tname = (pawn_names or {}).get(pb) or f"loại {pb}"
+            if b is None or (b is not a and not _pool(b, pb, None)):
+                held = _holder(armies, a.get("uid"), pb, a.get("index"))
+                if held is None:
+                    notes.append(f"Chưa có lính {tname} nào trong các đội — cần chiêu mộ trước "
+                                 "rồi mới đổi được")
+                    continue
+                if b is not None:
+                    notes.append(f"{b.get('name')} không có lính {tname} — lấy từ {held.get('name')}")
+                b = held
             if a is b:
                 notes.append(f"Hai bên đều là {a.get('name')} — muốn đổi thứ tự lính trong một đội "
                              "thì hãy nói 'đổi thứ tự', còn tráo thì cần hai đội khác nhau")
@@ -151,8 +180,8 @@ def sanitize_pawn_moves(raw, armies, cap: int = 9, meet=None) -> tuple[list, lis
             ys = _pool(b, pb, _pos(r.get("pos_b")))
             n = min(count, len(xs), len(ys))
             if n < 1:
-                notes.append(f"{a.get('name')} không có lính loại {pa}"
-                             if not xs else f"{b.get('name')} không có lính loại {pb}")
+                notes.append(f"{a.get('name')} không có lính {(pawn_names or {}).get(pa) or f'loại {pa}'}"
+                             if not xs else f"{b.get('name')} không có lính {tname}")
                 continue
             out.append({"op": "swap", "a": str(a["uid"]), "b": str(b["uid"]),
                         "name_a": a.get("name") or str(a["uid"]),

@@ -620,3 +620,30 @@ def test_chat_refuses_a_guessed_army_and_says_which_names_exist(tmp_path):
     out = handle_chat(cfg, "Tráo 1 lính IMP từ đội D1 với lính cuối Đội 1", history=[],
                       propose=propose)
     assert out["pawn_moves"] == [] and any("Không có đội tên D1" in n for n in out["notices"])
+
+
+# ---- 2026-10-03: 'Thay 1 IMP cuối Đội 5 thành 1 Thợ Săn' — the player names ONE army; the brain
+# invented the partner ('Đội 1 không có lính loại 3304'). The hands find who holds the type. ----
+def _swap(a, pa, b, pb, **kw):
+    return {"op": "swap", "army_a": a, "pawn_a": pa, "army_b": b, "pawn_b": pb, "count": 1,
+            "pos_a": "last", **kw}
+
+
+def test_a_swap_without_a_partner_takes_the_pawn_from_the_army_that_holds_the_type():
+    out, notes = sanitize_pawn_moves([_swap("B", 3305, None, 3206)], _armies())
+    assert out and out[0]["b"] == "A" and out[0]["pawn_b"] == 3206 and notes == []
+
+
+def test_a_partner_that_lacks_the_type_is_replaced_by_one_that_has_it_and_it_is_said():
+    out, notes = sanitize_pawn_moves([_swap("B", 3305, "C", 3206)], _armies(),
+                                     pawn_names={3206: "Lính Rìu Khiên"})
+    assert out and out[0]["b"] == "A"
+    assert any("Đội 3" in n and "Lính Rìu Khiên" in n and "Đội 1" in n for n in notes)
+
+
+def test_no_army_holds_the_type_says_so_by_name_and_suggests_recruiting():
+    out, notes = sanitize_pawn_moves([_swap("B", 3305, "A", 3304)], _armies(),
+                                     pawn_names={3304: "Thợ Săn"})
+    assert out == []
+    assert len(notes) == 1 and "Thợ Săn" in notes[0] and "chiêu mộ" in notes[0]
+    assert "3304" not in notes[0]
