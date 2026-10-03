@@ -31,6 +31,11 @@ def wire_claims(rules, claims: ArmyClaims, composer=None) -> None:
             # send it: the dig group is not held away from healing (the player's chat still is)
             rule.locked_source = lambda: (
                 claims.blocked_for("heal") - (claims.held_by("dig") - claims.held_by("pawn_moves")))
+        if getattr(rule, "name", "") == "buffer_leveling":
+            # armies ONLY a dig holds stay swap targets while idle at the city (the dig lasts
+            # hours; chat / composer holds always win)
+            rule.dig_group_source = lambda: (claims.held_by("dig") - claims.held_by("pawn_moves")
+                                             - claims.held_by("composer"))
         if getattr(rule, "name", "") == "buffer_leveling" and composer is not None:
             # lương: the composer's next recruit comes before a level-up
             rule.cereal_hold_source = lambda c=composer: int(getattr(c, "cereal_need", 0) or 0)

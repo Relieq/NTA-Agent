@@ -884,3 +884,71 @@ def test_two_buffers_serve_the_same_army_without_ping_pong(tmp_path):
     assert {p["uid"] for p in g0["pawns"]} == {"r1", "r2", "h1", "ok"}     # every weak pawn replaced
     assert b1["index"] == MAIN and b3["index"] == MAIN                      # both went home again
     assert len(moves) <= 10, moves                                          # no back-and-forth
+
+
+# ---- 2026-10-03: while a dig holds the group (hours!) the whole leveling froze: the group was
+# excluded, so the weak pawns didn't count and the buffers levelled nothing. The dig only
+# holds the armies it uses: weak pawns still COUNT; a dig army that stands idle at the city is
+# a swap target; the chat's / composer's armies stay untouchable. ----
+def _dig_world(tmp_path, g0_index=MAIN, g0_state=0):
+    g0 = {"uid": "G0", "name": "Đội 0", "index": g0_index, "state": g0_state,
+          "pawns": [_imp("w1", 1), _imp("w2", 1)]}
+    buf = {"uid": "B", "name": "Nâng Cấp 1", "index": MAIN, "state": 0,
+           "pawns": [_imp("r1", 1), _imp("r2", 1)]}
+    buffers.save(tmp_path / "buffers.json", {
+        "proposal": {"buffers": [{"name": "Nâng Cấp 1", "base_uid": "B", "types": {"3305": 2},
+                                  "merge": [], "recruit": {}}], "dismiss": []},
+        "approved": True, "setup_done": True, "buffers": {}})
+    return g0, buf
+
+
+def _dig_rule(tmp_path, dig=("G0",)):
+    r = _rule(tmp_path)
+    r.excluded_source = lambda: set(dig)        # what the claims list blocks for buffers
+    r.dig_group_source = lambda: set(dig)       # ...of which the dig holds these
+    r.territory_source = lambda: (OWNED, [])
+    return r
+
+
+def test_the_buffer_keeps_levelling_its_own_pawns_while_the_dig_holds_the_group(tmp_path):
+    g0, buf = _dig_world(tmp_path, g0_index=FIELD, g0_state=1)     # the group is out digging
+    acts = FakeActions([g0, buf])
+    _tick(_dig_rule(tmp_path), _state(), acts)
+    assert [c[:3] for c in acts.calls if c[0] == "level"][:1] == [("level", "B", "r1")]
+
+
+def test_a_dig_army_idle_at_the_city_is_a_swap_target_and_never_pulled_out_of_the_field(tmp_path):
+    g0, buf = _dig_world(tmp_path, g0_index=FIELD)                 # idle, but out in the field
+    acts = FakeActions([g0, buf])
+    rule = _dig_rule(tmp_path)
+    for _ in range(4):
+        _tick(rule, _state(exp_book=0), acts)
+    assert not [c for c in acts.calls if c[0] == "move"]           # the dig's army is left alone
+
+
+def test_the_chat_or_composer_still_hold_their_armies_even_at_the_city(tmp_path):
+    g0, buf = _dig_world(tmp_path)
+    acts = FakeActions([g0, buf])
+    rule = _dig_rule(tmp_path)
+    rule.excluded_source = lambda: {"G0"}
+    rule.dig_group_source = lambda: set()      # held by someone higher than the dig (or both)
+    for _ in range(4):
+        _tick(rule, _state(exp_book=0), acts)
+    assert not [c for c in acts.calls if c[0] in ("move", "exchange")]
+
+
+def test_a_dig_army_standing_idle_at_the_city_gets_its_weak_pawns_swapped(tmp_path):
+    g0 = {"uid": "G0", "name": "Đội 0", "index": MAIN, "state": 0,
+          "pawns": [_imp("w1", 1), _imp("w2", 1)]}
+    buf = {"uid": "B", "name": "Nâng Cấp 1", "index": MAIN, "state": 0,
+           "pawns": [_imp("r1", 3), _imp("r2", 3)]}               # ready (target 3)
+    buffers.save(tmp_path / "buffers.json", {
+        "proposal": {"buffers": [{"name": "Nâng Cấp 1", "base_uid": "B", "types": {"3305": 2},
+                                  "merge": [], "recruit": {}}], "dismiss": []},
+        "approved": True, "setup_done": True, "buffers": {}})
+    acts = MovingActions([g0, buf], swap_mutates=True)
+    rule = _dig_rule(tmp_path)
+    for _ in range(40):
+        acts.advance()
+        _tick(rule, _state(), acts)
+    assert {p["uid"] for p in g0["pawns"]} == {"r1", "r2"}        # swapped during the dig

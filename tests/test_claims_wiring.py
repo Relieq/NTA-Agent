@@ -71,3 +71,13 @@ def test_heal_may_still_route_the_dig_group_unless_the_player_holds_it():
     assert "dig" not in blocked                        # healing is part of the dig
     assert {"chat", "both", "strike", "buf", "spare"} <= blocked   # the rest still holds
     assert "dig" in rules["logistics"].locked_source()  # other rules stay off the dig group
+
+
+def test_buffers_may_still_swap_with_an_army_only_the_dig_holds():
+    rules = _rules()
+    claims = _claims()
+    claims.register("dig", lambda: {"d", "chat", "strike"})
+    claims.register("pawn_moves", lambda: {"chat"})
+    claims.register("composer", lambda: {"strike"})
+    wire_claims(rules.values(), claims)
+    assert rules["buffer_leveling"].dig_group_source() == {"d"}   # not the chat's, not the composer's
