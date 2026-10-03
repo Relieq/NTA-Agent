@@ -733,3 +733,29 @@ def test_dismissing_an_empty_or_vanished_pawn_army_never_loops(tmp_path):
         "approved": True, "setup_done": False, "buffers": {}})
     _tick(rule, _state(), acts)                       # must not raise
     assert "dismiss:E" in buffers.load(tmp_path / "buffers.json")["done"]
+
+
+# ---- 2026-10-03: at the army cap a NEW buffer army can't be created (500054). An empty army
+# (a husk left when its last pawn was dismissed) is a ready-made base: rename it, recruit in.
+def test_a_new_buffer_reuses_an_empty_army_instead_of_hitting_the_army_cap(tmp_path):
+    rule = _rule(tmp_path)
+    husk = {"uid": "E", "name": "D2", "index": MAIN, "state": 0, "pawns": []}
+    acts = FakeActions(_recruit_setup(tmp_path, have=0)[:-1] + [husk])   # no 'Nâng Cấp 1' yet
+    _tick(rule, _state(), acts)
+    assert ("rename", "E", "Nâng Cấp 1") in acts.calls
+    assert [c[:3] for c in acts.calls if c[0] == "drill"] == [("drill", 3305, "E")]
+
+
+def test_the_army_cap_without_a_husk_is_reported_and_backs_off_not_raised(tmp_path):
+    class Capped(FakeActions):
+        def drill_pawn(self, *a, **k):
+            self.calls.append(("drill",))
+            raise RuntimeError("game/HD_DrillPawn: ecode.500054")
+    events = []
+    rule = BufferLeveling(profile=_prof(), state_path=tmp_path / "buffers.json",
+                                                 rows=ROWS, on_event=lambda k, d: events.append((k, d)))
+    acts = Capped(_recruit_setup(tmp_path, have=0)[:-1])
+    _tick(rule, _state(), acts)                                  # must not raise
+    assert any(k == "buffer_error" and d.get("ecode") == "500054" for k, d in events)
+    assert rule._cooldown >= 30                                  # not every few seconds
+    assert buffers.load(tmp_path / "buffers.json")["setup_done"] is False

@@ -2332,11 +2332,29 @@ class BufferLeveling:
                 if buf and want and have >= want:
                     _recruit_moot("đội đệm đã đủ lính loại này")
                     return
+                if buf is None:
+                    # at the army cap a NEW army can't be made: an empty one (a husk left when
+                    # its last pawn was dismissed) is a ready-made base — rename it, recruit in
+                    husk = next((a for a in by_uid.values() if not a.get("pawns")
+                                 and is_idle(a) and int(a.get("index", 0) or 0) == main), None)
+                    if husk is not None:
+                        try:
+                            actions.rename_army(main, str(husk["uid"]), name)
+                            buf = husk
+                        except Exception:
+                            buf = None
                 try:
                     actions.drill_pawn(actions.building_uid(2004), ptype,
                                        army_uid=str(buf["uid"]) if buf else "",
                                        army_name="" if buf else name)
                 except Exception as e:
+                    if "ecode.500054" in str(e) and not buf:
+                        # army cap and no empty army to reuse: say so, retry much later
+                        self._emit("buffer_error", {"stage": "recruit", "ecode": "500054",
+                                                    "msg": "đã đạt giới hạn số đội — giải tán "
+                                                           "1 đội để tạo đội đệm"})
+                        self._cooldown = 60
+                        return
                     if "ecode.500019" not in str(e):
                         raise
                     _recruit_moot("đội đệm đã đầy (500019)")
