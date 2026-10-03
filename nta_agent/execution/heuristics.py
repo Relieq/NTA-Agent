@@ -2028,6 +2028,8 @@ class BufferLeveling:
     territory_source: object = None  # callable -> (owned cells, centers) (runner)
     ally_source: object = None       # callable -> ally cells an army may also stand on (runner)
     excluded_source: object = None   # callable -> uids a higher-priority owner holds (ArmyClaims)
+    dig_group_source: object = None  # callable -> the armies ONLY a dig holds (idle at the city they stay swap targets)
+    _group_all: object = None        # every member of the levelled group (weak pawns count even while held)
     cereal_hold_source: object = None  # callable -> cereal the composer's next recruit keeps
     _excl: set = field(default_factory=set)
     _cooldown: int = 0
@@ -2099,13 +2101,24 @@ class BufferLeveling:
         # are neither swap targets nor donors
         self._excl = _held_elsewhere(self.excluded_source)
         members = {str(u) for u in grp["armies"]}
-        group_armies = [a for a in armies if str(a.get("uid")) in members
-                        and str(a.get("uid")) not in self._excl]
+        # The dig holds its group for HOURS: its weak pawns must still count (else nothing is
+        # levelled the whole time) and an army the dig only holds, standing idle at the city
+        # (a heal trip), is a fine swap target. The chat's / composer's armies stay untouchable.
+        from nta_agent.execution.army_health import is_idle as _idle
+        group_all = [a for a in armies if str(a.get("uid")) in members]
+        dig_only = _held_elsewhere(self.dig_group_source)
+        for a in group_all:
+            u = str(a.get("uid"))
+            if (u in dig_only and u in self._excl and _idle(a)
+                    and int(a.get("index", 0) or 0) == main):
+                self._excl.discard(u)
+        group_armies = [a for a in group_all if str(a.get("uid")) not in self._excl]
+        self._group_all = group_all
 
         if not st["approved"]:
             spares = [a for a in armies if str(a.get("uid")) not in members
                       and not str(a.get("name", "")).startswith("Nâng Cấp")]
-            prop = bp.propose(group_armies, spares, grp["target_lv"], rows=self._rows(),
+            prop = bp.propose(group_all, spares, grp["target_lv"], rows=self._rows(),
                               barracks_lv=self._barracks_lv(state),
                               exp_book=int(state.resources.exp_book or 0),
                               army_count=len(armies), army_cap=len(armies),
@@ -2185,18 +2198,19 @@ class BufferLeveling:
         from nta_agent.execution import buffer_plan as bp
         from nta_agent.execution.army_health import is_idle, leveling_pawn_uids
         from nta_agent.runtime import buffers as bstate
-        weak_types = set(bp.demand(group_armies, target))
+        group_all = self._group_all if self._group_all is not None else group_armies
+        weak_types = set(bp.demand(group_all, target))
         names = {b["name"]: weak_types | {int(t) for t in (b.get("types") or {})}
                  for b in proposal.get("buffers") or []}
         by_uid = {str(a.get("uid")): a for a in armies}
         bufs = [a for a in armies if str(a.get("name", "")) in names]
-        members = {str(a.get("uid")) for a in group_armies}
+        members = {str(a.get("uid")) for a in group_all}
         spares_home = [a for a in armies
                        if str(a.get("uid")) not in members and str(a.get("name", "")) not in names
                        and str(a.get("uid")) not in self._excl
                        and int(a.get("index", 0) or 0) == main and is_idle(a)]
         # only as many pawns per type as the group has weak ones are worth leveling
-        worth, _started = bp.levelable(bufs, group_armies, target, names,
+        worth, _started = bp.levelable(bufs, group_all, target, names,
                                        in_progress=leveling_pawn_uids(state))
         self._buffers = {str(a["uid"]) for a in bufs}
         recs = st.setdefault("buffers", {})
@@ -2234,7 +2248,7 @@ class BufferLeveling:
                 # pawns with a spare back and forth for hours
                 des = next((b.get("types") or {} for b in proposal.get("buffers") or []
                             if b.get("name") == buf.get("name")), {})
-                own = bp.own_target(group_armies, des, target, self._group_order())
+                own = bp.own_target(group_all, des, target, self._group_order())
                 trades = (bp.reshape(buf, own, spares_home, target)
                           if own is not None and spares_home else [])
                 last = self._last_trade.get(uid)
@@ -2570,12 +2584,13 @@ class BufferLeveling:
             except Exception:
                 costs = None
         barracks = self._barracks_lv(state)
-        weak_types = set(demand(group_armies, target))
+        group_all = self._group_all if self._group_all is not None else group_armies
+        weak_types = set(demand(group_all, target))
         types = {b["name"]: weak_types | {int(t) for t in (b.get("types") or {})}
                  for b in proposal.get("buffers") or []}
         from nta_agent.execution.buffer_plan import levelable
         bufs_all = [a for a in armies if str(a.get("name", "")) in types]
-        worth, started = levelable(bufs_all, group_armies, target, types,
+        worth, started = levelable(bufs_all, group_all, target, types,
                                    in_progress=queued)
         cands = []
         for a in armies:
