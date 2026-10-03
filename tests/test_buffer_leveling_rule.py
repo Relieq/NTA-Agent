@@ -771,3 +771,40 @@ def test_an_empty_army_with_pawns_in_training_is_not_reused(tmp_path):
     _tick(rule, _state(), acts)
     assert not [c for c in acts.calls if c[0] == "rename"]
     assert [c[:4] for c in acts.calls if c[0] == "drill"] == [("drill", 3305, "", "Nâng Cấp 1")]
+
+
+# ---- 2026-10-03: the buffer must CONVERGE on its plan, not stop at whatever the setup left ----
+def _converge_setup(tmp_path, pawns, drilling=()):
+    path = tmp_path / "buffers.json"
+    done = [f"recruit:Nâng Cấp 1:3305:{k}" for k in range(9)]
+    buffers.save(path, {
+        "proposal": {"buffers": [{"name": "Nâng Cấp 1", "base_uid": "", "types": {"3305": 9},
+                                  "merge": [], "recruit": {"3305": 9}}], "dismiss": []},
+        "approved": True, "setup_done": True, "buffers": {}, "done": done})
+    buf = {"uid": "NC1", "name": "Nâng Cấp 1", "index": MAIN, "state": 0,
+           "pawns": pawns, "drillPawns": list(drilling)}
+    return _group() + [buf]
+
+
+def test_a_buffer_short_of_its_type_is_topped_up_again_once_it_has_room(tmp_path):
+    # the setup's recruit steps were all marked done while the army was clogged with strays;
+    # after the strays left it holds 2 IMP of the planned 9 -> recruiting resumes
+    rule = _rule(tmp_path)
+    acts = FakeActions(_converge_setup(tmp_path, [_imp("a"), _imp("b")]))
+    _tick(rule, _state(cereal=5000), acts)
+    assert [c[:3] for c in acts.calls if c[0] == "drill"] == [("drill", 3305, "NC1")]
+
+
+def test_pawns_already_in_training_count_so_a_full_army_is_not_asked_again(tmp_path):
+    rule = _rule(tmp_path)
+    acts = FakeActions(_converge_setup(tmp_path, [_imp("a"), _imp("b")], drilling=[3305] * 7))
+    _tick(rule, _state(cereal=5000), acts)
+    assert [c for c in acts.calls if c[0] == "drill"] == []
+
+
+def test_setup_recruiting_keeps_its_cereal_from_the_generic_top_up(tmp_path):
+    rule = _rule(tmp_path)
+    rule.pawn_cost_source = lambda: {3305: 100}
+    acts = FakeActions(_group() + _recruit_setup(tmp_path, have=0)[-1:])
+    _tick(rule, _state(cereal=0), acts)
+    assert rule.cereal_reserve >= 100
