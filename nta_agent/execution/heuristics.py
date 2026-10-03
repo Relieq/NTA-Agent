@@ -1269,6 +1269,7 @@ class Recruit:
     locked_source: object = None  # callable -> army-uid set the ArmyComposer owns (skip them)
     pawn_cost_source: object = None  # callable -> {pawn_id: base cost} of THIS match
     reserve_source: object = None    # callable -> {"cereal": n} kept for the player's leveling order
+    buffer_source: object = None     # callable -> uids of leveling-buffer armies (never topped up here)
     _pending: object = None   # (build_uid, pawn_id, army_uid, army_name, pawn_count)
     _cooldown: int = 0
     # Armies the server rejected as full (ecode.500019), by uid -> pawn count when
@@ -1393,8 +1394,16 @@ class Recruit:
         # own main troop type, so a refill never mixes it (live 2026-09-26: a tank army
         # got a Cường Nỏ, the first unlocked type). Its type locked/unaffordable -> skip it.
         room, fill = None, pawn
+        try:
+            buffers_ = {str(u) for u in (self.buffer_source() if self.buffer_source else ()) or ()}
+        except Exception:
+            buffers_ = set()
         for a in armys:
             if a.get("state") or self._is_full(a) or len(a.get("pawns", [])) >= cap:
+                continue
+            # a leveling buffer's contents belong to the buffer plan: topping it up with its
+            # "main type" put Đao Khiên into the IMP buffer (live 2026-10-03)
+            if str(a.get("uid")) in buffers_ or str(a.get("name", "")).startswith("Nâng Cấp"):
                 continue
             main = _main_pawn_type(a)
             if main is None:

@@ -250,6 +250,8 @@ def run(cfg: RuntimeConfig, *, ticks: int = 0, session=None, engine=None) -> Non
                                                   | _pawn_move_uids())
             else:
                 rule.locked_source = _pawn_move_uids
+            if getattr(rule, "name", "") == "recruit" and _buffers is not None:
+                rule.buffer_source = lambda: _buffers.buffer_uids() | _buffers.away_uids()
             if getattr(rule, "name", "") == "recruit":
                 # the player's leveling order comes before the generic top-up of armies
                 rule.reserve_source = lambda: {
