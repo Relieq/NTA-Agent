@@ -28,6 +28,7 @@ class RuntimeConfig:
     lessons_cap: int = 50
     stale_after: float = 90.0   # F1: seconds of silence before a health probe
     march_poll_every: int = 6   # ticks between HD_GetMarchs resyncs (siege early warning)
+    keep_awake: bool = True     # hold the PC awake while the agent runs (Windows)
 
     @property
     def snapshot_path(self) -> Path:
@@ -169,4 +170,6 @@ class RuntimeConfig:
             brain_every_ticks=int(env.get("NTA_BRAIN_EVERY", "60")),
             brain_max_calls=int(env.get("NTA_BRAIN_MAX_CALLS")
                                 or settings.get("brain_max_calls") or 50),
+            keep_awake=str(env.get("NTA_KEEP_AWAKE") or settings.get("keep_awake") or "1")
+            .strip().lower() not in ("0", "false", "no", "off", "tắt", "tat"),
         )

@@ -9,6 +9,8 @@ const FIELDS=[
  {key:"openai_model", label:"Model", kind:"model",
   help:"Danh sách lấy từ tài khoản OpenAI của bạn (cần key). Mặc định gpt-4o-mini."},
  {key:"brain_max_calls", label:"Giới hạn lượt gọi bộ não / phiên", placeholder:"50"},
+ {key:"keep_awake", label:"Giữ máy không ngủ khi agent chạy", placeholder:"1 (bật) / 0 (tắt)",
+  help:"Mặc định bật (Windows): chặn máy tự ngủ (kể cả Modern Standby) khi agent đang chạy; màn hình vẫn tự tắt được. Không chặn được việc bạn gập nắp / bấm nút nguồn. Có hiệu lực ở lần khởi động agent kế tiếp."},
  {key:"xxtea_key", label:"XXTEA key (tuỳ chọn)", secret:true,
   help:"Để trống — app tự tìm khoá trong chính bản game của bạn. Chỉ nhập nếu tự dò thất bại."},
  {key:"update_token", label:"GitHub token (cập nhật)", secret:true,
