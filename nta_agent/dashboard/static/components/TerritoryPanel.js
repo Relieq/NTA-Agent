@@ -546,6 +546,9 @@ export default {
    <span v-if="dig.rough" class="muted">(ước lượng thô — mô phỏng không sẵn sàng)</span>
    <span v-if="dig.pending && !dig.cancel_pending" class="muted">⏳ chờ agent xử lý (agent phải đang chạy)</span>
    <span class="muted" v-if="['preview','active'].includes(dig.state)">chưa tính thời gian chờ thể lực/hồi máu</span>
+   <button v-if="dig.state==='preview' && dig.cells && !dig.pending && ['ok','blocked_by_hard'].includes(dig.reason)"
+     @click="digConfirm" style="border-color:#2ea043;color:#2ea043"
+     title="Bắt đầu dig đúng đường gợi ý này">✔ Xác nhận dig</button>
    <button v-if="dig.state==='preview' && dig.cells && !dig.pending" @click="editSuggestion"
      title="Nạp đường gợi ý vào bản vẽ để bạn chỉnh, rồi xác nhận từng bước">✏ Sửa đường này</button>
    <button v-if="['preview','active','waiting','failed'].includes(dig.state)" :disabled="dig.pending"

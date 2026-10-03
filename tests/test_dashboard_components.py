@@ -255,3 +255,13 @@ def test_farm_group_panel_orders_the_armies():
     assert "/api/profile" in fg and "group: group.value" in fg      # the saved order is the list order
     terr = _c("TerritoryPanel.js")
     assert "dig.draft.group" in terr and "thứ tự vào trận" in terr
+
+
+def test_dig_suggestion_card_has_a_confirm_button():
+    # the "Gợi ý đường tới đây" card (state preview) lost its confirm button when the drawn-path
+    # flow replaced it (2026-10-03) — a suggestion could be edited / replanned / cancelled, never started
+    t = _c("TerritoryPanel.js")
+    card = t[t.index('class="digcard"'):]
+    btn = card[:card.index("✖ Huỷ mục tiêu")]
+    assert "✔ Xác nhận dig" in btn and '@click="digConfirm"' in btn
+    assert "dig.state==='preview'" in btn.split("✔ Xác nhận dig")[0].rsplit("<button", 1)[1]
