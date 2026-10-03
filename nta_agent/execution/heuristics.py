@@ -2335,7 +2335,9 @@ class BufferLeveling:
                 if buf is None:
                     # at the army cap a NEW army can't be made: an empty one (a husk left when
                     # its last pawn was dismissed) is a ready-made base — rename it, recruit in
+                    # (NOT one whose recruits are still in training: they would land in it)
                     husk = next((a for a in by_uid.values() if not a.get("pawns")
+                                 and not a.get("drillPawns") and not a.get("curingPawns")
                                  and is_idle(a) and int(a.get("index", 0) or 0) == main), None)
                     if husk is not None:
                         try:
