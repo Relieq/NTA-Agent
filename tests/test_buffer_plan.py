@@ -124,3 +124,13 @@ def test_reshape_nothing_when_the_buffer_already_fits():
     buf = {"uid": "B", "pawns": [_imp(f"b{k}", 3) for k in range(2)]}
     target = {"uid": "M", "pawns": [_imp("m1"), _imp("m2")]}
     assert reshape(buf, target, [{"uid": "S", "pawns": [{"uid": "x", "id": 3401, "lv": 3}]}], 3) == []
+
+
+def test_an_empty_army_is_never_proposed_for_dismissal():
+    # an army with no pawns is usually a fresh one whose recruit is still in training
+    # (live 2026-10-03: the empty D2 was proposed, the dismissal got 500017 every check)
+    spares = [{"uid": "E", "name": "D2", "pawns": []},
+              {"uid": "S1", "name": "S1", "pawns": [{"uid": "c1", "id": 3201, "lv": 1}]}]
+    p = propose(_group(), spares, 3, rows=ROWS, barracks_lv=13, exp_book=500,
+                army_count=6, army_cap=6)
+    assert p["dismiss"] == ["S1"]
