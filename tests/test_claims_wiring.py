@@ -45,3 +45,15 @@ def test_buffer_leveling_yields_cereal_to_the_composer():
     assert rules["buffer_leveling"].cereal_hold_source() == 620
     comp.cereal_need = 0
     assert rules["buffer_leveling"].cereal_hold_source() == 0
+
+
+def test_recruit_stands_down_for_the_whole_time_the_composer_is_assembling():
+    from nta_agent.runtime.claims_wiring import recruit_locked
+    comp = SimpleNamespace(locked_uids=set(), assembling=True)
+    assert recruit_locked(comp, {"chat"})            # non-empty: the generic top-up stops
+    comp.assembling = False
+    assert recruit_locked(comp, set()) == set()      # no goal: recruit works as before
+    assert recruit_locked(comp, {"chat"}) == {"chat"}
+    comp.locked_uids = {"A"}
+    assert recruit_locked(comp, set()) == {"A"}
+    assert recruit_locked(None, {"chat"}) == {"chat"}

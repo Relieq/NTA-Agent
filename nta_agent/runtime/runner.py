@@ -243,8 +243,11 @@ def run(cfg: RuntimeConfig, *, ticks: int = 0, session=None, engine=None) -> Non
         elif getattr(rule, "name", "") in ("recruit", "logistics", "heal_routing"):
             # every rule that moves/fills armies must skip the ones the composer owns
             if _composer is not None:
-                rule.locked_source = lambda: (set(getattr(_composer, "locked_uids", set()))
-                                              | _pawn_move_uids())
+                if getattr(rule, "name", "") == "recruit":
+                    rule.locked_source = lambda: recruit_locked(_composer, _pawn_move_uids())
+                else:
+                    rule.locked_source = lambda: (set(getattr(_composer, "locked_uids", set()))
+                                                  | _pawn_move_uids())
             else:
                 rule.locked_source = _pawn_move_uids
             if getattr(rule, "name", "") == "recruit":
@@ -296,7 +299,7 @@ def run(cfg: RuntimeConfig, *, ticks: int = 0, session=None, engine=None) -> Non
     # who may touch which army: one priority list (chat > dig > composer > buffers > spares > ...)
     from nta_agent.execution.claims import ArmyClaims
     from nta_agent.execution.profile import active_formation as _active_formation
-    from nta_agent.runtime.claims_wiring import wire_claims
+    from nta_agent.runtime.claims_wiring import recruit_locked, wire_claims
 
     def _dig_group_uids():   # the farm group IS the dig group while a confirmed dig is on
         try:
