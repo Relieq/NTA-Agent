@@ -57,3 +57,17 @@ def test_recruit_stands_down_for_the_whole_time_the_composer_is_assembling():
     comp.locked_uids = {"A"}
     assert recruit_locked(comp, set()) == {"A"}
     assert recruit_locked(None, {"chat"}) == {"chat"}
+
+
+def test_heal_may_still_route_the_dig_group_unless_the_player_holds_it():
+    # live 2026-10-03: the dig waited 27 min on "heal" (dig_heal_wait) while the claims list had
+    # taken the dig group away from HealRouting — the dig relies on it to heal its own group
+    rules = _rules()
+    claims = _claims()
+    claims.register("dig", lambda: {"dig", "both"})
+    claims.register("pawn_moves", lambda: {"chat", "both"})
+    wire_claims(rules.values(), claims)
+    blocked = rules["heal_routing"].locked_source()
+    assert "dig" not in blocked                        # healing is part of the dig
+    assert {"chat", "both", "strike", "buf", "spare"} <= blocked   # the rest still holds
+    assert "dig" in rules["logistics"].locked_source()  # other rules stay off the dig group
