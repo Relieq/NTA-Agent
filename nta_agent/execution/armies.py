@@ -40,5 +40,7 @@ def army_view(armys: list[dict], config) -> list[dict]:
             "state_label": STATE_LABELS.get(state, str(state)),
             "march_speed": int(a.get("marchSpeed", 0) or 0),
             "pawns": pawns,
+            # pawn type ids still in training in this army (they land here when done)
+            **({"drilling": [int(x) for x in a.get("drillPawns")]} if a.get("drillPawns") else {}),
         })
     return rows

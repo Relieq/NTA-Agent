@@ -1983,6 +1983,7 @@ class BufferLeveling:
     _buffers: set = field(default_factory=set)
     _setup_reserved: set = field(default_factory=set)
     _sent: dict = field(default_factory=dict)  # pawn uid -> (sent at, lv, lv_time s)
+    _full_at: dict = field(default_factory=dict)  # buffer name -> pawns+training when the server said 'full'
 
     # ---- helpers --------------------------------------------------------------
     def _rows(self):
@@ -2066,8 +2067,11 @@ class BufferLeveling:
                                 for m in b.get("merge") or []]
                              + list(proposal.get("dismiss") or []))
             if u}
+        if st["setup_done"]:
+            self._reopen_short(state, proposal, by_uid, st)
         if not st["setup_done"]:
             done = set(st.get("done") or [])
+            self._setup_cereal(proposal, done)
             for step in self._setup_steps(proposal):
                 sid = ":".join(str(x) for x in step)
                 if sid not in done:
@@ -2273,6 +2277,61 @@ class BufferLeveling:
             return True
         return False
 
+    def _reopen_short(self, state, proposal, by_uid, st) -> None:
+        """A buffer that holds fewer pawns of its planned type than planned, and has room, gets
+        its recruit steps back — the setup marked them all done while strays clogged the army
+        (live 2026-10-03: the IMP buffer sat at 2/9 after the strays were dismissed). Pawns
+        still in training count (``drillPawns`` = their type ids), so a full army isn't asked."""
+        from nta_agent.execution.army_health import is_idle
+        from nta_agent.runtime import buffers as bstate
+        cap = _army_pawn_cap(state)
+        for b in proposal.get("buffers") or []:
+            rec = b.get("recruit") or {}
+            buf = next((a for a in by_uid.values() if a.get("name") == b.get("name")), None)
+            if not rec or buf is None or not is_idle(buf):
+                continue
+            training = [int(x) for x in (buf.get("drillPawns") or []) if str(x).lstrip("-").isdigit()]
+            total = len(buf.get("pawns") or []) + len(training)
+            if total >= cap or total >= self._full_at.get(str(b.get("name")), 10 ** 9):
+                continue    # (the server already called it full at this size: wait for room)
+            types = b.get("types") or {}
+            for ptype in rec:
+                want = int(types.get(str(ptype), types.get(ptype, 0)) or 0)
+                have = (sum(1 for p in buf.get("pawns") or [] if int(p.get("id", 0) or 0) == int(ptype))
+                        + training.count(int(ptype)))
+                if have >= want:
+                    continue
+                ids = {f"recruit:{b['name']}:{int(ptype)}:{k}" for k in range(int(rec[ptype]))}
+                st["done"] = [d for d in (st.get("done") or []) if d not in ids]
+                st["setup_done"] = False
+                bstate.save(self.state_path, st)
+                self._emit("buffer_setup", {"step": f"refill:{b['name']}",
+                                            "note": f"đội đệm mới có {have}/{want} lính loại {ptype} — tuyển tiếp"})
+
+    def _setup_cereal(self, proposal, done) -> None:
+        """Cereal the setup's remaining recruit steps still need: the generic top-up leaves it
+        (leveling comes before it in the player's order — the buffer plan was starved by it)."""
+        from nta_agent.execution.pawn_cost import cereal_cost
+        costs = None
+        if self.pawn_cost_source is not None:
+            try:
+                costs = self.pawn_cost_source()
+            except Exception:
+                costs = None
+        need = 0
+        for step in self._setup_steps(proposal):
+            if step[0] != "recruit" or ":".join(str(x) for x in step) in done:
+                continue
+            pid = int(step[2])
+            table = 0
+            try:
+                from nta_agent.data.config import GameConfig
+                table = int(GameConfig.load().pawn_recruit_cost(pid).get("cereal", 0))
+            except Exception:
+                pass
+            need += cereal_cost(pid, table, costs)
+        self.cereal_reserve = need
+
     def _plan_setup(self, step, sid, by_uid, main, actions, st) -> bool:
         from nta_agent.execution.army_health import is_idle
         from nta_agent.runtime import buffers as bstate
@@ -2335,8 +2394,10 @@ class BufferLeveling:
                         st.setdefault("done", []).append(f"recruit:{name}:{ptype}:{k}")
                     bstate.save(self.state_path, st)
                     self._emit("buffer_setup", {"step": sid, "note": why})
-                have = sum(1 for p in (buf or {}).get("pawns") or []
-                           if int(p.get("id", 0) or 0) == int(ptype))
+                have = (sum(1 for p in (buf or {}).get("pawns") or []
+                            if int(p.get("id", 0) or 0) == int(ptype))
+                        + sum(1 for x in (buf or {}).get("drillPawns") or []
+                              if str(x).lstrip("-").isdigit() and int(x) == int(ptype)))
                 want = _both(prop.get("types") or {})
                 if buf and want and have >= want:
                     _recruit_moot("đội đệm đã đủ lính loại này")
@@ -2368,6 +2429,8 @@ class BufferLeveling:
                         return
                     if "ecode.500019" not in str(e):
                         raise
+                    self._full_at[name] = (len((buf or {}).get("pawns") or [])
+                                           + len((buf or {}).get("drillPawns") or []))
                     _recruit_moot("đội đệm đã đầy (500019)")
                     return
             st.setdefault("done", []).append(sid)
