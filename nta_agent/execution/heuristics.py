@@ -2930,7 +2930,7 @@ class ArmyComposer:
     pawn_cost_source: object = None  # callable -> {pawn_id: base cost} of THIS match
     excluded_source: object = None   # callable -> uids a higher-priority owner holds (ArmyClaims)
     cereal_need: int = 0             # cereal of the next recruit: leveling leaves it alone
-    assembling: bool = False         # a goal is being built (even with no army locked): Recruit stands down
+    _assembling: object = None       # None = not judged yet (first tick): follows 'a goal exists'
     rename_retry_ticks: int = 12      # after a failed rename (e.g. 500036 in battle)
     _rename_wait: dict = field(default_factory=dict)  # uid -> applies() calls to skip
 
@@ -2939,6 +2939,19 @@ class ArmyComposer:
         only when nothing is assigned yet — a live assignment always wins."""
         if not self._strike_uids and uids:
             self._strike_uids = [str(u) for u in uids]
+
+    @property
+    def assembling(self) -> bool:
+        """A strike goal is being built (even with no army locked): Recruit stands down.
+        Before this rule has judged the goal once (Recruit runs BEFORE it, so on the first
+        tick after a restart) any goal counts — that gap spawned a stray army (2026-10-03)."""
+        if self._assembling is None:
+            return bool(self._target())
+        return bool(self._assembling)
+
+    @assembling.setter
+    def assembling(self, value) -> None:
+        self._assembling = bool(value)
 
     def _target(self):
         if self.profile is None:

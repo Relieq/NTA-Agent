@@ -510,3 +510,11 @@ def test_assembling_is_false_without_a_goal_and_once_done():
     r2 = ArmyComposer(profile=_profile(target))
     r2.applies(_state((3201,)), FakeActions([_army("A", [3201] * 3)]))
     assert r2.assembling is False                       # goal met -> cleared
+
+
+def test_a_fresh_composer_already_counts_a_goal_as_assembling():
+    # Recruit runs BEFORE the composer in a tick: on the first tick after a restart the
+    # composer has not judged anything yet, but the goal exists -> Recruit must stand down
+    r = ArmyComposer(profile=_profile([{"pawn_id": 3201, "armies": 1, "size": 9}]))
+    assert r.assembling is True
+    assert ArmyComposer(profile=_profile([])).assembling is False

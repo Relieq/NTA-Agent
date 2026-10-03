@@ -201,3 +201,18 @@ def test_forge_view_lists_possible_effects_for_per_stat_ui():
     assert pos[3]["value_range"] == [150, 180] and pos[3]["odds_range"] == [20, 40]
     assert pos[7]["odds_range"] == []                         # no odds -> single number
     assert r["met"] is False and r["unmet"] == ["3.odds"]
+
+
+def test_a_free_recast_goes_first_among_unmet_targets():
+    # the free roll is per equip and lasts until used: spend it before paying iron elsewhere
+    t = {"6001_1": {"threshold": 1, "budget": 9}, "6001_2": {"threshold": 1, "budget": 9}}
+    eqs = [_eq("6001_1"), _eq("6001_2", free=True)]
+    d = next_recast(eqs, base_of, eff_row, t, RICH)
+    assert d.uid == "6001_2" and d.free is True
+    # without a free flag the order of the targets stands
+    d = next_recast([_eq("6001_1"), _eq("6001_2")], base_of, eff_row, t, RICH)
+    assert d.uid == "6001_1"
+    # a free equip whose target is already met is not picked
+    t2 = {"6001_1": {"threshold": 1, "budget": 9}, "6001_2": {"threshold": 0.1, "budget": 9}}
+    d = next_recast(eqs, base_of, eff_row, t2, RICH)
+    assert d.uid == "6001_1"
