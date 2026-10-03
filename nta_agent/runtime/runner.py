@@ -434,6 +434,10 @@ def run(cfg: RuntimeConfig, *, ticks: int = 0, session=None, engine=None) -> Non
         if read_mode(cfg.control_path) != "pause":
             _safe(free_rewards.tick, state)
 
+    from nta_agent.runtime.keepawake import KeepAwake
+    _awake = KeepAwake(enabled=bool(getattr(cfg, "keep_awake", True)))
+    if _awake.start():
+        log.append("keep_awake", "on")   # the PC will not idle-sleep while the agent runs
     try:
         agent.run(ticks=ticks, interval=cfg.interval, on_tick=on_tick,
                   control=lambda: read_mode(cfg.control_path))
@@ -444,6 +448,7 @@ def run(cfg: RuntimeConfig, *, ticks: int = 0, session=None, engine=None) -> Non
         log.append("loop_fatal", str(e))
         raise
     finally:
+        _awake.stop()
         _safe(write_snapshot, session.state, cfg.snapshot_path)
         log.append("error_summary", errlog.summary())  # morning-friendly roll-up
         session.close()
