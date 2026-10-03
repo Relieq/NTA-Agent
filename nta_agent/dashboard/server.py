@@ -454,6 +454,7 @@ def handle_chat(cfg, message, *, history=None, propose=None):
     from nta_agent.execution.pawn_moves import sanitize_pawn_moves, strike_conflicts
     raw_moves = _raw_pawn_moves(edits)
     moves, move_notes = sanitize_pawn_moves(raw_moves, armies, cap=_pawn_cap(cfg),
+                                            pawn_names=pawn_names,
                                             meet=_meet_picker(cfg, armies))
     from nta_agent.execution.pawn_moves import check_names
     if moves:
