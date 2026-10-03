@@ -179,14 +179,25 @@ class PawnMoveQueue:
         except Exception as e:
             m = _ECODE.search(str(e))
             code = m.group(1) if m else ""
+            if code == "500054":
+                # every army is full AND the army cap is reached: nothing to recruit into. Wait
+                # (the job claims its army, so the generic recruit stays away) and say once what
+                # would free a slot; MAX_AGE bounds the wait.
+                job["wait"] = self.retry_ticks
+                if not job.get("noted"):
+                    job["noted"] = True
+                    on_event("pawn_move_progress", {
+                        "op": "recruit_swap",
+                        "note": "chưa có chỗ để chiêu mộ (mọi đội đầy lính và đã đạt giới hạn số đội) — "
+                                "giải tán 1 lính ở một đội không dùng tới (hoặc 1 đội) để có chỗ, "
+                                "agent sẽ tự làm tiếp"})
+                return
             job["tries"] = job.get("tries", 0) + 1
             # short of cereal / queue full / busy: ask again later; the cap or anything else: stop
             if code in TRANSIENT | {"500012", "500018"} and job["tries"] < self.max_tries:
                 job["wait"] = self.retry_ticks
                 return
-            self._fail(d, key, job, on_event,
-                       reason=("đã đạt giới hạn số đội — giải tán bớt một đội rồi thử lại"
-                               if code == "500054" else str(e)[:120]))
+            self._fail(d, key, job, on_event, reason=str(e)[:120])
             return
         job["ordered"] = True
         if host:
