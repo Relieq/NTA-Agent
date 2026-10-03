@@ -179,6 +179,11 @@ class PawnMoveQueue:
         except Exception as e:
             m = _ECODE.search(str(e))
             code = m.group(1) if m else ""
+            if code == "500012":
+                # not enough cereal yet (one recruit can need ~10 min of production): keep
+                # asking, slowly — only the age limit ends the wait, never the try counter
+                job["wait"] = self.retry_ticks * 2
+                return
             if code == "500054":
                 # every army is full AND the army cap is reached: nothing to recruit into. Wait
                 # (the job claims its army, so the generic recruit stays away) and say once what
