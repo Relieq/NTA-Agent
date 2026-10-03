@@ -212,6 +212,11 @@ def pawn_move_label(m: dict) -> str:
         s = f"đổi {m['count']} lính {m['name_a']} ⇄ {m['count']} lính {m['name_b']}"
     elif m["op"] == "move":
         s = f"chuyển {m['count']} lính {m['name_from']} → {m['name_to']}"
+    elif m["op"] == "recruit_swap":
+        return (f"chiêu mộ {m['count']} lính {m.get('name_pawn_b') or m['pawn_b']} (chưa đội nào có), "
+                f"chờ huấn luyện xong rồi đổi với {m['count']} lính {m.get('name_pawn_a') or m['pawn_a']}"
+                f" ở vị trí {'cuối' if m.get('pos_a') == 'last' else 'đầu' if m.get('pos_a') == 'first' else 'thấp nhất'}"
+                f" của {m['name_a']} (tốn lương chiêu mộ)")
     else:
         return f"đổi thứ tự lính trong {m['name']}"
     if m.get("gather"):
@@ -306,10 +311,16 @@ def confirm_pawn_moves(cfg, specs) -> dict:
     from nta_agent.execution.pawn_moves import sanitize_pawn_moves, strike_conflicts
     from nta_agent.execution.profile import apply_edits, load_profile, save_profile
     armies = _armies_from_disk(cfg)
+    names = {int(k): v for k, v in _pawn_names(cfg).items() if str(k).isdigit()}
     clean, notes = sanitize_pawn_moves(specs, armies, cap=_pawn_cap(cfg),
-                                       meet=_meet_picker(cfg, armies))
+                                       meet=_meet_picker(cfg, armies), pawn_names=names,
+                                       unlocked=_unlocked_pawn_ids(cfg))
     if not clean:
         return {"ok": False, "error": "Không còn thao tác hợp lệ. " + " ".join(notes)}
+    for m in clean:   # a recruit job needs where to recruit (the main city) and the army size cap
+        if m["op"] == "recruit_swap":
+            m["city"] = _main_city(cfg)
+            m["cap"] = _pawn_cap(cfg)
     cancelled = False
     if strike_conflicts(clean, armies, _strike_uids(cfg)):
         profile = load_profile(cfg.profile_path)
@@ -454,7 +465,7 @@ def handle_chat(cfg, message, *, history=None, propose=None):
     from nta_agent.execution.pawn_moves import sanitize_pawn_moves, strike_conflicts
     raw_moves = _raw_pawn_moves(edits)
     moves, move_notes = sanitize_pawn_moves(raw_moves, armies, cap=_pawn_cap(cfg),
-                                            pawn_names=pawn_names,
+                                            pawn_names=pawn_names, unlocked=unlocked,
                                             meet=_meet_picker(cfg, armies))
     from nta_agent.execution.pawn_moves import check_names
     if moves:

@@ -123,7 +123,7 @@ def _holder(armies, not_uid, pid, near):
 
 
 def sanitize_pawn_moves(raw, armies, cap: int = 9, meet=None,
-                        pawn_names=None) -> tuple[list, list]:
+                        pawn_names=None, unlocked=None) -> tuple[list, list]:
     """Validate chat-proposed rearrangements into ``(clean, notices)``.
 
     The game only swaps/moves pawns between armies in the SAME cell (any cell: it must not
@@ -160,8 +160,27 @@ def sanitize_pawn_moves(raw, armies, cap: int = 9, meet=None,
             if b is None or (b is not a and not _pool(b, pb, None)):
                 held = _holder(armies, a.get("uid"), pb, a.get("index"))
                 if held is None:
-                    notes.append(f"Chưa có lính {tname} nào trong các đội — cần chiêu mộ trước "
-                                 "rồi mới đổi được")
+                    # nobody holds the type: recruit one (the confirmed job orders it, waits for
+                    # the training, then swaps) — only when the type is unlocked
+                    if unlocked is not None and pb not in {int(u) for u in unlocked}:
+                        notes.append(f"{tname} chưa mở khoá — không chiêu mộ được")
+                        continue
+                    xs = _pool(a, pa, _pos(r.get("pos_a")))
+                    n = min(count, len(xs), 5)
+                    if n < 1:
+                        notes.append(f"{a.get('name')} không có lính "
+                                     f"{(pawn_names or {}).get(pa) or f'loại {pa}'}")
+                        continue
+                    out.append({"op": "recruit_swap", "a": str(a["uid"]),
+                                "name_a": a.get("name") or str(a["uid"]),
+                                "pawn_a": pa, "pawn_b": pb, "count": n,
+                                "pos_a": _pos(r.get("pos_a")),
+                                "name_pawn_a": (pawn_names or {}).get(pa) or f"loại {pa}",
+                                "name_pawn_b": tname,
+                                "index": int(a.get("index", 0) or 0), "gather": False,
+                                "spec": {"op": "swap", "army_a": str(a["uid"]), "pawn_a": pa,
+                                         "army_b": None, "pawn_b": pb, "count": n,
+                                         "pos_a": _pos(r.get("pos_a")), "pos_b": None}})
                     continue
                 if b is not None:
                     notes.append(f"{b.get('name')} không có lính {tname} — lấy từ {held.get('name')}")
@@ -299,6 +318,7 @@ def check_names(message, ops, armies) -> tuple[list, list]:
     named = set(found)
     for m in ops:
         involved = ({m["a"], m["b"]} if m["op"] == "swap"
+                    else {m["a"]} if m["op"] == "recruit_swap"
                     else {m["from"], m["to"]} - {"new"} if m["op"] == "move" else {m["army"]})
         if len(named) == len(involved) and involved != named:
             names = {str(a.get("uid")): a.get("name") for a in armies or []}

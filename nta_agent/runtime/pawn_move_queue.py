@@ -53,6 +53,8 @@ class PawnMoveQueue:
 
     @staticmethod
     def _armies_of(job: dict) -> list:
+        if job["op"] == "recruit_swap":
+            return [job["a"]] + ([job["host"]] if job.get("host") else [])
         if job["op"] == "swap":
             return [job["a"], job["b"]]
         if job["op"] == "move":
@@ -81,6 +83,12 @@ class PawnMoveQueue:
             job["age"] = job.get("age", 0) + 1
             if job["age"] > MAX_AGE:
                 self._fail(d, key, job, on_event, reason="quá lâu không thực hiện được")
+                continue
+            if job["op"] == "recruit_swap":   # recruits first: the target may be out marching
+                if job.get("wait", 0) > 0:
+                    job["wait"] -= 1
+                    continue
+                self._recruit_swap(actions, d, key, job, by_uid, on_event)
                 continue
             if any(a is None for a in armies):
                 job["missing"] = job.get("missing", 0) + 1
@@ -130,6 +138,83 @@ class PawnMoveQueue:
                 del d[key]
             on_event("pawn_move_done" if finished else "pawn_move_progress", {"op": job["op"]})
         self._save(d)
+
+    def _recruit_swap(self, actions, d: dict, key: str, job: dict, by_uid: dict,
+                      on_event) -> None:
+        """Stage 1: order the missing pawn(s) (nothing holds the type yet); stage 2: once an
+        army holds enough of them, turn the job into the plain swap and let it run."""
+        from nta_agent.execution.pawn_moves import _holder, sanitize_pawn_moves
+        a = by_uid.get(job["a"])
+        if a is None:
+            job["missing"] = job.get("missing", 0) + 1
+            if job["missing"] >= self.give_up_missing:
+                self._fail(d, key, job, on_event, reason="đội không còn tồn tại")
+            return
+        holder = _holder(list(by_uid.values()), job["a"], job["pawn_b"], a.get("index"))
+        have = len([p for p in (holder or {}).get("pawns") or []
+                    if int(p.get("id", 0) or 0) == int(job["pawn_b"])]) if holder else 0
+        if holder is not None and have >= int(job["count"]):
+            spec = {**job["spec"], "army_b": str(holder["uid"])}
+            clean, notes = sanitize_pawn_moves([spec], list(by_uid.values()),
+                                               cap=int(job.get("cap", 9)),
+                                               meet=lambda _ar: job.get("city"))
+            d.pop(key, None)
+            if clean:
+                nk = _key(clean[0])
+                d[nk] = {**clean[0], "tries": 0, "wait": 0, "missing": 0,
+                         "age": job.get("age", 0)}
+                on_event("pawn_move_progress", {"op": "recruit_swap", "note": "đã có lính, đổi ngay"})
+            else:
+                on_event("pawn_move_failed", {"op": "recruit_swap",
+                                              "reason": " ".join(notes)[:160]})
+            return
+        if job.get("ordered"):
+            return    # in training: wait (MAX_AGE bounds it)
+        host = self._pick_host(list(by_uid.values()), job)
+        try:
+            for _ in range(int(job["count"])):
+                actions.drill_pawn(actions.building_uid(2004), int(job["pawn_b"]),
+                                   army_uid=str(host["uid"]) if host else "",
+                                   army_name="" if host else self._new_name(by_uid))
+        except Exception as e:
+            m = _ECODE.search(str(e))
+            code = m.group(1) if m else ""
+            job["tries"] = job.get("tries", 0) + 1
+            # short of cereal / queue full / busy: ask again later; the cap or anything else: stop
+            if code in TRANSIENT | {"500012", "500018"} and job["tries"] < self.max_tries:
+                job["wait"] = self.retry_ticks
+                return
+            self._fail(d, key, job, on_event,
+                       reason=("đã đạt giới hạn số đội — giải tán bớt một đội rồi thử lại"
+                               if code == "500054" else str(e)[:120]))
+            return
+        job["ordered"] = True
+        if host:
+            job["host"] = str(host["uid"])
+        on_event("pawn_move_progress", {"op": "recruit_swap", "note": "đã đặt chiêu mộ"})
+
+    @staticmethod
+    def _new_name(by_uid: dict) -> str:
+        from nta_agent.execution.heuristics import _unused_army_name
+        return _unused_army_name(list(by_uid.values()))
+
+    @staticmethod
+    def _pick_host(armies: list, job: dict):
+        """An idle army at the city with room whose main type is the one being replaced (the
+        replaced pawn will land there), never the target or a leveling buffer; else None
+        (a new army is made)."""
+        from nta_agent.execution.heuristics import _main_pawn_type
+        cap = int(job.get("cap", 9))
+        for x in armies:
+            if str(x.get("uid")) == job["a"] or str(x.get("name", "")).startswith("Nâng Cấp"):
+                continue
+            if not is_idle(x) or x.get("index") != job.get("city"):
+                continue
+            if len(x.get("pawns") or []) + len(x.get("drillPawns") or []) + int(job["count"]) > cap:
+                continue
+            if _main_pawn_type(x) == int(job["pawn_a"]):
+                return x
+        return None
 
     def _run(self, actions, job: dict, by_uid: dict) -> bool:
         op = job["op"]
