@@ -759,3 +759,15 @@ def test_the_army_cap_without_a_husk_is_reported_and_backs_off_not_raised(tmp_pa
     assert any(k == "buffer_error" and d.get("ecode") == "500054" for k, d in events)
     assert rule._cooldown >= 30                                  # not every few seconds
     assert buffers.load(tmp_path / "buffers.json")["setup_done"] is False
+
+
+# ---- 2026-10-03: the 'empty' D2 reused as "Nâng Cấp 1" was NOT dead — two Đao Khiên the generic
+# top-up had ordered were still in training, and they landed in the IMP buffer (mixed army).
+def test_an_empty_army_with_pawns_in_training_is_not_reused(tmp_path):
+    rule = _rule(tmp_path)
+    training = {"uid": "E", "name": "D2", "index": MAIN, "state": 0, "pawns": [],
+                "drillPawns": [{"id": 3201}, {"id": 3201}]}
+    acts = FakeActions(_recruit_setup(tmp_path, have=0)[:-1] + [training])
+    _tick(rule, _state(), acts)
+    assert not [c for c in acts.calls if c[0] == "rename"]
+    assert [c[:4] for c in acts.calls if c[0] == "drill"] == [("drill", 3305, "", "Nâng Cấp 1")]
