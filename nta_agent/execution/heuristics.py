@@ -1978,6 +1978,7 @@ class BufferLeveling:
     _pending: object = None        # (label, callable)
     _away: set = field(default_factory=set)
     cereal_reserve: int = 0   # cereal the next level-up waits for (Recruit leaves it alone)
+    _judged: bool = False     # this rule has run once: cereal_reserve is then authoritative
     _last_trade: dict = field(default_factory=dict)  # buffer uid -> (pawn out, pawn in): no undoing
     pawn_cost_source: object = None  # callable -> {pawn_id: base cost} of THIS match
     _buffers: set = field(default_factory=set)
@@ -2032,6 +2033,7 @@ class BufferLeveling:
             self.cereal_reserve = 0
             return False
         self._cooldown = self.check_every
+        self._judged = True
         from nta_agent.execution import buffer_plan as bp
         from nta_agent.runtime import buffers as bstate
         armies = actions.get_player_armys()
@@ -2334,6 +2336,23 @@ class BufferLeveling:
                 + sum(1 for x in buf.get("drillPawns") or []
                       if str(x).lstrip("-").isdigit() and int(x) == int(ptype)))
         return have >= want
+
+    def reserve_now(self) -> int:
+        """The cereal this rule keeps, also on the very first tick after a restart (Recruit runs
+        before it): until it has judged once, the unfinished approved setup's recruits count."""
+        if self._judged or self.state_path is None:
+            return int(self.cereal_reserve or 0)
+        try:
+            from nta_agent.runtime import buffers as bstate
+            st = bstate.load(self.state_path)
+            if not st.get("approved") or st.get("setup_done"):
+                return 0
+            proposal = st.get("proposal") or {}
+            done = set(st.get("done") or [])
+            return sum(self._recruit_price(int(step[2])) for step in self._setup_steps(proposal)
+                       if step[0] == "recruit" and ":".join(str(x) for x in step) not in done)
+        except Exception:
+            return 0
 
     def _recruit_price(self, pid: int) -> int:
         """Cereal one recruit of ``pid`` costs (this match's price list, else the config table)."""

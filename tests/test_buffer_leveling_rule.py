@@ -821,3 +821,15 @@ def test_a_setup_recruit_waits_quietly_when_the_cereal_is_short(tmp_path):
     assert [c for c in acts.calls if c[0] == "drill"] == [] and "buffer_error" not in events
     _tick(rule, _state(cereal=5000), acts)               # now it can pay
     assert [c[:2] for c in acts.calls if c[0] == "drill"] == [("drill", 3305)]
+
+
+def test_the_cereal_reserve_is_known_before_the_rule_ever_ran(tmp_path):
+    # Recruit runs BEFORE this rule: on the first tick after a restart it must already see the
+    # cereal the unfinished setup keeps (same first-tick gap the composer had)
+    rule = _rule(tmp_path)
+    rule.pawn_cost_source = lambda: {3305: 100}
+    _recruit_setup(tmp_path, have=0)                    # writes the approved, unfinished plan
+    assert rule.cereal_reserve == 0                     # the old attribute: nothing judged yet
+    assert rule.reserve_now() >= 100                    # the persisted plan still needs cereal
+    buffers.save(tmp_path / "buffers.json", {"approved": True, "setup_done": True, "buffers": {}})
+    assert _rule(tmp_path).reserve_now() == 0           # finished setup: nothing kept
