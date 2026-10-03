@@ -2075,6 +2075,10 @@ class BufferLeveling:
             for step in self._setup_steps(proposal):
                 sid = ":".join(str(x) for x in step)
                 if sid not in done:
+                    if step[0] == "recruit" and not self._recruit_is_moot(step, proposal, by_uid):
+                        price = self._recruit_price(int(step[2]))
+                        if price and int(state.resources.cereal or 0) < price:
+                            return False   # can't pay yet: wait quietly (no 500012 every check)
                     return self._plan_setup(step, sid, by_uid, main, actions, st)
             st["setup_done"] = True
             bstate.save(self.state_path, st)
@@ -2311,6 +2315,28 @@ class BufferLeveling:
     def _setup_cereal(self, proposal, done) -> None:
         """Cereal the setup's remaining recruit steps still need: the generic top-up leaves it
         (leveling comes before it in the player's order — the buffer plan was starved by it)."""
+        self.cereal_reserve = sum(
+            self._recruit_price(int(step[2])) for step in self._setup_steps(proposal)
+            if step[0] == "recruit" and ":".join(str(x) for x in step) not in done)
+
+    @staticmethod
+    def _recruit_is_moot(step, proposal, by_uid) -> bool:
+        """The buffer already holds (or has in training) the planned pawns of this type: the
+        step is moot and ``_plan_setup`` just marks it done — no price to wait for."""
+        _, name, ptype, _k = step
+        buf = next((a for a in by_uid.values() if a.get("name") == name), None)
+        prop = next((b for b in proposal.get("buffers") or [] if b.get("name") == name), {})
+        types = prop.get("types") or {}
+        want = int(types.get(str(ptype), types.get(ptype, 0)) or 0)
+        if not buf or not want:
+            return False
+        have = (sum(1 for p in buf.get("pawns") or [] if int(p.get("id", 0) or 0) == int(ptype))
+                + sum(1 for x in buf.get("drillPawns") or []
+                      if str(x).lstrip("-").isdigit() and int(x) == int(ptype)))
+        return have >= want
+
+    def _recruit_price(self, pid: int) -> int:
+        """Cereal one recruit of ``pid`` costs (this match's price list, else the config table)."""
         from nta_agent.execution.pawn_cost import cereal_cost
         costs = None
         if self.pawn_cost_source is not None:
@@ -2318,19 +2344,13 @@ class BufferLeveling:
                 costs = self.pawn_cost_source()
             except Exception:
                 costs = None
-        need = 0
-        for step in self._setup_steps(proposal):
-            if step[0] != "recruit" or ":".join(str(x) for x in step) in done:
-                continue
-            pid = int(step[2])
-            table = 0
-            try:
-                from nta_agent.data.config import GameConfig
-                table = int(GameConfig.load().pawn_recruit_cost(pid).get("cereal", 0))
-            except Exception:
-                pass
-            need += cereal_cost(pid, table, costs)
-        self.cereal_reserve = need
+        table = 0
+        try:
+            from nta_agent.data.config import GameConfig
+            table = int(GameConfig.load().pawn_recruit_cost(pid).get("cereal", 0))
+        except Exception:
+            pass
+        return int(cereal_cost(pid, table, costs))
 
     def _plan_setup(self, step, sid, by_uid, main, actions, st) -> bool:
         from nta_agent.execution.army_health import is_idle

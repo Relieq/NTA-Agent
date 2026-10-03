@@ -808,3 +808,16 @@ def test_setup_recruiting_keeps_its_cereal_from_the_generic_top_up(tmp_path):
     acts = FakeActions(_group() + _recruit_setup(tmp_path, have=0)[-1:])
     _tick(rule, _state(cereal=0), acts)
     assert rule.cereal_reserve >= 100
+
+
+def test_a_setup_recruit_waits_quietly_when_the_cereal_is_short(tmp_path):
+    # no request (and no 500012 'buffer_error' every ~80 s) while the price is out of reach
+    events = []
+    rule = BufferLeveling(profile=_prof(), state_path=tmp_path / "buffers.json", rows=ROWS,
+                          on_event=lambda k, d: events.append(k),
+                          pawn_cost_source=lambda: {3305: 100})
+    acts = FakeActions(_recruit_setup(tmp_path, have=0)[:-1])
+    _tick(rule, _state(cereal=5), acts)
+    assert [c for c in acts.calls if c[0] == "drill"] == [] and "buffer_error" not in events
+    _tick(rule, _state(cereal=5000), acts)               # now it can pay
+    assert [c[:2] for c in acts.calls if c[0] == "drill"] == [("drill", 3305)]
