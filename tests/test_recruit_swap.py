@@ -144,10 +144,39 @@ def test_the_same_type_army_is_still_preferred_as_host(tmp_path):
     assert acts.calls == [("drill", 3304, "S", "")]
 
 
-def test_the_army_cap_failure_is_reported_with_its_reason(tmp_path):
-    armies = [_army("F", "Đội 5", [3305] * 9), _army("N", "Nâng Cấp 1", [3305] * 9)]
+# ---- live 2026-10-03 (2nd try): every army was full (9/9) and the army cap was reached, so the
+# job died at once — while the generic recruit went on filling D1 with Mạch Đao. The job now WAITS
+# (keeping the generic recruit away, its army is claimed) and says what would free a slot. ----
+def _full_world():
+    return [_army("F", "Đội 5", [3305] * 9), _army("N", "Nâng Cấp 1", [3305] * 9),
+            _army("D", "D1", [3104] * 9)]
+
+
+def test_no_room_anywhere_waits_and_says_what_would_free_a_slot(tmp_path):
+    armies = _full_world()
     q = _queued(tmp_path, armies)
     acts = Acts(armies, refuse="500054")
     ev = []
     q.process(acts, lambda k, d=None: ev.append((k, d)))
-    assert ev and ev[0][0] == "pawn_move_failed" and "giới hạn số đội" in ev[0][1]["reason"]
+    assert "pawn_move_failed" not in [k for k, _ in ev]
+    assert q.pending()                                     # kept
+    notes = [d.get("note", "") for k, d in ev if k == "pawn_move_progress"]
+    assert notes and "giải tán" in notes[0]
+    q.process(acts, lambda k, d=None: ev.append((k, d)))   # (wait ticks) and no second note
+    q.process(acts, lambda k, d=None: ev.append((k, d)))
+    assert len([1 for k, d in ev if k == "pawn_move_progress"]) == 1
+    assert q.army_uids()                                   # the generic recruit stays away
+
+
+def test_a_slot_freed_later_lets_the_job_go_on(tmp_path):
+    armies = _full_world()
+    q = _queued(tmp_path, armies)
+    acts = Acts(armies, refuse="500054")
+    q.process(acts, lambda *a: None)
+    armies[2]["pawns"].pop()                               # the player dismissed a Mạch Đao
+    acts.refuse = None
+    job = next(iter(q.pending().values()))
+    job["wait"] = 0
+    q._save({k: job for k in q.pending()})
+    q.process(acts, lambda *a: None)
+    assert ("drill", 3304, "D", "") in acts.calls
