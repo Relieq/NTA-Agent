@@ -121,3 +121,33 @@ def test_short_cereal_waits_and_keeps_the_job(tmp_path):
     ev = []
     q.process(acts, lambda k, d=None: ev.append(k))
     assert q.pending() and "pawn_move_failed" not in ev     # kept, asked again later
+
+
+# ---- live 2026-10-03: the confirmed job died in 13 s ("đã đạt giới hạn số đội") although D1 — an
+# idle army of another type with room, at the city — could host the recruit; and the player was
+# never told (no screen showed the failure). -------------------------------------------------
+def test_an_idle_army_of_another_type_hosts_the_recruit_when_no_army_of_the_same_type_has_room(tmp_path):
+    armies = [_army("F", "Đội 5", [3305] * 9, state=1),
+              _army("N", "Nâng Cấp 1", [3305] * 9),                  # buffer + full
+              _army("D", "D1", [3104] * 8)]                           # junk spare with room
+    q = _queued(tmp_path, armies)
+    acts = Acts(armies)
+    q.process(acts, lambda *a: None)
+    assert acts.calls == [("drill", 3304, "D", "")]
+
+
+def test_the_same_type_army_is_still_preferred_as_host(tmp_path):
+    armies = _armies() + [_army("D", "D1", [3104] * 3)]
+    q = _queued(tmp_path, armies)
+    acts = Acts(armies)
+    q.process(acts, lambda *a: None)
+    assert acts.calls == [("drill", 3304, "S", "")]
+
+
+def test_the_army_cap_failure_is_reported_with_its_reason(tmp_path):
+    armies = [_army("F", "Đội 5", [3305] * 9), _army("N", "Nâng Cấp 1", [3305] * 9)]
+    q = _queued(tmp_path, armies)
+    acts = Acts(armies, refuse="500054")
+    ev = []
+    q.process(acts, lambda k, d=None: ev.append((k, d)))
+    assert ev and ev[0][0] == "pawn_move_failed" and "giới hạn số đội" in ev[0][1]["reason"]

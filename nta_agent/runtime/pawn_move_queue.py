@@ -205,6 +205,7 @@ class PawnMoveQueue:
         (a new army is made)."""
         from nta_agent.execution.heuristics import _main_pawn_type
         cap = int(job.get("cap", 9))
+        fallback = None
         for x in armies:
             if str(x.get("uid")) == job["a"] or str(x.get("name", "")).startswith("Nâng Cấp"):
                 continue
@@ -214,7 +215,9 @@ class PawnMoveQueue:
                 continue
             if _main_pawn_type(x) == int(job["pawn_a"]):
                 return x
-        return None
+            if fallback is None and (x.get("pawns") or x.get("drillPawns")):
+                fallback = x    # another type: still better than a new army (the army cap)
+        return fallback
 
     def _run(self, actions, job: dict, by_uid: dict) -> bool:
         op = job["op"]

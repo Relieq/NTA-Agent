@@ -265,3 +265,8 @@ def test_dig_suggestion_card_has_a_confirm_button():
     btn = card[:card.index("✖ Huỷ mục tiêu")]
     assert "✔ Xác nhận dig" in btn and '@click="digConfirm"' in btn
     assert "dig.state==='preview'" in btn.split("✔ Xác nhận dig")[0].rsplit("<button", 1)[1]
+
+
+def test_chat_panel_polls_the_job_notices():
+    t = _c("BrainChatPanel.js")
+    assert "/api/chat/notices" in t and "setInterval" in t and "onUnmounted" in t
