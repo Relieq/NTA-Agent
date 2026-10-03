@@ -715,3 +715,21 @@ def test_a_dismiss_step_runs_instead_of_crashing(tmp_path):
         "approved": True, "setup_done": False, "buffers": {}})
     _tick(rule, _state(), acts)
     assert ("dismiss", "D1") in acts.calls
+
+
+def test_dismissing_an_empty_or_vanished_pawn_army_never_loops(tmp_path):
+    # the server answers 500017 for an army with nothing to dismiss: mark the step done
+    # (say so) instead of failing again at every check
+    class Refuse(FakeActions):
+        def dismiss_army(self, index, army_uid, pawn_id=0):
+            raise RuntimeError("game/HD_DismissArmy: ecode.500017")
+    rule = _rule(tmp_path)
+    empty = {"uid": "E", "name": "D2", "index": MAIN, "state": 0, "pawns": []}
+    acts = Refuse(_group() + _spares() + [empty])
+    buffers.save(tmp_path / "buffers.json", {
+        "proposal": {"buffers": [{"name": "Nâng Cấp 1", "base_uid": "D5",
+                                  "types": {"3305": 9}, "merge": [], "recruit": {}}],
+                     "dismiss": ["E"]},
+        "approved": True, "setup_done": False, "buffers": {}})
+    _tick(rule, _state(), acts)                       # must not raise
+    assert "dismiss:E" in buffers.load(tmp_path / "buffers.json")["done"]

@@ -2288,7 +2288,19 @@ class BufferLeveling:
 
         def run():
             if kind == "dismiss":
-                actions.dismiss_army(main, step[1], 0)
+                # an army with no pawns has nothing to dismiss (the server says 500017) —
+                # usually a fresh one whose recruit is still in training: leave it, move on
+                empty = not (by_uid.get(step[1]) or {}).get("pawns")
+                try:
+                    if not empty:
+                        actions.dismiss_army(main, step[1], 0)
+                except Exception as e:
+                    if "ecode.500017" not in str(e):
+                        raise
+                    empty = True
+                if empty:
+                    self._emit("buffer_setup", {"step": sid,
+                                                "note": "đội rỗng (đang chiêu mộ?) — bỏ qua giải tán"})
             elif kind == "merge":
                 _, base, src, pawn, swap_out = step
                 if swap_out:

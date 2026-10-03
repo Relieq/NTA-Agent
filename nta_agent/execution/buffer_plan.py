@@ -134,7 +134,9 @@ def propose(group_armies, spare_armies, target_lv: int, *, rows, barracks_lv: in
     short = new_armies - max(0, army_cap - army_count)
     if short > 0:
         merged_from = {m["from_uid"] for b in buffers for m in b["merge"]}
-        free = sorted((a for u, a in spares.items() if u not in used_armies and u not in merged_from),
+        # (an army with no pawns is a fresh one still recruiting — never a dismissal)
+        free = sorted((a for u, a in spares.items() if u not in used_armies and u not in merged_from
+                       and (a.get("pawns") or [])),
                       key=lambda a: (len(a.get("pawns") or []), str(a["uid"])))
         dismiss = [str(a["uid"]) for a in free[:short]]
 
