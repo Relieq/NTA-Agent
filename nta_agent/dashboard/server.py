@@ -432,7 +432,10 @@ def handle_chat(cfg, message, *, history=None, propose=None):
     from nta_agent.brain.guard import sanitize_dismissals, sanitize_strike
     # Dismissals are irreversible: PROPOSED here, confirmed on the dashboard, then queued.
     raw_dis = edits.get("army_dismissals") if isinstance(edits, dict) else None
+    from nta_agent.brain.guard import reconcile_dismissals
+    raw_dis, dis_fix = reconcile_dismissals(raw_dis, message, armies)
     dis_clean, dis_notes = sanitize_dismissals(raw_dis, armies)
+    dis_notes = list(dis_fix) + list(dis_notes)
     from nta_agent.execution.profile import active_formation
     group = {str(u) for u in (active_formation(profile).get("group") or ())}
     dismissals = []
