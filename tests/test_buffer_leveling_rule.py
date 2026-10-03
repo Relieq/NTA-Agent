@@ -861,7 +861,7 @@ class MovingActions(FakeActions):
 
 
 def test_two_buffers_serve_the_same_army_without_ping_pong(tmp_path):
-    hunter = lambda u, lv: {"uid": u, "id": 3304, "lv": lv}   # noqa: E731
+    hunter = lambda u, lv: {"uid": u, "id": 3304, "lv": lv}
     g0 = {"uid": "G0", "name": "Đội 0", "index": FIELD, "state": 0,
           "pawns": [_imp("w1", 1), _imp("w2", 1), hunter("wh", 1), _imp("ok", 3)]}
     b1 = {"uid": "B", "name": "Nâng Cấp 1", "index": MAIN, "state": 0,
