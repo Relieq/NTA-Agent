@@ -180,3 +180,17 @@ def test_a_slot_freed_later_lets_the_job_go_on(tmp_path):
     q._save({k: job for k in q.pending()})
     q.process(acts, lambda *a: None)
     assert ("drill", 3304, "D", "") in acts.calls
+
+
+def test_waiting_for_cereal_never_gives_up_before_the_age_limit(tmp_path):
+    # ~10 min of production can be needed for one recruit: 500012 must not count toward max_tries
+    q = _queued(tmp_path)
+    acts = Acts(_armies(), refuse="500012")
+    ev = []
+    for _ in range(60):
+        job = next(iter(q.pending().values()), None)
+        if job is not None:
+            job["wait"] = 0
+            q._save({k: job for k in q.pending()})
+        q.process(acts, lambda k, d=None: ev.append(k))
+    assert q.pending() and "pawn_move_failed" not in ev
