@@ -103,6 +103,14 @@ class DeviceManager:
             raise AdbError(f"adb {' '.join(args)} failed: {proc.stderr.decode('utf-8', 'ignore')}")
         return proc.stdout
 
+    def install(self, apk_path: str, timeout: float = 300) -> str:
+        """``adb install -r`` (replace the app, keep its data). Returns adb's output — also on
+        a refusal ("Failure [INSTALL_FAILED_…]"), which is information, not an error."""
+        try:
+            return self._adb(["install", "-r", str(apk_path)], timeout=timeout).decode("utf-8", "ignore")
+        except AdbError as e:
+            return str(e)
+
     def shell(self, command: str, timeout: float = 30) -> str:
         """Run a shell command on the device, returning decoded stdout."""
         return self._adb(["shell", command], timeout=timeout).decode("utf-8", "ignore")

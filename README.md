@@ -220,7 +220,8 @@ Chỉ cần LDPlayer khi:
 | Trường hợp | Làm gì |
 |---|---|
 | Thiết lập lần đầu, hoặc game cập nhật | Chạy các bước ở tab Thiết lập (bước 5 trích lại dữ liệu game). |
-| **Chuỗi token bị đứt**, thường là sau khi bạn tự vào game (giả lập hay điện thoại) | Nếu LDPlayer đang mở, agent tự lấy token mới. Nếu không, agent chuyển **CRASHED**: mở LDPlayer, đăng nhập game, thoát hẳn game, chạy lại bước 7 rồi bấm Start. |
+| **Chuỗi token bị đứt**, thường là sau khi bạn tự vào game (giả lập hay điện thoại) | Agent **tự mở LDPlayer** (qua `ldconsole`), lấy token mới, rồi tắt lại. Giả lập bạn đang tự dùng thì không bị đụng tới. Chỉ khi cách đó thất bại (ví dụ phiên Google trong app đã hết) agent mới chuyển **CRASHED**: mở LDPlayer, đăng nhập game, thoát hẳn game, chạy lại bước 7 rồi bấm Start. Tắt tính năng tự mở bằng Cài đặt → "Tự bật giả lập khi cần token" = 0. |
+| **Game cập nhật** (số phiên bản mới ở trang tải game) | Không cần giả lập: Cài đặt → **Dữ liệu game** → "Cập nhật dữ liệu game" (dừng agent trước). Tool tải APK từ trang tải chính thức (kiểm md5), trích lại khoá / giao thức / bảng dữ liệu và sao lưu bản cũ. Dashboard tự kiểm tra mỗi 6 giờ. App trong giả lập là bản riêng: khi cần lấy token mà app quá cũ, tool cài đè APK bằng `adb install -r` (giữ dữ liệu và phiên đăng nhập, không bao giờ gỡ app). |
 | Bạn muốn tự chơi | Bấm **⏹ Stop** agent trước (chỉ một phiên được đăng nhập). |
 
 ### Khởi động lại

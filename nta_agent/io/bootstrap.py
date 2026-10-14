@@ -92,33 +92,52 @@ def refresh_token_via_app(
     return token
 
 
-def make_token_refresher(dm: DeviceManager, token_path: Path, **kwargs):
+def make_token_refresher(dm: DeviceManager, token_path: Path, power=None, before_oauth=None, **kwargs):
     """Return a zero-arg callable for GameSession.token_refresher.
 
     Cheapest first (user 2026-09-27): if the game in the emulator holds a token we
     have not tried yet (the player logged in there, then quit), take it — no app
-    restart, no tap. Otherwise (or when that one was spent too) run the OAuth flow."""
+    restart, no tap. Otherwise (or when that one was spent too) run the OAuth flow.
+
+    ``power`` (an :class:`~nta_agent.io.emulator.EmulatorPower`) starts the emulator when it
+    is not running and stops it again afterwards; one the player already runs is left alone.
+    ``before_oauth(dm)`` runs just before the OAuth flow (e.g. bring the app up to date)."""
     tried: set[str] = set()
 
     def _refresh() -> bool:
+        launched = False
+        if power is not None:
+            try:
+                launched = bool(power.ensure_up(dm))
+            except Exception:
+                return False
         try:
-            current = token_path.read_text().strip() if token_path.exists() else ""
-        except OSError:
-            current = ""
-        tried.add(current)
-        try:
-            game = read_account_token(dm)
-        except Exception:
-            game = ""
-        if game and len(game) >= 32 and game not in tried:
-            tried.add(game)
-            token_path.parent.mkdir(parents=True, exist_ok=True)
-            token_path.write_text(game)
-            return True
-        try:
-            refresh_token_via_app(dm, token_path, **kwargs)
-            tried.clear()
-            return True
-        except Exception:
-            return False
+            try:
+                current = token_path.read_text().strip() if token_path.exists() else ""
+            except OSError:
+                current = ""
+            tried.add(current)
+            try:
+                game = read_account_token(dm)
+            except Exception:
+                game = ""
+            if game and len(game) >= 32 and game not in tried:
+                tried.add(game)
+                token_path.parent.mkdir(parents=True, exist_ok=True)
+                token_path.write_text(game)
+                return True
+            try:
+                if before_oauth is not None:
+                    try:
+                        before_oauth(dm)
+                    except Exception:
+                        pass  # an app update that fails must not stop the login
+                refresh_token_via_app(dm, token_path, **kwargs)
+                tried.clear()
+                return True
+            except Exception:
+                return False
+        finally:
+            if launched and power is not None:
+                power.shutdown()
     return _refresh

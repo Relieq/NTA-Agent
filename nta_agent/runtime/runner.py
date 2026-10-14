@@ -34,7 +34,15 @@ def run_services(state, cfg, service, brain, forts, safe, observer=None) -> bool
 
 def build_session(cfg: RuntimeConfig) -> GameSession:
     dm = DeviceManager.connect()
-    refresher = make_token_refresher(dm, cfg.token_path)
+    # when the token chain breaks, the emulator is started for the refresh (and stopped again)
+    # instead of waiting for the player to open it; one already running is never touched
+    from nta_agent import paths
+    from nta_agent.io.appupdate import ensure_app_current
+    from nta_agent.io.emulator import default_power
+    power = default_power(dm.settings.adb_path, dm.serial)
+    refresher = make_token_refresher(
+        dm, cfg.token_path, power=power,
+        before_oauth=lambda d: ensure_app_current(d, paths.data_dir() / "gameupdate"))
     session = GameSession(server=ServerConfig(host=cfg.host),
                           token_path=cfg.token_path, token_refresher=refresher)
     session.connect(timeout=15)
