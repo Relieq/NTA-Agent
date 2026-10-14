@@ -271,9 +271,10 @@ def test_cleared_goal_releases_armies_even_during_blocked_cooldown():
     assert r.locked_uids == set() and r._cooldown == 0
 
 
-def test_complete_armies_are_named_while_the_group_is_still_assembling():
-    """2026-09-25: 4 IMP armies were full but kept 'D2'/'D1' until the whole group
-    (waiting on 7 recruits) was done. Name each army as soon as it's complete."""
+def test_assigned_armies_are_named_at_once_while_the_group_is_still_assembling():
+    """2026-09-25: armies kept 'D2'/'D1' until the whole group was done; 2026-10-14 the player
+    wants the names FIRST (even for armies still short of pawns): the first sign that the
+    command is being worked on."""
     target = [{"pawn_id": 3206, "armies": 1, "size": 3, "names": ["Đội 1"]},
               {"pawn_id": 3305, "armies": 2, "size": 3, "names": ["Đội 2", "Đội 3"]}]
     armies = [_army("tank", [3206]), _army("imp1", [3305] * 3), _army("imp2", [3305] * 3)]
@@ -283,7 +284,7 @@ def test_complete_armies_are_named_while_the_group_is_still_assembling():
     r.applies(_state(), acts)
     renamed = [c[1:3] for c in acts.calls if c[0] == "rename"]
     assert ("imp1", "Đội 2") in renamed and ("imp2", "Đội 3") in renamed
-    assert all(u != "tank" for u, _ in renamed)          # incomplete: not yet
+    assert ("tank", "Đội 1") in renamed                  # incomplete too: named right away
 
 
 def test_failed_rename_backs_off_instead_of_retrying_every_tick():

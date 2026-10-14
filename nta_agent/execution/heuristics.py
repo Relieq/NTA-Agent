@@ -3248,9 +3248,10 @@ class ArmyComposer:
             if u and have < a["size"]:
                 incomplete.add(u)
         self.locked_uids = incomplete
-        complete = {str(a["uid"]) for a in plan["assign"] if a["uid"] and a["uid"] not in incomplete}
-        if complete and not plan["done"]:
-            self._name_group(actions, target, plan["assign"], by_uid, only=complete)
+        if not plan["done"] and any(a.get("uid") for a in plan["assign"]):
+            # name EVERY assigned army at once (player 2026-10-14): "Đội 1..5" appearing is the
+            # first sign the command is being worked on — hours before the group is complete
+            self._name_group(actions, target, plan["assign"], by_uid)
         issues = list(plan["report"].issues)
         if plan["blocked"]:
             self._status({"active": True, "blocked": True, "done": False,
