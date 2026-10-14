@@ -2449,6 +2449,17 @@ class BufferLeveling:
         # dismiss step -> IndexError on every check, the setup never moved)
         need = ([step[2], step[1]] if kind == "merge"
                 else [step[1]] if kind in ("dismiss", "rename") else [])
+        if kind == "recruit":
+            # the pawn is drilled at the barracks in the city: an army standing anywhere else
+            # is "not found" for the server (ecode 500011, looped for 8 h on 2026-10-14) —
+            # bring the buffer home first; busy -> wait
+            buf0 = next((a for a in by_uid.values() if a.get("name") == step[1]), None)
+            if buf0 is not None and int(buf0.get("index", 0) or 0) != main:
+                if not is_idle(buf0):
+                    return False
+                moves0 = [{"uid": str(buf0["uid"]), "index": int(buf0["index"])}]
+                self._pending = ("move", lambda: actions.move_cell_army(moves0, main))
+                return True
         present = [by_uid[u] for u in need if u in by_uid]
         if len(present) < len(need):  # an army vanished: skip the step, say so
             self._emit("buffer_error", {"stage": kind, "step": sid, "msg": "army not found"})

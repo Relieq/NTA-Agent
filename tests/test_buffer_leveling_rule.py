@@ -952,3 +952,28 @@ def test_a_dig_army_standing_idle_at_the_city_gets_its_weak_pawns_swapped(tmp_pa
         acts.advance()
         _tick(rule, _state(), acts)
     assert {p["uid"] for p in g0["pawns"]} == {"r1", "r2"}        # swapped during the dig
+
+
+# ---- 2026-10-14: the IMP buffer sat idle at a far cell (180079); every setup recruit step asked
+# the server to drill into an army that is not in the city -> ecode 500011 about every 75 s for
+# 8 hours, the setup never ended, so the leveling never started and the cereal stayed at the cap.
+def test_a_setup_recruit_first_brings_an_away_buffer_home(tmp_path):
+    rule = _rule(tmp_path)
+    world = _recruit_setup(tmp_path, have=3)
+    world[-1]["index"] = MAIN + 7                       # 'Nâng Cấp 1' stands somewhere else
+    acts = FakeActions(world)
+    _tick(rule, _state(), acts)
+    assert [c for c in acts.calls if c[0] == "drill"] == []
+    assert ("move", ["NC1"], MAIN) in acts.calls
+
+
+def test_a_busy_away_buffer_just_waits_and_the_recruit_goes_on_once_home(tmp_path):
+    rule = _rule(tmp_path)
+    world = _recruit_setup(tmp_path, have=3)
+    world[-1]["index"], world[-1]["state"] = MAIN + 7, 1       # still marching
+    acts = FakeActions(world)
+    _tick(rule, _state(), acts)
+    assert acts.calls == []
+    world[-1]["index"], world[-1]["state"] = MAIN, 0
+    _tick(rule, _state(), acts)
+    assert [c[:3] for c in acts.calls if c[0] == "drill"] == [("drill", 3305, "NC1")]
