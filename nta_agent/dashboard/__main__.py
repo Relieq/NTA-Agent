@@ -22,6 +22,7 @@ def main(argv: list[str] | None = None) -> int:
         return 2
     srv = serve(cfg, args.port)
     port = srv.server_address[1]
+    srv.game_update.start_periodic()   # keeps "is there a newer game build?" fresh (no emulator)
     sys.stdout.write(f"dashboard on http://127.0.0.1:{port}\n")
     sys.stdout.flush()
     try:

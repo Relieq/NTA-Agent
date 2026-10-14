@@ -69,3 +69,33 @@ def test_unknown_agent_action_404(tmp_path):
             assert e.code == 404
     finally:
         srv.shutdown()
+
+
+# ---- game data update (no emulator) ------------------------------------------------------
+class FakeUpdate:
+    def __init__(self): self.calls = []
+    def state(self): return {"status": {"update_available": True, "reason": "apk mới"}, "error": ""}
+    def check(self): self.calls.append("check"); return self.state()
+    def apply(self): self.calls.append("apply"); return True
+
+
+def test_gameupdate_endpoints(tmp_path):
+    srv = _serve(tmp_path)
+    srv.game_update = FakeUpdate()
+    try:
+        port = srv.server_address[1]
+        r = _get(port, "/api/gameupdate")
+        assert r["status"]["update_available"] is True and r["agent_running"] is False
+        assert srv.game_update.calls == []                        # a plain read never hits the network
+        _get(port, "/api/gameupdate?refresh=1")
+        assert srv.game_update.calls == ["check"]
+        assert _post(port, "/api/gameupdate/apply")["ok"] is True
+        assert srv.game_update.calls == ["check", "apply"]
+        srv.supervisor.status = lambda: {"engine": "RUNNING", "pid": 42, "uptime": 1.0}
+        try:
+            _post(port, "/api/gameupdate/apply")
+            raise AssertionError("must refuse while the agent runs")
+        except urllib.error.HTTPError as e:
+            assert e.code == 409
+    finally:
+        srv.shutdown()

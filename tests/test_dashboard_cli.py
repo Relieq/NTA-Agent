@@ -2,8 +2,16 @@ from nta_agent.dashboard import __main__ as cli
 from nta_agent.runtime.config import ConfigError
 
 
+class _FakeUpdate:
+    started = False
+
+    def start_periodic(self):
+        _FakeUpdate.started = True
+
+
 class FakeSrv:
     server_address = ("127.0.0.1", 8787)
+    game_update = _FakeUpdate()
 
     def serve_forever(self):
         raise KeyboardInterrupt()
@@ -30,3 +38,4 @@ def test_main_serves_and_returns_0(monkeypatch):
     monkeypatch.setattr(cli, "serve", fake_serve)
     assert cli.main(["--port", "9000"]) == 0
     assert calls["args"] == ("CFG", 9000)
+    assert _FakeUpdate.started is True            # the periodic game-build check is armed

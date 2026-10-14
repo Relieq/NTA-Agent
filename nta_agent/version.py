@@ -17,11 +17,29 @@ GAME_VERSION = "4.4.8"
 GAME_APK_VERSIONS = ("4.4.7",)
 
 
+def _vkey(v: str) -> tuple:
+    import re
+    return tuple(int(x) for x in re.findall(r"\d+", str(v or "")))
+
+
 def handshake_version() -> str:
     """The version declared at login: the user's override (Settings ``game_version`` /
-    env ``NTA_GAME_VERSION``, for experiments) or :data:`GAME_VERSION`."""
+    env ``NTA_GAME_VERSION``, for experiments), else the NEWER of :data:`GAME_VERSION` and the
+    scripts version recorded by the last in-place game-data update (``gameupdate``), so a
+    data update takes effect without a new release — and a stale record never downgrades."""
     try:
         from nta_agent import settings
-        return str(settings.get("game_version") or "").strip() or GAME_VERSION
+        override = str(settings.get("game_version") or "").strip()
     except Exception:
-        return GAME_VERSION
+        override = ""
+    if override:
+        return override
+    try:
+        import json
+
+        from nta_agent import paths
+        meta = json.loads((paths.gamedata_dir() / "meta.json").read_text(encoding="utf-8"))
+        recorded = str(meta.get("scripts_version") or "").strip()
+    except Exception:
+        recorded = ""
+    return recorded if recorded and _vkey(recorded) > _vkey(GAME_VERSION) else GAME_VERSION

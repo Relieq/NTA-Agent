@@ -63,3 +63,18 @@ def test_settings_validate_the_version_format(store):
     assert handshake_version() == "4.4.9"
     assert update_settings({"game_version": ""})["ok"] is True      # blank = back to default
     assert handshake_version() == GAME_VERSION
+
+
+def test_extracted_game_data_can_raise_the_declared_version_never_lower_it(store, monkeypatch, tmp_path):
+    # an in-place data update (gameupdate) records the scripts version it extracted; the login
+    # declares the NEWER of that and the code default (a stale meta must not downgrade a newer app)
+    import json
+
+    from nta_agent import paths
+    monkeypatch.setattr(paths, "gamedata_dir", lambda: tmp_path)
+    (tmp_path / "meta.json").write_text(json.dumps({"scripts_version": "99.0.1"}), encoding="utf-8")
+    assert handshake_version() == "99.0.1"
+    (tmp_path / "meta.json").write_text(json.dumps({"scripts_version": "1.0.0"}), encoding="utf-8")
+    assert handshake_version() == GAME_VERSION
+    settings.set_values({"game_version": "9.9.9"})            # the user's override still wins
+    assert handshake_version() == "9.9.9"

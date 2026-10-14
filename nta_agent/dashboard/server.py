@@ -1200,6 +1200,8 @@ class DashboardServer(ThreadingHTTPServer):
         self.chat_history = []
         from nta_agent.dashboard.supervisor import AgentSupervisor
         self.supervisor = AgentSupervisor(cfg)
+        from nta_agent.gameupdate import GameUpdateService
+        self.game_update = GameUpdateService(cfg.log_dir / "gameupdate.json")
 
 
 class Handler(BaseHTTPRequestHandler):
@@ -1240,6 +1242,11 @@ class Handler(BaseHTTPRequestHandler):
                 for b in state.get("builds", []):
                     b["name"] = build_label(self.server.build_names, b.get("id", 0))
             self._json(200, state)
+        elif parsed.path == "/api/gameupdate":
+            q = parse_qs(parsed.query)
+            svc = self.server.game_update
+            d = svc.check() if q.get("refresh", ["0"])[0] == "1" else svc.state()
+            self._json(200, {**d, "agent_running": bool(self.server.supervisor.status().get("pid"))})
         elif parsed.path == "/api/chat/notices":
             q = parse_qs(parsed.query)
             try:
@@ -1337,6 +1344,13 @@ class Handler(BaseHTTPRequestHandler):
                 self._json(404, {"ok": False, "error": "unknown agent action"})
                 return
             self._json(200, fn())
+            return
+        if parsed.path == "/api/gameupdate/apply":
+            if self.server.supervisor.status().get("pid"):
+                # would swap config tables / schema / engine under a running agent
+                self._json(409, {"ok": False, "error": "Dừng agent trước khi cập nhật dữ liệu game."})
+                return
+            self._json(200, {"ok": bool(self.server.game_update.apply())})
             return
         if parsed.path in ("/api/setup/run", "/api/setup/override"):
             body = self._body()
