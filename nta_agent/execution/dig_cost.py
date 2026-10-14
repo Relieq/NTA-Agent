@@ -43,6 +43,8 @@ class CellCost:
     or None when unknown), memoised per cell.
     """
 
+    MAX_VERIFY_FAILS = 5   # consecutive failed probes before verification is given up
+
     def __init__(self, predict: Callable, world, *, dist_fn: Callable[[int], int],
                  max_loss: float, speed: float, verify: Callable | None = None):
         self.predict = predict
@@ -58,6 +60,7 @@ class CellCost:
         self.why: dict[int, str] = {}                 # hard cell -> why (diagnostic)
         self.rough = False   # some cell was estimated without the sim
         self.sims = 0
+        self._verify_fails = 0   # consecutive probe failures (the breaker below)
         self.verified = 0
 
     def _key(self, idx: int) -> tuple[int, int]:
@@ -92,9 +95,18 @@ class CellCost:
         if self.memo[key] is not None or self.verify is None:
             return self.memo[key]
         # screened hard: settle it on this cell's real defenders
+        if self._verify_fails >= self.MAX_VERIFY_FAILS:
+            # the probes keep failing (a new match, a dead session...): stop asking — hundreds
+            # of failing calls at ~1 s each froze the whole agent loop (2026-10-14)
+            self.rough = True
+            self.cell[idx], self.cell_loss[idx] = None, self.loss.get(key)
+            self.why.setdefault(idx, "verify_skipped")
+            return self.cell[idx]
         try:
             real = self.verify(idx)
+            self._verify_fails = 0
         except Exception as e:  # a probe failure keeps the screen's verdict
+            self._verify_fails += 1
             log.warning("dig cost verify failed for %s: %s", idx, e)
             self.why[idx] = f"verify_failed: {str(e)[:80]}"
             real = None
