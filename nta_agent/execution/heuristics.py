@@ -3248,10 +3248,16 @@ class ArmyComposer:
             if u and have < a["size"]:
                 incomplete.add(u)
         self.locked_uids = incomplete
-        if not plan["done"] and any(a.get("uid") for a in plan["assign"]):
-            # name EVERY assigned army at once (player 2026-10-14): "Đội 1..5" appearing is the
-            # first sign the command is being worked on — hours before the group is complete
-            self._name_group(actions, target, plan["assign"], by_uid)
+        # name each assigned army AS SOON AS it holds a pawn of its row's type (player
+        # 2026-10-14): "Đội 1..5" appearing is the first sign the command is being worked on —
+        # hours before the group is complete. A placeholder with only a wrong-type pawn (kept
+        # so the army survives) waits for its first right pawn: the name comes with it.
+        typed = {str(a["uid"]) for a in plan["assign"]
+                 if a.get("uid") and by_uid.get(str(a["uid"]))
+                 and any(int(p.get("id", 0) or 0) == int(a["pawn_id"])
+                         for p in by_uid[str(a["uid"])].get("pawns") or [])}
+        if not plan["done"] and typed:
+            self._name_group(actions, target, plan["assign"], by_uid, only=typed)
         issues = list(plan["report"].issues)
         if plan["blocked"]:
             self._status({"active": True, "blocked": True, "done": False,
