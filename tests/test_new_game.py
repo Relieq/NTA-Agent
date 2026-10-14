@@ -71,6 +71,7 @@ def test_new_match_resets_everything_bound_to_the_old_one(tmp_path):
              cfg.composition_status_path: '{"active": true, "blocked": true}',
              cfg.pending_renames_path: '{"old": {"name": "x"}}',
              cfg.commands_path.with_name("pending_dismissals.json"): '{"old": {}}',
+             cfg.commands_path.with_name("pending_pawn_moves.json"): '{"recruit_swap|old": {}}',
              cfg.commands_path.with_name("equip_sync.json"): '{"3305": "6117_10"}'}
     for p, txt in stale.items():
         p.write_text(txt, encoding="utf-8")
@@ -97,7 +98,8 @@ def test_new_match_resets_everything_bound_to_the_old_one(tmp_path):
     assert json.loads(cfg.forge_targets_path.read_text(encoding="utf-8")) == {}
     assert json.loads(cfg.commands_path.with_name("equip_sync.json").read_text(encoding="utf-8")) == {}
     for p in (cfg.dig_state_path, cfg.dig_request_path, cfg.buffers_path, cfg.spare_advice_path,
-              cfg.pending_renames_path, cfg.commands_path.with_name("pending_dismissals.json")):
+              cfg.pending_renames_path, cfg.commands_path.with_name("pending_dismissals.json"),
+              cfg.commands_path.with_name("pending_pawn_moves.json")):
         assert not p.exists(), p
     assert json.loads(cfg.brain_advice_path.read_text(encoding="utf-8")) == []
     assert json.loads(cfg.composition_status_path.read_text(encoding="utf-8")) == {"active": False}
