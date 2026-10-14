@@ -46,6 +46,7 @@ def _reset_match_files(cfg) -> None:
     if sibling is not None:
         _write_json(Path(sibling).with_name("equip_sync.json"), {})
         _drop(Path(sibling).with_name("pending_dismissals.json"))
+        _drop(Path(sibling).with_name("pending_pawn_moves.json"))   # chat swaps / recruit jobs of old armies
     for name in ("dig_state_path", "dig_request_path", "buffers_path", "spare_advice_path",
                  "pending_renames_path"):
         if p(name) is not None:
