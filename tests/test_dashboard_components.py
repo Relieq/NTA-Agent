@@ -270,3 +270,8 @@ def test_dig_suggestion_card_has_a_confirm_button():
 def test_chat_panel_polls_the_job_notices():
     t = _c("BrainChatPanel.js")
     assert "/api/chat/notices" in t and "setInterval" in t and "onUnmounted" in t
+
+
+def test_settings_panel_has_the_game_data_update_block():
+    t = _c("SettingsPanel.js")
+    assert "/api/gameupdate" in t and "applyGu" in t and "checkGu" in t and "không cần bật giả lập" in t

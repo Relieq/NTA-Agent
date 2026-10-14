@@ -25,6 +25,18 @@ export default {
   const cur=ref({}); const draft=ref({}); const msg=ref(""); const ok=ref(true);
   const app=ref({}); const upd=ref(null);
   const models=ref([]); const modelsErr=ref(""); const custom=ref(false);
+  const gu=ref(null);   // game data update (no emulator): cached check + apply progress
+  let guTimer=null;
+  async function loadGu(){ gu.value=await getJSON("/api/gameupdate");
+   const run=gu.value&&gu.value.apply&&gu.value.apply.state==="running";
+   if(run && !guTimer){ guTimer=setInterval(loadGu, 3000); }
+   if(!run && guTimer){ clearInterval(guTimer); guTimer=null; } }
+  async function checkGu(){ gu.value=await getJSON("/api/gameupdate?refresh=1"); }
+  async function applyGu(){
+   if(!confirm("Tải bản APK mới nhất từ trang tải game (~120 MB) và trích lại dữ liệu? Dữ liệu cũ được sao lưu. Không cần bật giả lập.")) return;
+   const r=await postJSON("/api/gameupdate/apply",{});
+   flash((r&&r.ok)?"Đang cập nhật dữ liệu game…":((r&&r.error)||"Lỗi"), !!(r&&r.ok));
+   loadGu(); }
   async function loadModels(){
    const r=await getJSON("/api/settings/models");
    models.value=(r&&r.models)||[]; modelsErr.value=(r&&!r.ok&&r.error)||"";
@@ -39,7 +51,7 @@ export default {
    else { custom.value=false; draft.value.openai_model=v; }
   }
   async function load(){ cur.value=(await getJSON("/api/settings"))||{}; app.value=(await getJSON("/api/app"))||{};
-   upd.value=await getJSON("/api/update/check"); loadModels(); }
+   upd.value=await getJSON("/api/update/check"); loadModels(); loadGu(); }
   async function checkNow(){ upd.value=await getJSON("/api/update/check?force=1");
    flash(upd.value&&upd.value.update ? "Có bản mới "+upd.value.update.version : ((upd.value&&upd.value.error)||"Đang dùng bản mới nhất"), true); }
   async function rollback(){
@@ -66,7 +78,7 @@ export default {
    flash(r&&r.ok ? "Key hợp lệ ✅" : ((r&&r.error)||"Lỗi"), !!(r&&r.ok));
   }
   onMounted(load);
-  return { FIELDS, cur, draft, msg, ok, app, upd, save, clear, testKey, checkNow, rollback,
+  return { FIELDS, cur, draft, msg, ok, app, upd, save, clear, testKey, checkNow, rollback, gu, checkGu, applyGu,
            models, modelsErr, custom, loadModels, modelOptions, pickModel, DEFAULT_MODEL };
  },
  template:`<div class="card full"><h2>Cài đặt</h2>
@@ -99,6 +111,19 @@ export default {
     <td style="text-align:right;white-space:nowrap">
      <button v-if="cur[f.key]&&cur[f.key].set" @click="clear(f.key)">Xoá</button></td>
    </tr></table>
+  <div style="border-top:1px solid var(--border,#30363d);margin-top:10px;padding-top:8px;font-size:13px">
+   <b>Dữ liệu game</b> <span class="muted" style="font-size:12px">— cập nhật từ trang tải game, không cần bật giả lập</span>
+   <div v-if="gu && gu.status" style="margin-top:4px">
+    Đang dùng script <b>{{ gu.status.installed_scripts }}</b> · trang tải: APK <b>{{ (gu.status.published||{}).apk_version }}</b>
+    <span v-if="gu.status.update_available" style="color:#d29922"> · có bản mới: {{ gu.status.reason }}</span>
+    <span v-else style="color:#199e70"> · đã mới nhất</span></div>
+   <div v-if="gu && gu.error" style="color:#da3633;font-size:12px">{{ gu.error }}</div>
+   <div v-if="gu && gu.apply" class="muted" style="font-size:12px">Lần cập nhật gần nhất: {{ gu.apply.state }} — {{ gu.apply.detail }}</div>
+   <div style="display:flex;gap:10px;align-items:center;margin-top:4px;flex-wrap:wrap">
+    <button @click="checkGu">Kiểm tra bản game mới</button>
+    <button :disabled="gu && (gu.agent_running || (gu.apply && gu.apply.state==='running'))" @click="applyGu"
+     :title="gu && gu.agent_running ? 'Dừng agent trước' : 'Tải APK, trích khoá + dữ liệu, sao lưu bản cũ'">Cập nhật dữ liệu game</button>
+    <span v-if="gu && gu.agent_running" class="muted" style="font-size:12px">dừng agent trước khi cập nhật</span></div></div>
   <div style="display:flex;gap:10px;align-items:center;margin-top:8px;flex-wrap:wrap">
    <button @click="save">Lưu</button>
    <button @click="testKey">Kiểm tra OpenAI key</button>
