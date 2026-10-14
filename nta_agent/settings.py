@@ -18,6 +18,9 @@ KEYS = {  # setting -> env var that overrides it
     "openai_api_key": "OPENAI_API_KEY",
     "openai_model": "OPENAI_MODEL",
     "brain_max_calls": "NTA_BRAIN_MAX_CALLS",
+    "auto_emulator": "NTA_AUTO_EMULATOR",     # "0"/"off" = never start LDPlayer by itself for a token
+    "ldplayer_index": "NTA_LDPLAYER_INDEX",   # instance to start (default: from the adb serial)
+    "ldconsole_path": "NTA_LDCONSOLE_PATH",   # ldconsole.exe when it is not next to adb.exe
     "keep_awake": "NTA_KEEP_AWAKE",   # "0"/"off" = let the PC sleep while the agent runs
     "distinct_id": "NTA_DISTINCT_ID",
     "adb_path": "NTA_ADB_PATH",

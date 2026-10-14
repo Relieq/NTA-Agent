@@ -11,6 +11,8 @@ const FIELDS=[
  {key:"brain_max_calls", label:"Giới hạn lượt gọi bộ não / phiên", placeholder:"50"},
  {key:"keep_awake", label:"Giữ máy không ngủ khi agent chạy", placeholder:"1 (bật) / 0 (tắt)",
   help:"Mặc định bật (Windows): chặn máy tự ngủ (kể cả Modern Standby) khi agent đang chạy; màn hình vẫn tự tắt được. Không chặn được việc bạn gập nắp / bấm nút nguồn. Có hiệu lực ở lần khởi động agent kế tiếp."},
+ {key:"auto_emulator", label:"Tự bật giả lập khi cần token", placeholder:"1 (bật) / 0 (tắt)",
+  help:"Mặc định bật: khi chuỗi token đứt, agent tự mở LDPlayer, lấy token rồi tắt lại (chỉ tắt nếu chính nó mở). Giả lập bạn đang tự dùng thì không bị đụng tới."},
  {key:"xxtea_key", label:"XXTEA key (tuỳ chọn)", secret:true,
   help:"Để trống — app tự tìm khoá trong chính bản game của bạn. Chỉ nhập nếu tự dò thất bại."},
  {key:"update_token", label:"GitHub token (cập nhật)", secret:true,
