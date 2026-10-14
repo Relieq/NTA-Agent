@@ -519,3 +519,22 @@ def test_a_fresh_composer_already_counts_a_goal_as_assembling():
     r = ArmyComposer(profile=_profile([{"pawn_id": 3201, "armies": 1, "size": 9}]))
     assert r.assembling is True
     assert ArmyComposer(profile=_profile([])).assembling is False
+
+
+def test_an_army_without_a_single_pawn_of_its_rows_type_keeps_its_name():
+    # 2026-10-14: a lone Đao Khiên standing in for a Cường Nỏ row was renamed 'Đội 3' — it only
+    # holds the place until its first Cường Nỏ arrives; the name comes with the right pawn
+    target = [{"pawn_id": 3206, "armies": 1, "size": 3, "names": ["Đội 1"]},
+              {"pawn_id": 3305, "armies": 2, "size": 3, "names": ["Đội 2", "Đội 3"]}]
+    armies = [_army("tank", [3206] * 3), _army("imp1", [3305] * 2), _army("stray", [3206])]
+    r = ArmyComposer(profile=_profile(target))
+    r._strike_uids = ["tank", "imp1", "stray"]
+    acts = NamingActions(armies)
+    r.applies(_state(), acts)
+    renamed = {c[1]: c[2] for c in acts.calls if c[0] == "rename"}
+    assert renamed.get("tank") == "Đội 1" and renamed.get("imp1") == "Đội 2"
+    assert "stray" not in renamed                      # no Cường Nỏ in it yet
+    armies[2]["pawns"].append({"uid": "s9", "id": 3305, "lv": 1})   # its first Cường Nỏ arrives
+    acts.calls.clear()
+    r.applies(_state(), acts)
+    assert {c[1]: c[2] for c in acts.calls if c[0] == "rename"}.get("stray") == "Đội 3"
