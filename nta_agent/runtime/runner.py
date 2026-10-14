@@ -415,6 +415,9 @@ def run(cfg: RuntimeConfig, *, ticks: int = 0, session=None, engine=None) -> Non
                      encoding="utf-8")
 
     def on_tick(i, fired, state):
+        # FIRST: a new match drops the old armies / dig / buffers state before anything acts on it
+        # (dig.tick used to run first and, on the previous match's dig, blocked the loop for minutes)
+        _safe(lambda: check_new_game(profile, cfg, state, on_event, services=[dig]))
         _safe(write_snapshot, state, cfg.snapshot_path)
         _safe(log.tick, i, fired, state)
         _safe(_write_health)
@@ -428,8 +431,6 @@ def run(cfg: RuntimeConfig, *, ticks: int = 0, session=None, engine=None) -> Non
         _safe(_write_smelt_view, state)
         # pick up dashboard edits + stop the brain from clobbering them (shared obj)
         _safe(reload_into, profile, cfg.profile_path)
-        # a NEW main city (re-created after capture) = new game: drop stale uid/cell state
-        _safe(lambda: check_new_game(profile, cfg, state, on_event, services=[dig]))
         run_services(state, cfg, service, brain, forts, _safe, observer=observer)
         if read_mode(cfg.control_path) != "pause":
             _safe(free_rewards.tick, state)

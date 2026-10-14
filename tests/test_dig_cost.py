@@ -97,3 +97,38 @@ def test_unverifiable_cell_stays_hard():
     cc = CellCost(lambda *a: _pred(loss=2.2), _world(), dist_fn=lambda i: 3, max_loss=0,
                   speed=60, verify=lambda i: None)
     assert cc.cost(1) is None and cc.hard_loss(1) == 2.2
+
+
+def test_verify_stops_after_consecutive_failures():
+    # 2026-10-14: a new match left the old dig live; every cell's probe failed (500000) at ~1 s
+    # each and the planner probed hundreds of cells, freezing the whole agent loop for minutes
+    probes = []
+
+    def verify(idx):
+        probes.append(idx)
+        raise RuntimeError("game/HD_GetAreaInfo: ecode.500000")
+
+    def predict(idx, land_id, dist):
+        return _pred(win=False)                       # every cell screens as hard -> verify
+
+    c = CellCost(predict, _world(), dist_fn=lambda i: 3, max_loss=0, speed=60, verify=verify)
+    for idx in range(20):
+        c.battle_s(idx)
+    assert len(probes) <= 5                            # the breaker opened
+    assert c.rough is True                             # and the plan says it is an estimate
+
+
+def test_a_success_resets_the_failure_count():
+    seen = []
+
+    def verify(idx):
+        seen.append(idx)
+        if idx % 2:
+            raise RuntimeError("boom")
+        return _pred(win=True, dur=20.0)
+
+    c = CellCost(lambda i, l, d: _pred(win=False), _world(), dist_fn=lambda i: 3, max_loss=0,
+                 speed=60, verify=verify)
+    for idx in range(12):
+        c.battle_s(idx)
+    assert len(seen) == 12                             # alternating failures never trip it
