@@ -115,9 +115,7 @@ export default {
    ⏳ Chờ chế tạo:
    <span v-for="(w,i) in v.craft_waiting" :key="w.uid">{{ i ? " · " : "" }}<b>{{ w.name }}</b> thiếu
     {{ Object.entries(w.missing||{}).map(([k,n])=>n+" "+({timber:"gỗ",stone:"đá",iron:"sắt",cereal:"lương",gold:"vàng"}[k]||k)).join(", ") }}
-    <span class="muted">{{ w.yield_builds
-      ? "(đang tạm dừng xây dựng để dành gỗ/đá/lương cho món này)"
-      : "(xây dựng vẫn chạy: món này còn thiếu sắt/vàng mà xây dựng không dùng, dừng xây cũng không giúp chế sớm hơn)" }}</span></span>
+    <span v-if="w.yield_builds" class="muted">(đang tạm dừng xây dựng để dành tài nguyên cho món này)</span></span>
    <span v-if="v.recast_held" class="muted"> · ⏸ vòng rèn lại tạm dừng để nhường tài nguyên cho món mới</span></div>
   <div v-if="help" class="muted" style="font-size:12px;margin:6px 0">
    Chọn các <b>hiệu ứng mong muốn</b> và mức tối thiểu (giá trị / tỉ lệ). Agent dừng khi <b>mọi hàng ngẫu nhiên</b> của món
