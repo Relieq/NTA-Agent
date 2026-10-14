@@ -39,3 +39,26 @@ def test_nothing_new_gives_an_empty_list(tmp_path):
     p = _log(tmp_path, [{"ts": 1, "kind": "pawn_move_done", "detail": {"op": "swap"}}])
     assert chat_notices(p, since=5)["items"] == []
     assert chat_notices(Path(tmp_path) / "missing.jsonl", since=0)["items"] == []
+
+
+def test_the_group_assembly_progress_reaches_the_chat(tmp_path):
+    # 2026-10-14: the player asked for 1 + 4 armies, confirmed, and saw NOTHING for hours — the
+    # composer was waiting for cereal (events only), so it looked like the command was ignored
+    p = _log(tmp_path, [
+        {"ts": 100, "kind": "composition_waiting",
+         "detail": {"pawn_id": 3305, "need": 322, "have": 105, "eta_min": 128,
+                    "text": "chờ lương để chiêu mộ: cần 322, đang có 105 (~128 phút)"}},
+        {"ts": 101, "kind": "composition_named", "detail": {"renamed": [], "failed": [{"uid": "u", "name": "Đội 1"}]}},
+        {"ts": 102, "kind": "composition_named",
+         "detail": {"renamed": [{"uid": "u", "name": "Đội 1"}, {"uid": "v", "name": "Đội 2"}], "failed": []}},
+        {"ts": 103, "kind": "composition_blocked", "detail": {"issues": ["Thợ Săn chưa mở khoá"]}},
+        {"ts": 104, "kind": "composition_capped", "detail": {"cap": 5, "message": "Thành Chính lv3: tối đa 5 lính/đội"}},
+        {"ts": 105, "kind": "composition_done", "detail": {"strike": ["a", "b", "c", "d", "e"]}},
+    ])
+    texts = [i["text"] for i in chat_notices(p, since=0)["items"]]
+    assert len(texts) == 5                                  # the all-failed rename is not worth a line
+    assert "chờ lương" in texts[0] and "322" in texts[0] and texts[0].startswith("⏳")
+    assert "Đội 1" in texts[1] and "Đội 2" in texts[1] and texts[1].startswith("✅")
+    assert "Thợ Săn chưa mở khoá" in texts[2] and texts[2].startswith("⚠️")
+    assert "5 lính/đội" in texts[3]
+    assert texts[4].startswith("✅") and "5" in texts[4]
