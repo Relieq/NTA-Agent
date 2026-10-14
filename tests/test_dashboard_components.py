@@ -245,7 +245,7 @@ def test_selection_lists_are_collapsible_by_default():
 
 def test_craft_waiting_panel_says_whether_builds_yield():
     fp = _c("ForgePanel.js")
-    assert "yield_builds" in fp and "xây dựng vẫn chạy" in fp and "tạm dừng xây dựng" in fp
+    assert "yield_builds" in fp and "tạm dừng xây dựng" in fp and "xây dựng vẫn chạy" not in fp
 
 
 def test_farm_group_panel_orders_the_armies():
