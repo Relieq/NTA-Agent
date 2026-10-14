@@ -335,7 +335,8 @@ def confirm_pawn_moves(cfg, specs) -> dict:
 
 
 _NOTICE_KINDS = ("pawn_move_failed", "pawn_move_done", "pawn_move_progress",
-                 "dismiss_done", "dismiss_failed")
+                 "dismiss_done", "dismiss_failed", "composition_waiting", "composition_blocked",
+                 "composition_capped", "composition_named", "composition_done")
 
 
 def chat_notices(event_log_path, since: float = 0.0) -> dict:
@@ -359,6 +360,19 @@ def chat_notices(event_log_path, since: float = 0.0) -> dict:
             if not d.get("note"):
                 continue
             text = f"⏳ {why[0].upper() + why[1:]}."
+        elif kind == "composition_waiting":
+            text = "⏳ Nhóm quân: " + str(d.get("text") or "đang chờ lương để chiêu mộ")
+        elif kind == "composition_blocked":
+            text = "⚠️ Nhóm quân chưa tạo được: " + "; ".join(str(x) for x in d.get("issues") or [])
+        elif kind == "composition_capped":
+            text = "⏳ Nhóm quân: " + str(d.get("message") or "đã đủ ở mức thành chính hiện tại")
+        elif kind == "composition_named":
+            done = [str(r.get("name")) for r in d.get("renamed") or [] if r.get("name")]
+            if not done:
+                continue
+            text = "✅ Đã đặt tên đội: " + ", ".join(done) + "."
+        elif kind == "composition_done":
+            text = f"✅ Nhóm quân đã gom xong ({len(d.get('strike') or [])} đội)."
         elif kind == "dismiss_done":
             text = f"✅ Đã giải tán {d.get('count', '')} lính của {name}.".replace("  ", " ")
         else:
