@@ -444,7 +444,7 @@ def test_waiting_for_cereal_sets_a_reserve_and_sends_nothing(tmp_path):
     for _ in range(3):
         _tick(rule, _state(cereal=16), acts)                     # setup completes
     assert [c for c in acts.calls if c[0] == "level"] == []       # 16 < 346: no useless order
-    assert rule.cereal_reserve == 346
+    assert rule.cereal_reserve == 346 * 9      # all 9 level-ups the buffer covers, not just the next
 
 
 def test_enough_cereal_levels_and_keeps_the_next_ones_cereal(tmp_path):
@@ -452,7 +452,7 @@ def test_enough_cereal_levels_and_keeps_the_next_ones_cereal(tmp_path):
     acts = FakeActions(_recruit_setup(tmp_path, have=9))
     for _ in range(3):
         _tick(rule, _state(cereal=16), acts)
-    assert rule.cereal_reserve == 346
+    assert rule.cereal_reserve == 346 * 9      # all 9 level-ups the buffer covers, not just the next
     _tick(rule, _state(cereal=400), acts)
     # sent; the cereal of the pawns still to level stays reserved (not 0 any more)
     assert [c[0] for c in acts.calls if c[0] == "level"] == ["level"] and rule.cereal_reserve >= 346
@@ -468,7 +468,7 @@ def test_level_up_cereal_uses_this_matchs_price_not_the_table(tmp_path):
     for _ in range(3):
         _tick(rule, _state(cereal=400), acts)
     assert [c for c in acts.calls if c[0] == "level"] == []      # 400 < 624: nothing is sent
-    assert rule.cereal_reserve == 624
+    assert rule.cereal_reserve == 624 * 9
     _tick(rule, _state(cereal=700), acts)
     assert [c[0] for c in acts.calls if c[0] == "level"] == ["level"] and rule.cereal_reserve >= 624
 
@@ -502,7 +502,7 @@ def test_without_a_price_list_the_table_cost_is_used(tmp_path):
     acts = FakeActions(_recruit_setup(tmp_path, have=9))
     for _ in range(3):
         _tick(rule, _state(cereal=300), acts)
-    assert rule.cereal_reserve == 346
+    assert rule.cereal_reserve == 346 * 9      # all 9 level-ups the buffer covers, not just the next
 
 
 def test_a_broken_price_source_never_blocks_leveling(tmp_path):
@@ -977,3 +977,41 @@ def test_a_busy_away_buffer_just_waits_and_the_recruit_goes_on_once_home(tmp_pat
     world[-1]["index"], world[-1]["state"] = MAIN, 0
     _tick(rule, _state(), acts)
     assert [c[:3] for c in acts.calls if c[0] == "drill"] == [("drill", 3305, "NC1")]
+
+
+# ---- leveling comes before the generic top-up: ALL its cereal is kept, not just the next one ----
+def test_the_whole_leveling_need_stays_reserved_so_the_generic_recruit_cannot_eat_it(tmp_path):
+    # live 2026-10-15: with 3949 cereal and 45 pawns still to level, the generic top-up opened a
+    # new army (D2) and spent ~950 on it: only the next level-up's cereal was reserved
+    rule = _rule(tmp_path)
+    acts = FakeActions(_recruit_setup(tmp_path, have=9))
+    for _ in range(3):
+        _tick(rule, _state(cereal=99999), acts)                  # setup completes, levelling starts
+    _tick(rule, _state(cereal=99999), acts)
+    # 18 weak pawns in the group: the buffer's covering pawns all need a level-up
+    assert rule.cereal_reserve >= 346 * 7      # the 8 level-ups still to go, not just the next few
+
+
+def test_nothing_is_reserved_once_no_pawn_is_left_to_level(tmp_path):
+    rule = _rule(tmp_path)
+    armies = _recruit_setup(tmp_path, have=9)
+    for a in armies:
+        for p in a["pawns"]:
+            p["lv"] = 3
+    acts = FakeActions(armies)
+    for _ in range(4):
+        _tick(rule, _state(cereal=99999), acts)
+    assert rule.cereal_reserve == 0
+
+
+def test_a_restart_still_knows_the_leveling_reserve_on_the_first_tick(tmp_path):
+    # the new army D2 was opened by the first tick after a restart: Recruit asks for the reserve
+    # BEFORE this rule has judged once, so the last judged value is kept on disk
+    rule = _rule(tmp_path)
+    acts = FakeActions(_recruit_setup(tmp_path, have=9))
+    for _ in range(4):
+        _tick(rule, _state(cereal=16), acts)
+    kept = rule.cereal_reserve
+    assert kept > 0
+    fresh = _rule(tmp_path)                                  # a restarted agent
+    assert fresh.cereal_reserve == 0 and fresh.reserve_now() == kept

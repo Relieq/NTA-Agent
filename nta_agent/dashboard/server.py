@@ -1346,6 +1346,8 @@ class Handler(BaseHTTPRequestHandler):
             self._json(200, fn())
             return
         if parsed.path == "/api/gameupdate/apply":
+            if self._body() is None:   # read the request first: answering with it unread resets the connection on Windows
+                return
             if self.server.supervisor.status().get("pid"):
                 # would swap config tables / schema / engine under a running agent
                 self._json(409, {"ok": False, "error": "Dừng agent trước khi cập nhật dữ liệu game."})
