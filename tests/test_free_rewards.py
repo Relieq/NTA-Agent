@@ -244,7 +244,7 @@ def test_the_dashboard_reads_the_schedule(tmp_path):
     from nta_agent.dashboard.server import read_free_rewards
     from nta_agent.runtime.config import RuntimeConfig
     cfg = RuntimeConfig(distinct_id="x", log_dir=tmp_path)
-    assert read_free_rewards(cfg) == {"next": {}, "claimed": {}, "last": {}}
+    assert read_free_rewards(cfg) == {"next": {}, "claimed": {}, "last": {}, "today": {}}
     cfg.free_rewards_path.write_text(json.dumps({"next": {"gold": 5}, "claimed": {"gold": 2}}),
                                      encoding="utf-8")
     v = read_free_rewards(cfg)
@@ -291,3 +291,32 @@ def test_extra_spins_beyond_ten_are_used_while_residue_lasts(tmp_path):
     svc, _ = _svc(tmp_path, acts, t)
     svc.tick(_state())
     assert len(_calls(acts, "wheel_ret")) == 1
+
+
+# ---- the dashboard shows "spins today / 10", nothing else ------------------------------------
+def test_today_spin_count_is_kept_for_the_dashboard(tmp_path):
+    t = [1000.0]
+    acts = Acts({"wheel_info": {"info": {"wheelCurrCount": 3}},
+                 "wheel_begin": {"info": {}},
+                 "wheel_ret": {"id": 2, "info": {"wheelCurrCount": 4, "wheelWaitTime": 600_000}}})
+    svc, _ = _svc(tmp_path, acts, t)
+    svc.tick(_state())
+    saved = json.loads((tmp_path / "free.json").read_text(encoding="utf-8"))
+    assert saved["today"]["wheel"] == 4                    # after the spin
+
+
+def test_the_count_is_refreshed_when_the_day_is_used_up(tmp_path):
+    # all 10 used: the agent only asks for the info — the new day's 0 must show up once it resets
+    t = [1000.0]
+    acts = Acts({"wheel_info": {"info": {"wheelCurrCount": 10, "wheelWaitTime": 0}}})
+    svc, _ = _svc(tmp_path, acts, t)
+    svc.tick(_state())
+    assert json.loads((tmp_path / "free.json").read_text(encoding="utf-8"))["today"]["wheel"] == 10
+
+
+def test_the_dashboard_reads_the_spin_count(tmp_path):
+    from nta_agent.dashboard.server import read_free_rewards
+    from nta_agent.runtime.config import RuntimeConfig
+    cfg = RuntimeConfig(distinct_id="x", log_dir=tmp_path)
+    cfg.free_rewards_path.write_text(json.dumps({"today": {"wheel": 2}}), encoding="utf-8")
+    assert read_free_rewards(cfg)["today"] == {"wheel": 2}

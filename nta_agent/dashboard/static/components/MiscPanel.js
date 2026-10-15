@@ -7,13 +7,16 @@ export default {
   const s=ref({}), p=ref({}), marching=ref(0), fighting=ref(0), total=ref(0), owned=ref(0);
   const free=ref({next:{},claimed:{}});
   const FREE=[["wheel","Vòng quay"],["gold","Vàng miễn phí"],["token","Token chiến"],["newbie","Gói tân thủ"]];
+  // one simple fact per reward: the wheel shows today's spins out of 10 (the game's daily free
+  // spins); the others show only when the next one is due
   function freeLine(k){
-   const n=(free.value.next||{})[k], c=(free.value.claimed||{})[k]||0;
-   if(!n) return c+" lần";
+   if(k==="wheel"){ const n=(free.value.today||{}).wheel; return (n==null?"?":n)+"/10"; }
+   const n=(free.value.next||{})[k];
+   if(!n) return "—";
    const d=Math.round(n-Date.now()/1000);
-   if(d<=0) return c+" lần · tới lượt";
+   if(d<=0) return "tới lượt";
    const h=Math.floor(d/3600), m=Math.floor((d%3600)/60), sec=d%60;
-   return c+" lần · sau "+(h?h+"g":"")+(h||m?m+"p":"")+(h?"":sec+"s");
+   return "sau "+(h?h+"g":"")+(h||m?m+"p":"")+(h?"":sec+"s");
   }
   usePolling(async ()=>{
    const v=await getJSON("/api/state"); s.value=(v&&v.ok)?v:{}; p.value=(v&&v.player)||{};

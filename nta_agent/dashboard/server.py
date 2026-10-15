@@ -665,7 +665,7 @@ def read_free_rewards(cfg) -> dict:
         d = {}
     d = d if isinstance(d, dict) else {}
     return {"next": d.get("next") or {}, "claimed": d.get("claimed") or {},
-            "last": d.get("last") or {}}
+            "last": d.get("last") or {}, "today": d.get("today") or {}}
 
 
 def read_dig(cfg) -> dict:
