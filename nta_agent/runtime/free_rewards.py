@@ -43,7 +43,8 @@ class FreeRewards:
         self.error_backoff_s = error_backoff_s
         d = self._load()
         self._d = {"next": dict(d.get("next") or {}), "claimed": dict(d.get("claimed") or {}),
-                   "last": dict(d.get("last") or {})}
+                   "last": dict(d.get("last") or {}),
+                   "today": dict(d.get("today") or {})}
         self._seeded = False
         self._last_check = float("-inf")
         self._wheel_need_info = True
@@ -144,6 +145,7 @@ class FreeRewards:
     def _wheel(self, state, now: float) -> None:
         if self._wheel_need_info:
             info = (self.actions.wheel_info() or {}).get("info") or {}
+            self._d["today"]["wheel"] = int(info.get("wheelCurrCount") or 0)   # the dashboard's "n/10"
             wait = self._ms(info.get("wheelWaitTime"))
             if not self._can_spin(info):                          # today's 10 free spins are used
                 self._schedule("wheel", now + (wait or WHEEL_RECHECK_S))
@@ -173,6 +175,8 @@ class FreeRewards:
             self._wheel_need_info = True
             self._schedule("wheel", now + max(wait, WHEEL_RECHECK_S))
         today = info.get("wheelCurrCount")
+        if today is not None:
+            self._d["today"]["wheel"] = int(today)
         self._claimed("wheel", now, sector=ret.get("id"), items=items, today=today)
         self._event("free_wheel", sector=ret.get("id"), items=items, next_in_s=round(wait),
                     today=today, extra_left=info.get("wheelResidueCount"))
