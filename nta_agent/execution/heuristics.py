@@ -2037,6 +2037,7 @@ class BufferLeveling:
     _away: set = field(default_factory=set)
     cereal_reserve: int = 0   # cereal the next level-up waits for (Recruit leaves it alone)
     _judged: bool = False     # this rule has run once: cereal_reserve is then authoritative
+    group_reserve: int = 0    # cereal the group's weak pawns still to reach the buffers will take
     _last_trade: dict = field(default_factory=dict)  # buffer uid -> (pawn out, pawn in): no undoing
     pawn_cost_source: object = None  # callable -> {pawn_id: base cost} of THIS match
     _buffers: set = field(default_factory=set)
@@ -2095,8 +2096,9 @@ class BufferLeveling:
         try:
             from nta_agent.runtime import buffers as bstate
             st = bstate.load(self.state_path)
-            if int(st.get("cereal_reserve") or 0) != int(self.cereal_reserve or 0):
-                st["cereal_reserve"] = int(self.cereal_reserve or 0)
+            kept = self.reserve_now()
+            if int(st.get("cereal_reserve") or 0) != kept:
+                st["cereal_reserve"] = kept
                 bstate.save(self.state_path, st)
         except Exception:
             pass
@@ -2108,6 +2110,7 @@ class BufferLeveling:
         grp = self._group()
         if grp is None or self.state_path is None or not state.main_city_index:
             self.cereal_reserve = 0
+            self.group_reserve = 0
             return False
         self._cooldown = self.check_every
         self._judged = True
@@ -2134,6 +2137,8 @@ class BufferLeveling:
         group_armies = [a for a in group_all if str(a.get("uid")) not in self._excl]
         self._group_all = group_all
 
+        self.group_reserve = (self._group_need(state, st.get("proposal") or {}, armies, group_all,
+                                               grp["target_lv"]) if st["approved"] else 0)
         if not st["approved"]:
             spares = [a for a in armies if str(a.get("uid")) not in members
                       and not str(a.get("name", "")).startswith("Nâng Cấp")]
@@ -2430,20 +2435,68 @@ class BufferLeveling:
         """The cereal this rule keeps, also on the very first tick after a restart (Recruit runs
         before it): until it has judged once, the unfinished approved setup's recruits count."""
         if self._judged or self.state_path is None:
-            return int(self.cereal_reserve or 0)
+            return max(int(self.cereal_reserve or 0), int(self.group_reserve or 0))
         try:
             from nta_agent.runtime import buffers as bstate
             st = bstate.load(self.state_path)
             if not st.get("approved"):
                 return 0
+            kept = int(st.get("cereal_reserve") or 0)   # what the last check kept
             if st.get("setup_done"):
-                return int(st.get("cereal_reserve") or 0)   # what the last check kept
+                return kept
             proposal = st.get("proposal") or {}
             done = set(st.get("done") or [])
-            return sum(self._recruit_price(int(step[2])) for step in self._setup_steps(proposal)
-                       if step[0] == "recruit" and ":".join(str(x) for x in step) not in done)
+            return max(kept, sum(self._recruit_price(int(step[2])) for step in self._setup_steps(proposal)
+                                 if step[0] == "recruit" and ":".join(str(x) for x in step) not in done))
         except Exception:
             return 0
+
+    def _group_need(self, state, proposal, armies, group_all, target) -> int:
+        """Cereal the group's weak pawns will still take. A weak pawn is levelled once it is in a
+        buffer, so what is left is, per type, ``weak in the group - ready - under way`` level-ups
+        (the same budget ``levelable`` uses) — NOT only the pawns the buffers hold right now: once
+        they are all at the target the old reserve fell to 0 while 27 weak pawns still waited for
+        the swap trip, and the generic top-up spent that time's cereal on a new army (live
+        2026-10-15, 10:45–11:57)."""
+        try:
+            from nta_agent.execution.army_health import leveling_pawn_uids
+            from nta_agent.execution.buffer_plan import demand, level_step
+            from nta_agent.execution.pawn_cost import cereal_cost
+            weak = demand(group_all, target)
+            designated = {int(t) for b in proposal.get("buffers") or [] for t in (b.get("types") or {})}
+            names = {str(b.get("name")) for b in proposal.get("buffers") or []}
+            queued = leveling_pawn_uids(state) | set(self._sent)
+            bufs = [a for a in armies if str(a.get("name", "")) in names]
+            try:
+                costs = self.pawn_cost_source() if self.pawn_cost_source is not None else None
+            except Exception:
+                costs = None
+            barracks = self._barracks_lv(state)
+            total = 0
+            for ptype in set(weak) | designated:
+                mine = weak.get(ptype, [])
+                if not mine:
+                    continue
+                held = [p for a in bufs for p in a.get("pawns") or [] if int(p.get("id", 0) or 0) == ptype]
+                ready = sum(1 for p in held if int(p.get("lv", 0) or 0) >= target)
+                under_way = sum(1 for p in held if int(p.get("lv", 0) or 0) < target
+                                and str(p["uid"]) in queued)
+                ops = len(mine) - ready - under_way
+                if ops <= 0:
+                    continue
+                prices = []
+                for w in mine:
+                    price = 0
+                    for lv in range(int(w["lv"]), target):
+                        step = level_step(self._rows(), ptype, lv)
+                        if step is None or step["barracks_lv"] > barracks:
+                            break
+                        price += cereal_cost(ptype, int(step.get("cereal", 0)), costs, lv)
+                    prices.append(price)
+                total += sum(sorted(prices, reverse=True)[:ops])
+            return total
+        except Exception:
+            return int(self.group_reserve or 0)   # keep what the last check knew
 
     def _recruit_price(self, pid: int) -> int:
         """Cereal one recruit of ``pid`` costs (this match's price list, else the config table)."""

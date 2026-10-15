@@ -1011,7 +1011,72 @@ def test_a_restart_still_knows_the_leveling_reserve_on_the_first_tick(tmp_path):
     acts = FakeActions(_recruit_setup(tmp_path, have=9))
     for _ in range(4):
         _tick(rule, _state(cereal=16), acts)
-    kept = rule.cereal_reserve
-    assert kept > 0
+    kept = rule.reserve_now()
+    assert kept >= rule.cereal_reserve > 0
     fresh = _rule(tmp_path)                                  # a restarted agent
     assert fresh.cereal_reserve == 0 and fresh.reserve_now() == kept
+
+
+# ---- the reserve also covers the weak pawns that have not reached the buffer yet ---------------
+def _ready_buffer_world(tmp_path, target=3):
+    """The buffer's 9 pawns are all at the target; the farm group still has 18 weak pawns
+    (they wait for the swap trip). Live 2026-10-15 10:45: nothing in the buffer was left to
+    level, so the reserve fell to 0 and the generic recruit spent 1.5 h of cereal on a new army D1."""
+    armies = _recruit_setup(tmp_path, have=9)
+    for a in armies:
+        if a["uid"] == "NC1":
+            for p in a["pawns"]:
+                p["lv"] = target
+    return armies
+
+
+def _target3_rule(tmp_path):
+    rule = _rule(tmp_path)
+    rule.profile.leveling["groups"][0]["target_lv"] = 3
+    rule.profile.leveling["target_lv"] = 3
+    return rule
+
+
+def test_group_pawns_still_to_come_keep_their_cereal_reserved(tmp_path):
+    rule = _target3_rule(tmp_path)
+    acts = FakeActions(_ready_buffer_world(tmp_path))
+    for _ in range(4):
+        _tick(rule, _state(cereal=16), acts)
+    assert rule.cereal_reserve == 0                      # nothing in the buffer itself to level
+    # 18 weak - 9 ready = 9 more level-ups, each lv1 -> lv3 = 346 + 554
+    assert rule.reserve_now() == (346 + 554) * 9
+
+
+def test_the_group_reserve_holds_on_every_tick_of_the_swap_trip(tmp_path):
+    rule = _target3_rule(tmp_path)
+    armies = _ready_buffer_world(tmp_path)
+    acts = FakeActions(armies)
+    seen = set()
+    for _ in range(8):
+        _tick(rule, _state(cereal=16), acts)
+        seen.add(rule.reserve_now())
+        buf = next(a for a in armies if a["uid"] == "NC1")
+        buf["state"] = 1                                 # the buffer is out on the trip
+    assert seen == {(346 + 554) * 9}
+
+
+def test_no_group_reserve_when_the_buffer_already_covers_every_weak_pawn(tmp_path):
+    rule = _target3_rule(tmp_path)
+    armies = _ready_buffer_world(tmp_path)
+    for a in armies:
+        if a["uid"] != "NC1":
+            for p in a["pawns"]:
+                p["lv"] = 3          # G0 + G1 are all at the target: nothing is weak any more
+    acts = FakeActions(armies)
+    for _ in range(4):
+        _tick(rule, _state(cereal=16), acts)
+    assert rule.reserve_now() == 0
+
+
+def test_a_restart_knows_the_group_reserve_on_the_first_tick(tmp_path):
+    rule = _target3_rule(tmp_path)
+    acts = FakeActions(_ready_buffer_world(tmp_path))
+    for _ in range(4):
+        _tick(rule, _state(cereal=16), acts)
+    fresh = _target3_rule(tmp_path)                      # a restarted agent
+    assert fresh.reserve_now() == (346 + 554) * 9
