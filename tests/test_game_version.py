@@ -19,6 +19,9 @@ from nta_agent.version import GAME_VERSION, handshake_version
 def store(monkeypatch, tmp_path):
     p = tmp_path / "settings.json"
     monkeypatch.setattr(settings, "_path", lambda: p)
+    # the machine's own meta.json (a game-data update records e.g. 4.4.10) must not leak in
+    from nta_agent import paths
+    monkeypatch.setattr(paths, "gamedata_dir", lambda: tmp_path / "gamedata")
     for env in settings.KEYS.values():
         monkeypatch.delenv(env, raising=False)
     return p
