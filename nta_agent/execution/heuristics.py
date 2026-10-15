@@ -2083,6 +2083,25 @@ class BufferLeveling:
 
     # ---- rule -----------------------------------------------------------------
     def applies(self, state: GameState, actions: Actions) -> bool:
+        ok = self._applies(state, actions)
+        self._remember_reserve()
+        return ok
+
+    def _remember_reserve(self) -> None:
+        """Keep the reserve on disk: after a restart Recruit runs BEFORE this rule's first check
+        and must already know it (live 2026-10-15: the very first tick opened a new army D2)."""
+        if not self._judged or self.state_path is None:
+            return
+        try:
+            from nta_agent.runtime import buffers as bstate
+            st = bstate.load(self.state_path)
+            if int(st.get("cereal_reserve") or 0) != int(self.cereal_reserve or 0):
+                st["cereal_reserve"] = int(self.cereal_reserve or 0)
+                bstate.save(self.state_path, st)
+        except Exception:
+            pass
+
+    def _applies(self, state: GameState, actions: Actions) -> bool:
         if self._cooldown > 0:
             self._cooldown -= 1
             return False
@@ -2415,8 +2434,10 @@ class BufferLeveling:
         try:
             from nta_agent.runtime import buffers as bstate
             st = bstate.load(self.state_path)
-            if not st.get("approved") or st.get("setup_done"):
+            if not st.get("approved"):
                 return 0
+            if st.get("setup_done"):
+                return int(st.get("cereal_reserve") or 0)   # what the last check kept
             proposal = st.get("proposal") or {}
             done = set(st.get("done") or [])
             return sum(self._recruit_price(int(step[2])) for step in self._setup_steps(proposal)
@@ -2604,6 +2625,7 @@ class BufferLeveling:
         worth, started = levelable(bufs_all, group_all, target, types,
                                    in_progress=queued)
         cands = []
+        all_need = 0   # cereal EVERY pawn still to level will take (the generic top-up leaves it all)
         for a in armies:
             name = str(a.get("name", ""))
             if (name not in types or int(a.get("index", 0) or 0) != main
@@ -2616,18 +2638,21 @@ class BufferLeveling:
                 if str(p["uid"]) not in worth:
                     continue   # the group has no more weak pawns of this type than are covered
                 step = level_step(self._rows(), int(p["id"]), lv)
-                if step is None or step["barracks_lv"] > barracks or step["books"] > books:
+                if step is None or step["barracks_lv"] > barracks:
                     continue
                 # the client's getPawnCost: PAWN_COST_LV_LIST[lv] x THIS match's base price
                 # replaces the table's cereal (live: 3305 lv1 costs ~624, the table says 346)
                 from nta_agent.execution.pawn_cost import cereal_cost
                 need = cereal_cost(int(p["id"]), int(step.get("cereal", 0)), costs, lv)
+                all_need += need
+                if step["books"] > books:
+                    continue
                 if need > cereal:
                     waiting_cereal = need if not waiting_cereal else min(waiting_cereal, need)
                     continue
                 cands.append((lv, str(p["uid"]), str(a["uid"]), step["time_s"], need))
         if not cands:
-            self.cereal_reserve = waiting_cereal
+            self.cereal_reserve = max(waiting_cereal, all_need)
             return False
         # finish the ones under way (most advanced first) before starting a new pawn (lowest first)
         order = sorted(cands, key=lambda c: (0, -c[0], c[1]) if c[1] in started else (1, c[0], c[1]))
@@ -2636,7 +2661,10 @@ class BufferLeveling:
         # keeps the next one's cereal for when it drains.
         nxt = order if free == 0 else order[1:]
         keep = nxt[:max(free - 1, 1)] if free == 0 else nxt[:free - 1]
-        self.cereal_reserve = sum(c[4] for c in keep)
+        # Leveling comes before the generic top-up: ALL the cereal the weak pawns still need is
+        # kept, not just the next ones' (live 2026-10-15: 3949 cereal, 45 pawns to level, and
+        # the top-up opened a new army D2 and spent ~950 on it).
+        self.cereal_reserve = max(sum(c[4] for c in keep), all_need)
         if free == 0:
             return False
         lv0, pawn, army, secs, _need = order[0]
