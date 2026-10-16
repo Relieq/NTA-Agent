@@ -81,3 +81,14 @@ def test_buffers_may_still_swap_with_an_army_only_the_dig_holds():
     claims.register("composer", lambda: {"strike"})
     wire_claims(rules.values(), claims)
     assert rules["buffer_leveling"].dig_group_source() == {"d"}   # not the chat's, not the composer's
+
+
+def test_heal_routing_leaves_the_dig_group_alone_until_the_dig_asks_for_a_heal():
+    rules = _rules()
+    state = {"wanted": False}
+    rules["occupy_cell"].dig_heal_wanted = lambda: state["wanted"]
+    wire_claims(rules.values(), _claims())
+    assert "dig" in rules["heal_routing"].locked_source()       # scratched, but the sim says go on
+    state["wanted"] = True
+    assert "dig" not in rules["heal_routing"].locked_source()   # the dig waits to heal
+    assert {"strike", "buf", "spare"} <= rules["heal_routing"].locked_source()
