@@ -134,7 +134,8 @@ def _pawn(p: dict[str, Any], equips_by_pid: dict[int, dict] | None = None,
         # empty repeated field, so a live {uid, id} treasure crashed the forecast
         "treasures": [{**t, "rewards": t.get("rewards") or []}
                       for t in (p.get("treasures") or []) if isinstance(t, dict)],
-        "hero": p.get("hero") or None,
+        # the hero on a pawn is ``portrayal`` in the army data; the engine reads it as such
+        "hero": p.get("hero") or p.get("portrayal") or None,
     }
     # the pawn's own equip if present, else its type's config loadout
     eq = p.get("equip") or (equips_by_pid or {}).get(int(p.get("id", 0) or 0))
