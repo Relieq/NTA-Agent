@@ -305,3 +305,21 @@ def test_a_dig_suggestion_can_start_from_land_touching_an_ally(tmp_path):
     d = json.loads((tmp_path / "dig.json").read_text(encoding="utf-8"))
     assert d["state"] == "preview" and d["reason"] == "ok"
     assert d["path"][0] == [13, 10] and d["path"][-1] == [16, 10]
+
+
+def test_dismiss_clears_a_finished_card_but_never_a_live_dig(tmp_path):
+    scan = {"owned": _owned_block()}
+    svc, _ = _svc(tmp_path, scan)
+    _req(tmp_path, 1, "request", index=I(16, 10))
+    svc.tick(_state())
+    _req(tmp_path, 2, "confirm")
+    svc.tick(_state())
+    _req(tmp_path, 3, "dismiss")
+    svc.tick(_state())
+    assert svc.dig["state"] == "active"          # a running dig is not a notification
+    _req(tmp_path, 4, "cancel")
+    svc.tick(_state())
+    assert svc.dig["state"] == "cancelled"
+    _req(tmp_path, 5, "dismiss")
+    svc.tick(_state())
+    assert svc.dig["state"] == "idle" and svc.dig["seq"] == 5
