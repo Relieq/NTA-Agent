@@ -53,7 +53,6 @@ class RescueService:
         self._n += 1
         if (self._n - 1) % self.every:
             return
-        from nta_agent.execution.army_health import is_idle
         from nta_agent.execution.rescue import is_rescue, plan_returns
         armies = self.actions.get_player_armys() or []
         player = (getattr(state, "raw", None) or {}).get("player") or {}
@@ -76,8 +75,9 @@ class RescueService:
             key = (plan["from"], plan["to"])
             if now - self._last.get(key, 0.0) < self.retry_s:
                 continue
-            if not (is_idle(src) and is_idle(dst)):
-                continue      # the queue would only wait: queue it when both can move
+            # (queued even while an army is busy: farm armies are almost never idle on the same
+            # tick, and the queue's claim is what keeps them idle once they are — it waits for
+            # both, gathers them and moves the pawn)
             job = self._job(src, dst, plan["pawns"], state)
             if job is None:
                 if key not in self._said:
