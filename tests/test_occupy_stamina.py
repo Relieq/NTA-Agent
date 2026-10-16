@@ -68,11 +68,44 @@ def test_candidates_get_their_land_id_from_the_world_map():
         def __init__(self):
             self.cells = [1]
 
+        ratio = 1.0
+
         def detect(self, owned):
             return "maps_x"
+
+        def match_ratio(self, owned):
+            return self.ratio
         def land_id(self, idx):
             return {5: 305, 6: 303, 7: -1}[idx]
     r = _rule(5)
     c = [_cand(5, 0), _cand(6, 0), _cand(7, 0), _cand(8, 304)]
     r._label_lands(c, {1, 2}, world=World())
     assert [x.land_id for x in c] == [305, 303, 0, 304]   # unknown cell stays 0, a known id is kept
+
+
+def test_a_map_that_does_not_fit_our_cells_labels_nothing():
+    class World:
+        def __init__(self):
+            self.cells = [1]
+
+        def detect(self, owned):
+            return "maps_x"
+
+        def match_ratio(self, owned):
+            return 0.87          # e.g. the previous world's map: 241/278
+
+        def land_id(self, idx):
+            return 305
+    c = [_cand(5, 0)]
+    _rule(5)._label_lands(c, {1, 2}, world=World())
+    assert c[0].land_id == 0
+
+
+def test_world_map_match_ratio_tells_the_right_map_from_a_wrong_one():
+    from nta_agent.execution.worldmap import WorldMap
+    land = [{"id": 1, "occupy": 1, "lv": 1, "type": 3}, {"id": 2, "occupy": 0, "lv": 0, "type": 1}]
+    w = WorldMap({"a": [1, 1, 1, 2], "b": [1, 2, 2, 2]}, land)
+    owned = [0, 1, 2]
+    assert w.detect(owned) == "a" and w.match_ratio(owned) == 1.0
+    w.cells = w.maps["b"]
+    assert abs(w.match_ratio(owned) - 1 / 3) < 1e-9
