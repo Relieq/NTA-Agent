@@ -61,7 +61,7 @@ def _policy_rows() -> dict[int, dict]:
     try:
         from nta_agent.data.config import GameConfig
         return GameConfig.load().table("policy")
-    except Exception:  # noqa: BLE001 - a missing table only costs the policy buffs
+    except Exception:
         return {}
 
 
@@ -70,7 +70,7 @@ def _pawn_type(pawn_id: int) -> int:
     try:
         from nta_agent.data.config import GameConfig
         return int((GameConfig.load().table("pawnBase").get(int(pawn_id)) or {}).get("type") or 0)
-    except Exception:  # noqa: BLE001
+    except Exception:
         return 0
 
 

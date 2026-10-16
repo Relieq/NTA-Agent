@@ -134,7 +134,7 @@ def test_the_same_policy_in_two_slots_stacks_its_level(monkeypatch):
 
 def test_no_policies_or_no_table_means_no_buffs(monkeypatch):
     from nta_agent.execution.predictors import sim_input
-    monkeypatch.setattr(sim_input, "_policy_rows", lambda: {})
+    monkeypatch.setattr(sim_input, "_policy_rows", dict)
     st = _state_with_slots({"1": {"lv": 1, "id": 1042}})
     out = build_forecast_input(st, _one_army(), target_index=9, land_id=0, distance=1)
     assert out["armies"][0]["pawns"][0]["buffs"] == []
