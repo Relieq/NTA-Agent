@@ -63,6 +63,15 @@ class WorldMap:
             return best
         return None
 
+    def match_ratio(self, owned) -> float:
+        """Share of ``owned`` that is occupiable land on the CURRENT map (1.0 = the right map)."""
+        owned = [int(i) for i in owned or ()]
+        if not owned or not self.cells:
+            return 0.0
+        ok = sum(1 for i in owned if 0 <= i < len(self.cells)
+                 and self.land_by_id.get(int(self.cells[i]), {}).get("occupy") == 1)
+        return ok / len(owned)
+
     def land_id(self, idx: int) -> int:
         return int(self.cells[idx]) if 0 <= idx < len(self.cells) else -1
 

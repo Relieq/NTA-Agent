@@ -501,7 +501,13 @@ class OccupyCell:
             if world is None:
                 from nta_agent.execution.worldmap import shared_world
                 world = shared_world()
-            if not world.cells and not world.detect(owned or ()):
+            if owned:
+                # the map is picked from OUR cells every sweep (a new server / world brings a
+                # different map: live 2026-10-16 maps_14 fits 278/278 owned, maps_15 only 241)
+                # and used only when it explains (nearly) all of them
+                if not world.detect(owned) or world.match_ratio(owned) < 0.9:
+                    return
+            elif not world.cells:
                 return
             for c in cands:
                 if not c.land_id:
