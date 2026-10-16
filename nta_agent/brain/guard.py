@@ -250,7 +250,7 @@ def _order_grounded(order: str, evidence, ledger) -> bool:
 
 
 def _is_hero(p: dict) -> bool:
-    return bool(p.get("hero")) or bool(p.get("avatarArmyUID"))
+    return bool(p.get("hero")) or bool(p.get("portrayal")) or bool(p.get("avatarArmyUID"))
 
 
 def sanitize_dismissals(raw, armies) -> tuple[list, list]:

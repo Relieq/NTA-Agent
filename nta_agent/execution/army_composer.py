@@ -24,7 +24,9 @@ from dataclasses import dataclass
 
 def _is_hero(p: dict) -> bool:
     """A hero pawn — excluded from fungible troop counts (can't be dismissed)."""
-    return bool(p.get("hero")) or bool(p.get("avatarArmyUID"))
+    # a hero in an army is the ``portrayal`` on its pawn (live get_player_armys); ``hero`` /
+    # ``avatarArmyUID`` are the heroSlots / older shapes
+    return bool(p.get("hero")) or bool(p.get("portrayal")) or bool(p.get("avatarArmyUID"))
 
 
 def count_owned(armies: list[dict], pawn_id: int) -> int:

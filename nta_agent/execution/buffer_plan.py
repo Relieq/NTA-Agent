@@ -6,6 +6,8 @@ Spec: docs/superpowers/specs/2026-09-25-buffer-leveling-design.md. Costs come fr
 """
 from __future__ import annotations
 
+from nta_agent.execution.army_composer import _is_hero
+
 CEREAL = 1            # CType: a level-up costs cereal too (346 at lv1)
 EXP_BOOK = 7          # CType
 BARRACKS_ID = 2004    # Trại Lính: gates pawn levels (lv_cond)
@@ -46,10 +48,13 @@ def pawn_cost(rows, pawn_id: int, lv_from: int, lv_to: int, barracks_lv: int) ->
 
 
 def demand(armies, target_lv: int) -> dict[int, list[dict]]:
-    """Weak pawns (lv < target) of the given armies, grouped by pawn type."""
+    """Weak pawns (lv < target) of the given armies, grouped by pawn type. A hero is never
+    one of them: its slot is locked, it is not swapped out to a buffer."""
     out: dict[int, list[dict]] = {}
     for a in armies:
         for p in a.get("pawns") or []:
+            if _is_hero(p):
+                continue
             lv = int(p.get("lv", 0) or 0)
             if lv < target_lv:
                 out.setdefault(int(p["id"]), []).append(
@@ -174,7 +179,7 @@ def swap_pairs(main_army, buffer_army, target_lv: int) -> list[tuple[str, str]]:
     out = []
     for p in sorted(main_army.get("pawns") or [], key=lambda p: (_lv(p), str(p["uid"]))):
         pool = ready.get(int(p["id"]))
-        if _lv(p) < target_lv and pool:
+        if _lv(p) < target_lv and pool and not _is_hero(p):
             out.append((str(p["uid"]), pool.pop(0)))
     return out
 
@@ -247,7 +252,7 @@ def own_target(group_armies, designated, target_lv: int, order=None) -> dict | N
     best = None
     for a in group_armies or []:
         n = sum(1 for p in a.get("pawns") or []
-                if _lv(p) < target_lv and (not des or int(p["id"]) in des))
+                if _lv(p) < target_lv and not _is_hero(p) and (not des or int(p["id"]) in des))
         if not n:
             continue
         key = (-n, order.get(str(a.get("uid")), 10**6), str(a.get("uid")))
@@ -264,7 +269,7 @@ def reshape(buffer_army, target_army, spares_at_city, target_lv: int) -> list[tu
     IMP buffer takes one hunter to serve an 8 IMP + 1 hunter army."""
     need: dict[int, int] = {}
     for p in target_army.get("pawns") or []:
-        if _lv(p) < target_lv:
+        if _lv(p) < target_lv and not _is_hero(p):
             need[int(p["id"])] = need.get(int(p["id"]), 0) + 1
     have: dict[int, list[dict]] = {}
     for p in buffer_army.get("pawns") or []:

@@ -29,7 +29,7 @@ def army_view(armys: list[dict], config) -> list[dict]:
                 "attack_speed": int(p.get("attackSpeed", 0) or 0),
                 "equip_name": _name(config, "equipText", eid) if eid else "",
                 # heroes can't be dismissed: keep the flag (only when set, so rows stay small)
-                **({"hero": True} if p.get("hero") or p.get("avatarArmyUID") else {}),
+                **({"hero": True} if p.get("hero") or p.get("portrayal") or p.get("avatarArmyUID") else {}),
             })
         state = int(a.get("state", 0) or 0)
         rows.append({
