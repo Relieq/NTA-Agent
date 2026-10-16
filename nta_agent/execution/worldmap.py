@@ -11,6 +11,18 @@ from __future__ import annotations
 import json
 from pathlib import Path
 
+_SHARED: WorldMap | None = None
+
+
+def shared_world() -> WorldMap:
+    """One loaded WorldMap per process (the map files are big) for the rules that need a
+    cell's land: loaded on first use, the map itself picked by ``detect`` from owned cells."""
+    global _SHARED
+    if _SHARED is None:
+        from nta_agent import paths
+        _SHARED = WorldMap.load(paths.config_dir())
+    return _SHARED
+
 
 class WorldMap:
     def __init__(self, maps: dict[str, list[int]], land_rows: list[dict]):

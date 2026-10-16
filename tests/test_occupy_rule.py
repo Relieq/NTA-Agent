@@ -362,7 +362,7 @@ def test_occupy_uses_profile_farming_within_budget(monkeypatch):
                            "loot": {"enabled": True, "min_reward_per_chest": 0}}, notes=[],
                    build={"order": [], "skip": []})
     monkeypatch.setattr(tm, "cell_loot",
-                        lambda land, cfg: CellLoot(1, 100.0) if land == 11 else CellLoot(1, 10.0))
+                        lambda land, cfg, **kw: CellLoot(1, 100.0) if land == 11 else CellLoot(1, 10.0))
     events = []
     rule = OccupyCell(radius=1, use_sim=False, predictor=BattlePredictor(),
                       profile=prof, config=object(), on_event=lambda k, d: events.append((k, d)))

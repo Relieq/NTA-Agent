@@ -427,6 +427,8 @@ class OccupyCell:
     _state_ref: object = None  # stashed for act()'s formation optimization
     _land_ref: int = 0
     _sim_fail: str = ""        # last reason the engine sim was skipped (diagnostic)
+    _stamina: int = 0          # stamina on hand this sweep (a chest only drops if it covers the cost)
+    _main: int = 0             # main city index this sweep (distance picks the landAttr row)
 
     def _pred(self):
         if self.predictor is None:
@@ -483,13 +485,50 @@ class OccupyCell:
         picks = plan_farm(
             cands,
             lambda c: best_plan([c], plans_for, predict, distance=self._plan_dist),
-            lambda c: cell_loot(c.land_id, cfg),
+            lambda c: cell_loot(c.land_id, cfg, dist=self._city_dist(c.index)),
             budget=chest_budget(state),
             max_loss=occ.get("max_loss", 0),
             min_reward_per_chest=(occ.get("loot") or {}).get("min_reward_per_chest", 0),
             max_march_ms=occ.get("max_march_ms", 0),
         )
         return picks[0].plan if picks else None
+
+    def _label_lands(self, cands, owned, world=None) -> None:
+        """Give each candidate its LAND id from the static world map: ``get_area`` never sends it,
+        so every candidate carried land_id 0 and land value / chest value / stamina were all
+        blind (live 2026-10-16: of 1172 octopus picks 562 were lv1 and only 6 were lv5)."""
+        try:
+            if world is None:
+                from nta_agent.execution.worldmap import shared_world
+                world = shared_world()
+            if not world.cells and not world.detect(owned or ()):
+                return
+            for c in cands:
+                if not c.land_id:
+                    lid = world.land_id(c.index)
+                    if lid > 0:
+                        c.land_id = lid
+        except Exception:
+            pass
+
+    def _city_dist(self, idx: int) -> int:
+        """Distance from the main city's 2x2 block (engine getToMapCellDis)."""
+        m = int(self._main or 0)
+        if not m:
+            return 1
+        return max(1, min(self._dist(idx, b) for b in (m, m + 1, m + 600, m + 601)))
+
+    def _chest_pays(self, cand, cfg) -> bool:
+        """A winnable level>=3 wild land whose chest the stamina on hand can pay for."""
+        if cfg is None or not cand.land_id:
+            return False
+        try:
+            from nta_agent.execution.treasure_model import need_stamina
+            lv = int((cfg.table("land").get(int(cand.land_id)) or {}).get("lv", 0) or 0)
+            need = need_stamina(cfg, cand.land_id, self._city_dist(cand.index))
+        except Exception:
+            return False
+        return lv >= 3 and need > 0 and int(self._stamina or 0) >= need
 
     def _expansion_select(self, cands, plans_for, predict, mode):
         """Pick the winnable target that best fits the expansion pattern.
@@ -511,6 +550,8 @@ class OccupyCell:
             key = sort_key(mode, owned_neighbors=c.owned_neighbors,
                            land_value=land_value(cfg, c.land_id) if cfg else 0,
                            loss_percent=plan.prediction.loss_percent)
+            if mode in ("octopus", "hybrid"):   # richness-driven modes: take the lands whose chest we can pay
+                key = (0 if self._chest_pays(c, cfg) else 1,) + key
             # Final tiebreak: prefer the NEAREST cell. The preset key (spiral:
             # exposure, octopus: land value) still dominates, but among cells that
             # tie on it — very common when many 0-loss cells share owned_neighbors —
@@ -834,6 +875,7 @@ class OccupyCell:
             frontier |= set(near_ally[:self.ally_frontier_max])
             if frontier:
                 cands = discover_frontier(get_area, frontier, state.user.uid)
+                self._label_lands(cands, scanned.get("owned"))
         except Exception:
             frontier = None
         if not frontier:  # scan unavailable -> radius fallback around city + idle armies
@@ -846,6 +888,8 @@ class OccupyCell:
                 pass
             cands = discover_around(get_area, centers, self.radius, state.user.uid)
         self._cooldown = self.discover_every  # throttle regardless of outcome
+        self._stamina = int(getattr(state.resources, "stamina", 0) or 0)
+        self._main = int(state.main_city_index or 0)
         predictor = self._pred()      # stats: fallback verdict
         sim = self._sim_pred()        # engine: authoritative win verdict when available
         # Per decision, not sticky: a failure from an earlier sweep must not ride along
