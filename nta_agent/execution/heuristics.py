@@ -1000,7 +1000,13 @@ class OccupyCell:
         loot_on = (self.profile is not None
                    and (self.profile.occupy.get("loot") or {}).get("enabled", True))
         enemy = set(self.threats_source() or ()) if self.threats_source else set()
+        # A live dig outranks border defense: its group is not borrowed for it (live
+        # 2026-10-16: defense kept marching the 4 dig armies 20 cells away to the same cell
+        # while the dig sat at 0/14 for 80 min — the territory looked frozen).
+        dig_held = self._dig_reserved() if enemy else set()
+        reserved |= dig_held
         plan = self._defensive_select(cands, plans_for, predict, enemy) if enemy else None
+        reserved -= dig_held
         dig_cell = None
         if plan is None and self.dig_source is not None:
             try:

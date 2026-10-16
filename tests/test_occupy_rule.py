@@ -185,6 +185,38 @@ def test_occupy_rule_defends_contested_border_first():
     assert act.calls[0][1] == center - 1  # defended the contested border cell
 
 
+def test_border_defense_leaves_a_live_digs_group_alone():
+    # live 2026-10-16: defend_border sent the 4 dig armies 20 cells away to the same
+    # contested cell again and again while the dig sat at 0/14 for 80 min (the territory
+    # looked frozen). A live dig outranks defense: its group is not borrowed for it.
+    center = 182 * W + 526
+    st = GameState(source="api")
+    st.user.uid = "me"
+    st.main_city_index = center
+    st.resources.stamina = 10
+    areas = {
+        center: _cell(owner="me", city=1001),
+        center - 1: _cell(owner="", pawns=[50]),   # contested: enemy sits at center-2
+    }
+    my_army = [{"index": center, "uid": "A", "pawns": [{"hp": 500}, {"hp": 500}], "state": None}]
+    act = FakeActions(areas=areas, armies=my_army)
+    from types import SimpleNamespace
+    prof = SimpleNamespace(occupy={"max_loss": 100},
+                           army={"group": ["A"], "presets": {}, "active": ""})
+    rule = OccupyCell(radius=1, predictor=BattlePredictor(), profile=prof,
+                      threats_source=lambda: {center - 2})
+    rule.dig_source = lambda: None
+    rule.dig_live_source = lambda: True
+    rule.applies(st, act)
+    rule.act(act)
+    assert act.calls == []                       # the group stays for the dig
+    rule.dig_live_source = lambda: False         # dig over -> defense may use it again
+    rule._cooldown = 0
+    assert rule.applies(st, act) is True
+    rule.act(act)
+    assert act.calls and act.calls[0][1] == center - 1
+
+
 def test_occupy_rule_keeps_expanding_at_zero_stamina():
     # stamina only pays for the treasure chest: without it the game still lets us take the
     # cell (no chest). It must NOT stop the expansion (user 2026-10-01: 0 stamina = no growth)
