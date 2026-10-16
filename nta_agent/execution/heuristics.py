@@ -2238,6 +2238,9 @@ class BufferLeveling:
                                        in_progress=leveling_pawn_uids(state))
         self._buffers = {str(a["uid"]) for a in bufs}
         recs = st.setdefault("buffers", {})
+        if st.get("hero_homes"):   # a hero that is gone (died / dismissed) has no home to keep
+            alive = {str(p.get("uid")) for a in armies for p in a.get("pawns") or []}
+            st["hero_homes"] = {k: v for k, v in st["hero_homes"].items() if k in alive}
         queued = leveling_pawn_uids(state)
         owned = set()
         if self.territory_source is not None:
@@ -2294,7 +2297,7 @@ class BufferLeveling:
                              or {"books": 1e9})["books"] <= books
                         and (bp.level_step(self._rows(), int(p["id"]), int(p.get("lv", 0) or 0))
                              or {"barracks_lv": 1e9})["barracks_lv"] <= barracks]
-                tgt = None if todo else bp.pick_target(group_armies, buf, target)
+                tgt = None if todo else bp.pick_target(group_armies, buf, target, st.get("hero_homes"))
                 if tgt is None:
                     continue
                 rec.update(phase="travel", target=tgt, cell=None)
@@ -2320,7 +2323,7 @@ class BufferLeveling:
                         # this army can't be met at all (live 2026-10-02: 22 h stuck): aim at
                         # another one the buffer would improve instead of waiting for ever
                         others = [a for a in group_armies if str(a.get("uid")) != str(rec["target"])]
-                        alt = bp.pick_target(others, buf, target)
+                        alt = bp.pick_target(others, buf, target, st.get("hero_homes"))
                         if alt is not None:
                             rec["target"] = alt
                             self._emit("buffer_travel", {"buffer": uid, "target": alt,
@@ -2351,14 +2354,29 @@ class BufferLeveling:
                     continue
                 if not (is_idle(mainarmy) and is_idle(buf)):
                     continue
-                pairs = bp.swap_pairs(mainarmy, buf, target)
+                pairs = bp.swap_pairs(mainarmy, buf, target, st.get("hero_homes"))
                 if pairs and planned is None:
                     weak, ready = pairs[0]
                     m_uid = str(mainarmy["uid"])
+                    # a hero leaving its army is remembered (the pawn that takes its slot + the
+                    # slot), and forgotten once it is back: a hero's position is locked except
+                    # while it is being levelled, and it returns to EXACTLY where it was
+                    out_home = bp.home_of_swap(mainarmy, weak, ready)
+                    back = (st.get("hero_homes") or {}).get(ready)
 
-                    def run(c=cell, m=m_uid, w=weak, r=ready, b=uid):
+                    def run(c=cell, m=m_uid, w=weak, r=ready, b=uid, oh=out_home, bk=back):
                         actions.exchange_pawn_army(c, m, w, r, army_uid2=b)
-                        self._emit("buffer_swap", {"cell": c, "main": m, "weak": w, "ready": r})
+                        if oh or bk:
+                            cur = bstate.load(self.state_path)
+                            homes = dict(cur.get("hero_homes") or {})
+                            if oh:
+                                homes[w] = oh
+                            if bk:
+                                homes.pop(r, None)
+                            cur["hero_homes"] = homes
+                            bstate.save(self.state_path, cur)
+                        self._emit("buffer_swap", {"cell": c, "main": m, "weak": w, "ready": r,
+                                                   **({"hero": "out" if oh else "home"} if oh or bk else {})})
                     planned = ("swap", run)
                     continue
                 if not pairs:
