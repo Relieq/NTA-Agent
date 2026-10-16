@@ -91,7 +91,9 @@ def test_expansion_whitelist_and_revive():
     ok = sanitize_edits({"occupy": {"expansion": "spiral"},
                          "revive": {"enabled": "no"}}, _prof(), set())
     assert ok["occupy"]["expansion"] == "spiral"
-    assert ok["revive"]["enabled"] is False
+    assert "revive" not in ok                      # the brain may not switch reviving off
+    on = sanitize_edits({"revive": {"enabled": "yes"}}, _prof(), set())
+    assert on["revive"]["enabled"] is True
     # invalid expansion is dropped
     bad = sanitize_edits({"occupy": {"expansion": "zigzag"}}, _prof(), set())
     assert "occupy" not in bad or "expansion" not in bad.get("occupy", {})
