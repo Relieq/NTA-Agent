@@ -668,9 +668,14 @@ def read_free_rewards(cfg) -> dict:
             "last": d.get("last") or {}, "today": d.get("today") or {}}
 
 
-def read_dig(cfg) -> dict:
+DIG_CARD_TTL_S = 30 * 60  # a finished (done / cancelled) dig card stays this long, then it is gone
+
+
+def read_dig(cfg, now: float | None = None) -> dict:
     """The dig status (dig.json, written by the agent's DigService) + whether a
-    dashboard request is still waiting for the agent to pick it up."""
+    dashboard request is still waiting for the agent to pick it up. A dig that finished
+    (done / cancelled) is shown for DIG_CARD_TTL_S and then reads as idle — it must not
+    sit on the map panel for ever; a failed one stays, the player has to look at it."""
     try:
         d = json.loads(Path(cfg.dig_state_path).read_text(encoding="utf-8"))
     except (OSError, ValueError):
@@ -683,6 +688,11 @@ def read_dig(cfg) -> dict:
         req = {}
     pending = bool(req.get("seq") is not None and req.get("seq") != d.get("seq"))
     out = {"state": "idle", **d, "pending": pending}
+    if out["state"] in ("done", "cancelled") and not pending:
+        import time as _time
+        ended = d.get("done_at") or d.get("updated_at")
+        if isinstance(ended, (int, float)) and (_time.time() if now is None else now) - ended > DIG_CARD_TTL_S:
+            return {"state": "idle", "pending": False}
     if pending:
         out["pending_op"] = req.get("op")
         if req.get("op") == "cancel":  # show it at once: the agent stops digging on read
