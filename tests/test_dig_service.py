@@ -323,3 +323,24 @@ def test_dismiss_clears_a_finished_card_but_never_a_live_dig(tmp_path):
     _req(tmp_path, 5, "dismiss")
     svc.tick(_state())
     assert svc.dig["state"] == "idle" and svc.dig["seq"] == 5
+
+
+def test_a_fort_under_construction_still_counts_as_a_node_when_replanning(tmp_path):
+    # live 2026-10-16: a fort queued a moment ago is neither in the queue (FortBuild sent
+    # the order) nor in forts.json (not built yet) -> the replan saw no fort nearby and
+    # planned a second one right next to it (66,303 beside 66,304: 1550 wood+stone wasted)
+    scan = {"owned": _owned_block()}
+    svc, clock = _svc(tmp_path, scan)
+    _req(tmp_path, 1, "request", index=I(30, 10))
+    svc.tick(_state())
+    fort = svc.dig["fort_idx"][0]
+    _req(tmp_path, 2, "confirm")
+    svc.tick(_state())
+    scan["owned"] = _owned_block() | {I(x, 10) for x in range(12, fort % W + 1)}
+    svc.tick(_state(land=9))
+    fort_queue.remove(tmp_path / "pending_forts.json", fort)   # order sent, building
+    scan["owned"] = scan["owned"] | {I(fort % W + 1, 10)}
+    clock.t += 61
+    svc.tick(_state(land=10))
+    near = [f for f in svc.dig["fort_idx"] if f != fort and abs(f % W - fort % W) < svc.fort_every]
+    assert near == []

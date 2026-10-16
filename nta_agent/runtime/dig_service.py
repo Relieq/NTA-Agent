@@ -359,8 +359,9 @@ class DigService:
         carry = [f for f in (dig.get("fort_idx") or []) if f in owned and f not in queued]
         # the protection zone (radius 6 round the city) is already sped up: count
         # from its edge, like one big fort (user 2026-09-25)
+        # a fort already ordered by this dig is in neither list while it is being built
         nodes = ([int(f) for f in (self._forts_source() or [])]
-                 + fort_queue.load(self.cfg.pending_forts_path) + carry)
+                 + fort_queue.load(self.cfg.pending_forts_path) + carry + sorted(queued))
         forts = carry + (dp.place_forts(plan.path, nodes, world.lv, every=self.fort_every,
                                         main=main, main_radius=6)
                          if plan.path else [])
