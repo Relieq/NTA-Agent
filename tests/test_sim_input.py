@@ -92,3 +92,72 @@ def test_enemy_conf_is_normalised_points_hp_treasures():
     assert p0["point"] == {"x": 3, "y": 0} and p0["hp"] == [498, 498]
     assert p1["point"] == {"x": 0, "y": 9} and p1["hp"] == [5, 9]
     assert p1["treasures"] == [{"uid": "t", "id": 1, "rewards": []}]
+
+
+# ---- policy buffs: the server gives every fighter of ours the adopted policies' battle
+# effects (live 2026-10-16: +20% damage to monsters, policy 1042) -- the sim left them
+# out and predicted 0 deaths for a battle that lost a pawn.
+_POLICY = {1042: {"id": 1042, "type": 53, "value": "20,30,50"},
+           1001: {"id": 1001, "type": 12, "value": "100,150,200"},   # an economy policy
+           1029: {"id": 1029, "type": 41, "value": "5,10,15"}}       # ADD_ATTACK
+
+
+def _state_with_slots(slots):
+    st = GameState(source="api"); st.user.uid = "1"
+    st.raw = {"player": {"policySlots": slots}}
+    return st
+
+
+def _one_army():
+    return [{"uid": "a", "index": 1, "marchTime": 0,
+             "pawns": [{"uid": "p1", "id": 3305, "lv": 1}, {"uid": "p2", "id": 3305, "lv": 1}]}]
+
+
+def test_adopted_battle_policy_becomes_a_buff_on_every_pawn(monkeypatch):
+    from nta_agent.execution.predictors import sim_input
+    monkeypatch.setattr(sim_input, "_policy_rows", lambda: _POLICY)
+    st = _state_with_slots({"1": {"lv": 1, "id": 1042}, "2": {"lv": 2, "id": 1001},
+                            "3": {"lv": 3, "id": 0, "selectIds": [1042]}})
+    out = build_forecast_input(st, _one_army(), target_index=9, land_id=0, distance=1)
+    for p in out["armies"][0]["pawns"]:
+        assert [(b["type"], b["value"]) for b in p["buffs"]] == [(1042, 20)]   # economy one skipped
+        assert p["buffs"][0]["provider"] == p["uid"] and p["buffs"][0]["round"] == -1
+
+
+def test_the_same_policy_in_two_slots_stacks_its_level(monkeypatch):
+    from nta_agent.execution.predictors import sim_input
+    monkeypatch.setattr(sim_input, "_policy_rows", lambda: _POLICY)
+    st = _state_with_slots({"1": {"lv": 1, "id": 1029}, "2": {"lv": 2, "id": 1029}})
+    out = build_forecast_input(st, _one_army(), target_index=9, land_id=0, distance=1)
+    assert [(b["type"], b["value"]) for b in out["armies"][0]["pawns"][0]["buffs"]] == [(1029, 10)]
+
+
+def test_no_policies_or_no_table_means_no_buffs(monkeypatch):
+    from nta_agent.execution.predictors import sim_input
+    monkeypatch.setattr(sim_input, "_policy_rows", lambda: {})
+    st = _state_with_slots({"1": {"lv": 1, "id": 1042}})
+    out = build_forecast_input(st, _one_army(), target_index=9, land_id=0, distance=1)
+    assert out["armies"][0]["pawns"][0]["buffs"] == []
+    st2 = GameState(source="api"); st2.raw = {}; st2.user.uid = "1"
+    monkeypatch.setattr(sim_input, "_policy_rows", lambda: _POLICY)
+    out = build_forecast_input(st2, _one_army(), target_index=9, land_id=0, distance=1)
+    assert out["armies"][0]["pawns"][0]["buffs"] == []
+
+
+def test_conditional_policies_follow_the_engine_pawn_filter(monkeypatch):
+    """engine checkPawnCanAddPolicyBuff: LV_6_POWER (1045) only on lv-6 pawns, LV_1_POWER
+    (1030) only on lv-1, the masteries only on their own pawn type."""
+    from nta_agent.execution.predictors import sim_input
+    rows = {1045: {"id": 1045, "type": 56, "value": "10,15,20"},
+            1030: {"id": 1030, "type": 42, "value": "5,10,15"},
+            1051: {"id": 1051, "type": 61, "value": "8,12,16"}}   # ARCHER_MASTERY
+    monkeypatch.setattr(sim_input, "_policy_rows", lambda: rows)
+    monkeypatch.setattr(sim_input, "_pawn_type", lambda pid: {3305: 3, 3206: 2}.get(pid, 0))
+    st = _state_with_slots({"1": {"lv": 1, "id": 1045}, "2": {"lv": 2, "id": 1030},
+                            "3": {"lv": 3, "id": 1051}})
+    armies = [{"uid": "a", "index": 1, "marchTime": 0, "pawns": [
+        {"uid": "imp6", "id": 3305, "lv": 6}, {"uid": "imp1", "id": 3305, "lv": 1},
+        {"uid": "tank2", "id": 3206, "lv": 2}]}]
+    out = build_forecast_input(st, armies, target_index=9, land_id=0, distance=1)
+    got = {p["uid"]: sorted(b["type"] for b in p["buffs"]) for p in out["armies"][0]["pawns"]}
+    assert got == {"imp6": [1045, 1051], "imp1": [1030, 1051], "tank2": []}
