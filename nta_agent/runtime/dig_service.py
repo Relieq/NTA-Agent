@@ -260,6 +260,11 @@ class DigService:
                 self._plan(state, preview=cur in ("preview", "failed"))
             else:
                 self._save()
+        elif op == "dismiss":  # the player closes a finished card; a live dig is left alone
+            self.dig["seq"] = seq
+            if cur in ("done", "cancelled", "failed"):
+                self.dig = {"seq": seq, "state": "idle"}
+            self._save()
         elif op == "cancel":
             self.dig["seq"] = seq
             if cur in LIVE or cur in ("preview", "previewing"):

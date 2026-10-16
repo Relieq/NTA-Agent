@@ -693,6 +693,8 @@ def read_dig(cfg, now: float | None = None) -> dict:
         ended = d.get("done_at") or d.get("updated_at")
         if isinstance(ended, (int, float)) and (_time.time() if now is None else now) - ended > DIG_CARD_TTL_S:
             return {"state": "idle", "pending": False}
+    if pending and req.get("op") == "dismiss" and out["state"] in ("done", "cancelled", "failed"):
+        return {"state": "idle", "pending": False}
     if pending:
         out["pending_op"] = req.get("op")
         if req.get("op") == "cancel":  # show it at once: the agent stops digging on read
@@ -707,7 +709,7 @@ def dig_command(cfg, op: str, body: dict) -> dict:
     -> dig_request.json (a fresh seq), which the agent's DigService answers in dig.json."""
     import time as _time
     if op not in ("request", "confirm", "cancel", "replan", "evaluate", "confirm_path",
-                  "set_forts", "cancel_draft"):
+                  "set_forts", "cancel_draft", "dismiss"):
         return {"ok": False, "error": "thao tác không hợp lệ"}
     req = {"seq": _time.time_ns(), "op": op}
     if op in ("evaluate", "set_forts"):

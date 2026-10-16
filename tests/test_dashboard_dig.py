@@ -98,3 +98,13 @@ def test_a_cancelled_dig_card_also_expires_but_a_failed_one_stays(tmp_path):
     cfg.dig_state_path.write_text(json.dumps(
         {"seq": 1, "state": "failed", "updated_at": 1000.0}), encoding="utf-8")
     assert read_dig(cfg, now=1000.0 + 3 * 3600)["state"] == "failed"  # needs the player's eyes
+
+
+def test_dismiss_is_an_op_and_hides_the_finished_card_at_once(tmp_path):
+    cfg = _cfg(tmp_path)
+    cfg.dig_state_path.write_text(json.dumps(
+        {"seq": 1, "state": "done", "done_at": 9e12}), encoding="utf-8")
+    assert read_dig(cfg)["state"] == "done"
+    assert dig_command(cfg, "dismiss", {})["ok"] is True
+    assert json.loads(cfg.dig_request_path.read_text(encoding="utf-8"))["op"] == "dismiss"
+    assert read_dig(cfg)["state"] == "idle"       # before the agent even picks it up

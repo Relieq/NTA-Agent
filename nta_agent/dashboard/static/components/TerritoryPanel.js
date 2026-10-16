@@ -472,13 +472,14 @@ export default {
    await digCmd("cancel_draft"); route.value=[]; routeDirty.value=false; drawing.value=false; fortSel.value=[]; render(); }
   const draftErrors=()=>{ const d=(dig.value||{}).draft; return d? (d.errors||[]) : []; };
   const digCancel=()=>digCmd("cancel");
+  const digDismiss=()=>digCmd("dismiss");
   const digReplan=()=>digCmd("replan");
 
   onMounted(()=>{ const cv=canvas.value; if(cv) cv.addEventListener("wheel", onWheel, {passive:false}); });
   onUnmounted(()=>{ const cv=canvas.value; if(cv) cv.removeEventListener("wheel", onWheel); });
 
   return { marks, markCount, clearMarks, editRoute, drawHint, canvas, tip, sel, built, onDown, onMove, onUp, onLeave, zoomBtn, recenterBtn, fitBtn, buildFort,
-           dig, digBuffer, digMsg, digHere, digConfirm, digCancel, digReplan, fmtDur, DIG_STATE, DIG_REASON,
+           dig, digBuffer, digMsg, digHere, digConfirm, digCancel, digDismiss, digReplan, fmtDur, DIG_STATE, DIG_REASON,
            drawing, route, routeDirty, startDraw, stopDraw, undoCell, clearRoute, evaluateRoute, editSuggestion,
            confirmPath, cancelDraft, draftErrors, ERR_WHY, DRAFT_STATE };
  },
@@ -555,6 +556,8 @@ export default {
      :title="dig.mode==='drawn' ? 'Đánh giá lại các ô còn lại với mô phỏng mới (không đổi đường)' : 'Tính lại từ đầu với dữ liệu bản đồ + mô phỏng mới'"
      @click="digReplan">{{ dig.mode==='drawn' ? '🔄 Đánh giá lại' : '🔄 Tìm đường khác' }}</button>
    <button v-if="['preview','previewing','active','waiting'].includes(dig.state)" @click="digCancel">✖ Huỷ mục tiêu</button>
+   <button v-if="['done','cancelled','failed'].includes(dig.state)" :disabled="dig.pending" @click="digDismiss"
+     title="Đóng thông báo này">✖ Đóng</button>
    <span v-if="digMsg" style="color:#da3633">{{ digMsg }}</span>
   </div>
   <div style="position:relative">
