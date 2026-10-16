@@ -143,6 +143,10 @@ class RuntimeConfig:
         return self.log_dir / "spare_advice.json"     # spare armies: ok / stuck warning
 
     @property
+    def injury_origins_path(self) -> Path:
+        return self.log_dir / "injury_origins.json"   # pawn uid -> the army it stood in (rescue)
+
+    @property
     def buffers_path(self) -> Path:
         return self.log_dir / "buffers.json"          # buffer-leveling proposal + phases
 

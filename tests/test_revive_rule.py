@@ -38,11 +38,36 @@ class FakeActions:
 
 def test_revives_into_home_army_with_room():
     st = _state([{"uid": "d1", "id": 3101, "lv": 1}])
-    acts = FakeActions([{"uid": "A", "name": "D1", "index": MAIN, "pawns": [{}] * 3}])
-    rule = ReviveInjured()
+    acts = FakeActions([{"uid": "A", "name": "Đội 1", "index": MAIN, "pawns": [{}] * 3}])
+    rule = ReviveInjured(origin_source=lambda uid: "A")      # the pawn died in army A
     assert rule.applies(st, acts) is True
     rule.act(acts)
-    assert acts.cured == [(MAIN, "A", "D1", "d1")]
+    assert acts.cured == [(MAIN, "A", "Đội 1", "d1")]
+
+
+def test_without_a_known_origin_the_pawn_goes_to_the_rescue_army_not_a_spare():
+    st = _state([{"uid": "d1", "id": 3101, "lv": 1}])
+    acts = FakeActions([{"uid": "A", "name": "D1", "index": MAIN, "pawns": [{}] * 3}])
+    rule = ReviveInjured()
+    rule.applies(st, acts)
+    rule.act(acts)
+    assert acts.cured == [(MAIN, "", "Cứu Hộ", "d1")]
+
+
+def test_a_busy_origin_army_falls_back_to_the_rescue_army_in_the_same_tick():
+    st = _state([{"uid": "d1", "id": 3101, "lv": 1}])
+    acts = FakeActions([{"uid": "A", "name": "Đội 1", "index": MAIN, "pawns": [{}] * 3}])
+    real = acts.cure_injury_pawn
+
+    def busy_first(index, army_uid, army_name, pawn_uid):
+        if army_uid == "A":
+            raise RuntimeError("game/HD_CureInjuryPawn: ecode.500011")   # leveling: 'army not found'
+        return real(index, army_uid, army_name, pawn_uid)
+    acts.cure_injury_pawn = busy_first
+    rule = ReviveInjured(origin_source=lambda uid: "A")
+    rule.applies(st, acts)
+    rule.act(acts)
+    assert acts.cured == [(MAIN, "", "Cứu Hộ", "d1")]
 
 
 def test_creates_new_army_when_all_full():
