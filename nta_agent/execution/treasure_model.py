@@ -41,8 +41,29 @@ def _tier_avgs(config) -> dict:
     return out
 
 
-def cell_loot(land_id: int, config) -> CellLoot:
-    la = config.table("landAttr").get(int(land_id))
+# engine getLandAttrLvByDis: the landAttr row of a cell is 1000*land.lv + clamp(distance, 1, cap)
+_ATTR_DIS_CAP = {1: 12, 2: 12, 3: 12, 4: 15, 5: 16}
+
+
+def land_attr_id(config, land_id: int, dist: int | None = None) -> int:
+    """landAttr id of a cell from its LAND id (land table) and its distance to the main city.
+    An id that is not a land with a level is returned unchanged (it may already be a landAttr id)."""
+    row = config.table("land").get(int(land_id)) or {}
+    lv = int(row.get("lv", 0) or 0)
+    if lv <= 0:
+        return int(land_id)
+    cap = _ATTR_DIS_CAP.get(lv, 10)
+    return 1000 * lv + max(1, min(cap, int(dist) if dist else 1))
+
+
+def need_stamina(config, land_id: int, dist: int | None = None) -> int:
+    """Stamina an occupation of this cell costs (and needs on hand to drop the chest)."""
+    la = config.table("landAttr").get(land_attr_id(config, land_id, dist)) or {}
+    return int(la.get("need_stamina", 0) or 0)
+
+
+def cell_loot(land_id: int, config, dist: int | None = None) -> CellLoot:
+    la = config.table("landAttr").get(land_attr_id(config, land_id, dist))
     if not la:
         return CellLoot(0, 0.0)
     counts = str(la.get("treasures_count", "0,0")).split(",")
