@@ -130,8 +130,11 @@ def sanitize_edits(edits: dict, profile, valid_army_uids, valid_build_ids=None, 
     rev_in = edits.get("revive") if isinstance(edits, dict) else None
     if isinstance(rev_in, dict) and "enabled" in rev_in:
         v = rev_in["enabled"]
-        out["revive"] = {"enabled": (v.lower() in ("1", "true", "yes")
-                                     if isinstance(v, str) else bool(v))}
+        on = v.lower() in ("1", "true", "yes") if isinstance(v, str) else bool(v)
+        # the brain may switch reviving ON, never OFF: it switched it off on "tight resources"
+        # (2026-10-16) and the dead pawns stayed in the infirmary; only the player turns it off
+        if on:
+            out["revive"] = {"enabled": True}
 
     lg_in = edits.get("logistics") if isinstance(edits, dict) else None
     if isinstance(lg_in, dict):
