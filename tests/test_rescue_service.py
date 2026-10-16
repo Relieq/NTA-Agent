@@ -102,3 +102,15 @@ def test_a_home_army_off_our_land_meets_the_rescue_at_the_main_city(tmp_path):
     s.tick(_state())
     job = next(iter(q.pending().values()))
     assert job["gather"] is True and job["meet"] == CITY
+
+
+def test_the_job_is_queued_even_while_the_home_army_is_fighting(tmp_path):
+    """Farm armies are almost never idle on the same tick as the rescue army: waiting for that
+    would never bring the pawn home. The queue holds both armies and acts when they are idle."""
+    home = A("H", "Đội 2", index=FIELD, n=8)
+    s, q, _ = _svc(tmp_path, [home])
+    s.tick(_state())
+    home["state"] = 2                                   # fighting
+    s.actions.armies = _rescued([home])
+    s.tick(_state())
+    assert len(q.pending()) == 1
