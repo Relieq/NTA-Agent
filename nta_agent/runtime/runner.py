@@ -189,10 +189,11 @@ def run(cfg: RuntimeConfig, *, ticks: int = 0, session=None, engine=None) -> Non
 
     def _pawn_move_uids():   # armies a confirmed swap/move is gathering: nobody else sends them off
         try:
-            held = set(service.pawn_moves.army_uids()) if service is not None else set()
-            return held | (rescue.rescue_uids() if rescue is not None else set())
+            return set(service.pawn_moves.army_uids()) if service is not None else set()
         except Exception:
             return set()
+    def _held_uids():   # + the rescue armies: nobody sends them off, reshapes or merges them
+        return _pawn_move_uids() | (rescue.rescue_uids() if rescue is not None else set())
     _buffers = next((r for r in _rules if getattr(r, "name", "") == "buffer_leveling"), None)
     _spares = next((r for r in _rules if getattr(r, "name", "") == "spare_armies"), None)
 
@@ -231,7 +232,7 @@ def run(cfg: RuntimeConfig, *, ticks: int = 0, session=None, engine=None) -> Non
 
             def _spare_excluded():  # armies other features own right now
                 out = set(getattr(_composer, "locked_uids", set()) if _composer else set())
-                out |= _pawn_move_uids()
+                out |= _held_uids()
                 if _buffers is not None:
                     out |= _buffers.buffer_uids() | _buffers.away_uids()
                 return out
@@ -256,9 +257,9 @@ def run(cfg: RuntimeConfig, *, ticks: int = 0, session=None, engine=None) -> Non
                 rule.spare_reserved_source = _spares.reserved_uids
             if _composer is not None:  # skip armies the composer is WORKING on (free while it waits for cereal)
                 rule.locked_source = lambda: (set(getattr(_composer, "busy_uids", set()))
-                                              | _pawn_move_uids())
+                                              | _held_uids())
             else:
-                rule.locked_source = _pawn_move_uids
+                rule.locked_source = _held_uids
         elif getattr(rule, "name", "") in ("recruit", "logistics", "heal_routing"):
             # every rule that moves/fills armies must skip the ones the composer owns
             if _composer is not None:
@@ -266,9 +267,10 @@ def run(cfg: RuntimeConfig, *, ticks: int = 0, session=None, engine=None) -> Non
                     rule.locked_source = lambda: recruit_locked(_composer, _pawn_move_uids())
                 else:
                     rule.locked_source = lambda: (set(getattr(_composer, "locked_uids", set()))
-                                                  | _pawn_move_uids())
-            else:
-                rule.locked_source = _pawn_move_uids
+                                                  | _held_uids())
+            else:   # (recruit stands down for ANY non-empty lock: queue jobs only, never the rescue armies)
+                rule.locked_source = (_pawn_move_uids if getattr(rule, "name", "") == "recruit"
+                                      else _held_uids)
             if getattr(rule, "name", "") == "recruit" and _buffers is not None:
                 rule.buffer_source = lambda: _buffers.buffer_uids() | _buffers.away_uids()
             if getattr(rule, "name", "") == "recruit" and rescue is not None:
@@ -282,7 +284,7 @@ def run(cfg: RuntimeConfig, *, ticks: int = 0, session=None, engine=None) -> Non
                 # the armies a buffer setup draws from and a main army away swapping
                 rule.locked_source = lambda: (
                     set(getattr(_composer, "locked_uids", set()) if _composer else set())
-                    | _buffers.buffer_uids() | _buffers.away_uids() | _pawn_move_uids())
+                    | _buffers.buffer_uids() | _buffers.away_uids() | _held_uids())
             if getattr(rule, "name", "") in ("logistics", "heal_routing"):
                 # treat built forts as heal/relay nodes (fortAutoSupports is empty
                 # for a freshly built fort; detect them from the chunk city decode)
@@ -332,7 +334,7 @@ def run(cfg: RuntimeConfig, *, ticks: int = 0, session=None, engine=None) -> Non
         except Exception:
             return set()
     claims = ArmyClaims()
-    claims.register("pawn_moves", _pawn_move_uids)
+    claims.register("pawn_moves", _held_uids)
     claims.register("dig", _dig_group_uids)
     if _composer is not None:
         claims.register("composer", lambda: set(getattr(_composer, "locked_uids", set())))
