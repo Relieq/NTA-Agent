@@ -271,3 +271,26 @@ def test_never_tops_up_a_buffer_army_by_name_or_by_uid():
     r2.applies(st, act2)
     r2.act(act2)
     assert all(c[2] != "X" for c in act2.calls)
+
+
+# ---- 2026-10-16: the rescue army ("Cứu Hộ") holds revived pawns that wait to go home; the
+# generic top-up must not recruit into it, nor into an army whose slot a pawn is coming back to.
+def test_the_rescue_army_is_never_topped_up():
+    st = _state([3101])
+    rescue = {"uid": "R", "name": "Cứu Hộ", "pawns": [{"id": 3101}, {"id": 3101}], "state": None}
+    act = FakeActions(st, armys=[rescue])
+    r = Recruit(config=False)
+    r.applies(st, act)
+    r.act(act)
+    assert all(c[2] != "R" for c in act.calls)
+
+
+def test_an_army_with_a_slot_reserved_for_a_returning_pawn_is_not_topped_up():
+    st = _state([3101])
+    home = {"uid": "H", "name": "Đội 1", "pawns": [{"id": 3101}] * 8, "state": None}
+    act = FakeActions(st, armys=[home])
+    r = Recruit(config=False)
+    r.skip_source = lambda: {"H"}
+    r.applies(st, act)
+    r.act(act)
+    assert all(c[2] != "H" for c in act.calls)

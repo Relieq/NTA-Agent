@@ -169,6 +169,16 @@ def run(cfg: RuntimeConfig, *, ticks: int = 0, session=None, engine=None) -> Non
 
     dig._forts_source = _forts_from_json
 
+    # Revived pawns go back to the army they died in (rescue army "Cứu Hộ" -> pawn-move queue);
+    # the rescue armies and the armies with a slot reserved are kept away from the other rules.
+    rescue = None
+    if service is not None:
+        from nta_agent.execution.rescue import OriginBook
+        from nta_agent.runtime.rescue_service import RescueService
+        rescue = RescueService(agent.actions, service.pawn_moves, OriginBook(cfg.injury_origins_path),
+                               profile=profile, territory_source=_territory_from_forts,
+                               on_event=on_event)
+
     def _clear_strike_target():
         from nta_agent.execution.profile import clear_strike_target
         clear_strike_target(cfg.profile_path)
@@ -179,7 +189,8 @@ def run(cfg: RuntimeConfig, *, ticks: int = 0, session=None, engine=None) -> Non
 
     def _pawn_move_uids():   # armies a confirmed swap/move is gathering: nobody else sends them off
         try:
-            return set(service.pawn_moves.army_uids()) if service is not None else set()
+            held = set(service.pawn_moves.army_uids()) if service is not None else set()
+            return held | (rescue.rescue_uids() if rescue is not None else set())
         except Exception:
             return set()
     _buffers = next((r for r in _rules if getattr(r, "name", "") == "buffer_leveling"), None)
@@ -260,6 +271,8 @@ def run(cfg: RuntimeConfig, *, ticks: int = 0, session=None, engine=None) -> Non
                 rule.locked_source = _pawn_move_uids
             if getattr(rule, "name", "") == "recruit" and _buffers is not None:
                 rule.buffer_source = lambda: _buffers.buffer_uids() | _buffers.away_uids()
+            if getattr(rule, "name", "") == "recruit" and rescue is not None:
+                rule.skip_source = rescue.vacancy_uids   # a slot a revived pawn is coming back to
             if getattr(rule, "name", "") == "recruit":
                 # the player's leveling order comes before the generic top-up of armies
                 rule.reserve_source = lambda: {
@@ -328,6 +341,13 @@ def run(cfg: RuntimeConfig, *, ticks: int = 0, session=None, engine=None) -> Non
     if _spares is not None:
         claims.register("spares", _spares.reserved_uids)
     wire_claims(_rules, claims, composer=_composer)
+    for _r in _rules:
+        if rescue is not None and getattr(_r, "name", "") == "revive_injured":
+            _r.origin_source = rescue.origin_of
+        if rescue is not None and getattr(_r, "name", "") == "army_composer":
+            _blocked_for_composer = _r.excluded_source
+            _r.excluded_source = lambda b=_blocked_for_composer: (
+                set(b() if b else ()) | rescue.vacancy_uids() | rescue.rescue_uids())
     for _r in _rules:
         if getattr(_r, "name", "") in ("recruit", "army_composer", "buffer_leveling"):  # per-match price
             from nta_agent.runtime import world_random as _wr_cost
@@ -439,6 +459,8 @@ def run(cfg: RuntimeConfig, *, ticks: int = 0, session=None, engine=None) -> Non
         _safe(_write_smelt_view, state)
         # pick up dashboard edits + stop the brain from clobbering them (shared obj)
         _safe(reload_into, profile, cfg.profile_path)
+        if rescue is not None and read_mode(cfg.control_path) != "pause":
+            _safe(rescue.tick, state)
         run_services(state, cfg, service, brain, forts, _safe, observer=observer)
         if read_mode(cfg.control_path) != "pause":
             _safe(free_rewards.tick, state)

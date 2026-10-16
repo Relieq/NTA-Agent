@@ -1376,6 +1376,7 @@ class Recruit:
     pawn_cost_source: object = None  # callable -> {pawn_id: base cost} of THIS match
     reserve_source: object = None    # callable -> {"cereal": n} kept for the player's leveling order
     buffer_source: object = None     # callable -> uids of leveling-buffer armies (never topped up here)
+    skip_source: object = None       # callable -> army uids whose free slot is kept for a pawn coming home
     _pending: object = None   # (build_uid, pawn_id, army_uid, army_name, pawn_count)
     _cooldown: int = 0
     # Armies the server rejected as full (ecode.500019), by uid -> pawn count when
@@ -1475,6 +1476,11 @@ class Recruit:
                 # and the drill queue — don't compete (live: 6x ecode 500018 while this
                 # rule filled other armies).
                 return False
+        # the rescue army and the armies a revived pawn is coming back to keep their slots
+        try:
+            held = {str(u) for u in (self.skip_source() if self.skip_source else ()) or ()}
+        except Exception:
+            held = set()
         # profile-driven: fill the biggest composition gap into its own army.
         if self.profile is not None:
             from nta_agent.execution.profile import active_formation, composition_target
@@ -1483,7 +1489,8 @@ class Recruit:
             if tgt is not None:
                 army_uid, pid = tgt
                 army = next((a for a in armys if str(a.get("uid")) == army_uid), None)
-                if (army is not None and self._affordable(state, pid)
+                if (army is not None and army_uid not in held and not _is_rescue_army(army)
+                        and self._affordable(state, pid)
                         and not army.get("state")
                         and not self._is_full(army)
                         and len(army.get("pawns", [])) < cap):
@@ -1510,6 +1517,8 @@ class Recruit:
             # a leveling buffer's contents belong to the buffer plan: topping it up with its
             # "main type" put Đao Khiên into the IMP buffer (live 2026-10-03)
             if str(a.get("uid")) in buffers_ or str(a.get("name", "")).startswith("Nâng Cấp"):
+                continue
+            if str(a.get("uid")) in held or _is_rescue_army(a):
                 continue
             main = _main_pawn_type(a)
             if main is None:
@@ -1555,6 +1564,11 @@ class Recruit:
                 return
             self._cooldown = self.fail_cooldown
             raise
+
+
+def _is_rescue_army(army: dict) -> bool:
+    from nta_agent.execution.rescue import is_rescue
+    return is_rescue(army)
 
 
 def _main_pawn_type(army: dict) -> int | None:
@@ -1882,6 +1896,7 @@ class ReviveInjured:
     full_cooldown: int = 60     # no revive room (armies + army cap full) -> wait longer
     on_event: object = None
     profile: object = None
+    origin_source: object = None  # callable(pawn uid) -> the army uid the pawn died in (OriginBook)
     _cooldown: int = 0
     _injured: object = None
 
@@ -1911,9 +1926,26 @@ class ReviveInjured:
             pawn = best_injured(self._injured)
             if pawn is None:
                 break
-            army_uid, army_name = revive_target(armies, main, self.capacity_hint)
+            origin = None
+            if self.origin_source is not None:
+                try:
+                    origin = self.origin_source(str(pawn.get("uid")))
+                except Exception:
+                    origin = None
+            army_uid, army_name = revive_target(armies, main, self.capacity_hint, origin=origin)
             try:
-                actions.cure_injury_pawn(main, army_uid, army_name, str(pawn.get("uid")))
+                try:
+                    actions.cure_injury_pawn(main, army_uid, army_name, str(pawn.get("uid")))
+                except Exception as e:
+                    # the origin army is busy (leveling / curing reads as 'army not found'):
+                    # the rescue army takes the pawn, the rescue service brings it home
+                    if army_uid and "ecode.500011" in str(e):
+                        army_uid, army_name = revive_target(
+                            [a for a in armies if str(a.get("uid")) != army_uid], main,
+                            self.capacity_hint)
+                        actions.cure_injury_pawn(main, army_uid, army_name, str(pawn.get("uid")))
+                    else:
+                        raise
             except Exception as e:
                 self._cooldown = self.fail_cooldown  # full army / no slot / cost -> back off
                 # Can't create a new army to revive into: the army cap is reached

@@ -223,7 +223,8 @@ class PawnMoveQueue:
         cap = int(job.get("cap", 9))
         fallback = None
         for x in armies:
-            if str(x.get("uid")) == job["a"] or str(x.get("name", "")).startswith("Nâng Cấp"):
+            if (str(x.get("uid")) == job["a"] or str(x.get("name", "")).startswith("Nâng Cấp")
+                    or str(x.get("name", "")).startswith("Cứu Hộ")):    # the rescue army keeps its pawns
                 continue
             if not is_idle(x) or x.get("index") != job.get("city"):
                 continue
