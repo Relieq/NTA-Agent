@@ -79,3 +79,22 @@ def test_read_dig_passes_the_draft_through(tmp_path):
                                   encoding="utf-8")
     v = read_dig(cfg)
     assert v["state"] == "active" and v["draft"]["path"] == [[1, 2]]
+
+
+def test_a_finished_dig_card_goes_away_after_a_while(tmp_path):
+    cfg = _cfg(tmp_path)
+    cfg.dig_state_path.write_text(json.dumps(
+        {"seq": 1, "state": "done", "target_xy": [87, 319], "done_at": 1000.0}), encoding="utf-8")
+    assert read_dig(cfg, now=1000.0 + 60)["state"] == "done"        # just finished: shown
+    v = read_dig(cfg, now=1000.0 + 3 * 3600)
+    assert v["state"] == "idle" and v["pending"] is False           # long ago: gone
+
+
+def test_a_cancelled_dig_card_also_expires_but_a_failed_one_stays(tmp_path):
+    cfg = _cfg(tmp_path)
+    cfg.dig_state_path.write_text(json.dumps(
+        {"seq": 1, "state": "cancelled", "updated_at": 1000.0}), encoding="utf-8")
+    assert read_dig(cfg, now=1000.0 + 3 * 3600)["state"] == "idle"
+    cfg.dig_state_path.write_text(json.dumps(
+        {"seq": 1, "state": "failed", "updated_at": 1000.0}), encoding="utf-8")
+    assert read_dig(cfg, now=1000.0 + 3 * 3600)["state"] == "failed"  # needs the player's eyes
