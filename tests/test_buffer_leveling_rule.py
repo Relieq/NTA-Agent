@@ -1080,3 +1080,70 @@ def test_a_restart_knows_the_group_reserve_on_the_first_tick(tmp_path):
         _tick(rule, _state(cereal=16), acts)
     fresh = _target3_rule(tmp_path)                      # a restarted agent
     assert fresh.reserve_now() == (346 + 554) * 9
+
+
+# ---- a hero levelled through the buffer returns to the slot it left --------------------
+
+def _hero_world():
+    hero = {"uid": "h", "id": 3305, "lv": 1, "portrayal": {"id": 320103, "level": 2}}
+    main = {"uid": "G0", "name": "Đội 0", "index": FIELD - 1, "state": 0,
+            "pawns": [_imp("a", 3), hero, _imp("c", 3)]}
+    other = {"uid": "G1", "name": "Đội 1", "index": FIELD - 1, "state": 0, "pawns": [_imp("z", 3)]}
+    buf = {"uid": "B", "name": "Nâng Cấp 1", "index": FIELD - 1, "state": 0,
+           "pawns": [_imp("r1", 3), _imp("r2", 3)]}
+    return [main, other, buf]
+
+
+def test_a_hero_goes_out_to_the_buffer_and_comes_back_to_its_own_slot(tmp_path):
+    _setup_done(tmp_path)
+    rule = _rule6(tmp_path)
+    world = _hero_world()
+    acts = FakeActions(world, swap_mutates=True)
+    buffers.save(tmp_path / "buffers.json", {**buffers.load(tmp_path / "buffers.json"),
+        "buffers": {"B": {"phase": "swap", "target": "G0", "cell": FIELD - 1}}})
+    _tick(rule, _state(), acts)
+    assert ("exchange", FIELD - 1, "G0", "h", "r1", "B") in acts.calls     # the hero is the weakest
+    assert [p["uid"] for p in world[0]["pawns"]] == ["a", "r1", "c"]       # r1 holds its slot now
+    homes = buffers.load(tmp_path / "buffers.json")["hero_homes"]
+    assert homes == {"h": {"army": "G0", "partner": "r1", "slot": 1}}
+    # the buffer levels the hero (simulated), then the swap-back runs
+    for p in world[2]["pawns"]:
+        if p["uid"] == "h":
+            p["lv"] = 3
+    st = buffers.load(tmp_path / "buffers.json")
+    st["buffers"]["B"] = {"phase": "swap", "target": "G0", "cell": FIELD - 1}
+    buffers.save(tmp_path / "buffers.json", st)
+    acts.calls.clear()
+    for _ in range(2):
+        _tick(rule, _state(), acts)
+    assert ("exchange", FIELD - 1, "G0", "r1", "h", "B") in acts.calls
+    assert [p["uid"] for p in world[0]["pawns"]] == ["a", "h", "c"]        # exactly the old slot
+    assert "h" not in (buffers.load(tmp_path / "buffers.json").get("hero_homes") or {})
+
+
+def test_a_levelled_hero_alone_sends_the_buffer_back_to_its_home_army(tmp_path):
+    """Every pawn of the main army is at the target, so nothing is 'weak' — but the buffer
+    still holds the levelled hero, whose home slot is waiting: the buffer travels to its army."""
+    _setup_done(tmp_path)
+    rule = _rule6(tmp_path)
+    world = _hero_world()
+    world[2]["index"] = MAIN
+    world[0]["index"] = FIELD
+    world[0]["pawns"] = [_imp("a", 3), _imp("r1", 3), _imp("c", 3)]
+    world[2]["pawns"] = [{"uid": "h", "id": 3305, "lv": 3, "portrayal": {"id": 320103, "level": 2}},
+                         _imp("r2", 3)]
+    st = buffers.load(tmp_path / "buffers.json")
+    st["hero_homes"] = {"h": {"army": "G0", "partner": "r1", "slot": 1}}
+    buffers.save(tmp_path / "buffers.json", st)
+    _tick(rule, _state(), FakeActions(world, swap_mutates=True))
+    assert _phase(tmp_path)["phase"] == "travel" and _phase(tmp_path)["target"] == "G0"
+
+
+def test_a_hero_that_no_longer_exists_loses_its_home_record(tmp_path):
+    _setup_done(tmp_path)
+    rule = _rule6(tmp_path)
+    st = buffers.load(tmp_path / "buffers.json")
+    st["hero_homes"] = {"gone": {"army": "G0", "partner": "a", "slot": 1}}
+    buffers.save(tmp_path / "buffers.json", st)
+    _tick(rule, _state(), FakeActions(_field_world(), swap_mutates=True))
+    assert not buffers.load(tmp_path / "buffers.json").get("hero_homes")

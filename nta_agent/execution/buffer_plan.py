@@ -48,13 +48,10 @@ def pawn_cost(rows, pawn_id: int, lv_from: int, lv_to: int, barracks_lv: int) ->
 
 
 def demand(armies, target_lv: int) -> dict[int, list[dict]]:
-    """Weak pawns (lv < target) of the given armies, grouped by pawn type. A hero is never
-    one of them: its slot is locked, it is not swapped out to a buffer."""
+    """Weak pawns (lv < target) of the given armies, grouped by pawn type."""
     out: dict[int, list[dict]] = {}
     for a in armies:
         for p in a.get("pawns") or []:
-            if _is_hero(p):
-                continue
             lv = int(p.get("lv", 0) or 0)
             if lv < target_lv:
                 out.setdefault(int(p["id"]), []).append(
@@ -169,26 +166,60 @@ def propose(group_armies, spare_armies, target_lv: int, *, rows, barracks_lv: in
             "notes": notes}
 
 
-def swap_pairs(main_army, buffer_army, target_lv: int) -> list[tuple[str, str]]:
+def home_of_swap(main_army, weak_uid: str, ready_uid: str) -> dict | None:
+    """Where a HERO swapped out of ``main_army`` must come back to: the army, the pawn that
+    now holds its slot (``ready_uid``) and the slot index. None when the weak pawn is not a hero."""
+    pawns = main_army.get("pawns") or []
+    for k, p in enumerate(pawns):
+        if str(p.get("uid")) == str(weak_uid):
+            if not _is_hero(p):
+                return None
+            return {"army": str(main_army["uid"]), "partner": str(ready_uid), "slot": k}
+    return None
+
+
+def _return_pair(main_army, buffer_army, target_lv: int, homes) -> list[tuple[str, str]]:
+    """(pawn now in the hero's old slot, levelled hero) for every hero of ``buffer_army``
+    that is at the target and whose home is ``main_army``: the hero goes back to EXACTLY the
+    slot it left (the player's rule: a hero's position is locked except while levelling)."""
+    out = []
+    pawns = main_army.get("pawns") or []
+    by_uid = {str(p["uid"]): p for p in pawns}
+    for h in buffer_army.get("pawns") or []:
+        home = (homes or {}).get(str(h["uid"]))
+        if not (_is_hero(h) and _lv(h) >= target_lv and home and home.get("army") == str(main_army["uid"])):
+            continue
+        partner = home.get("partner")
+        if partner not in by_uid:   # it moved on: whoever holds the old slot now
+            slot = int(home.get("slot", -1))
+            partner = str(pawns[slot]["uid"]) if 0 <= slot < len(pawns) else None
+        if partner is not None and all(partner != w for w, _ in out):
+            out.append((str(partner), str(h["uid"])))
+    return out
+
+
+def swap_pairs(main_army, buffer_army, target_lv: int, homes=None) -> list[tuple[str, str]]:
     """(weak main pawn, ready buffer pawn) pairs of the SAME type — weakest main
-    pawn first, each ready pawn used once."""
+    pawn first, each ready pawn used once. A levelled hero in the buffer is never an ordinary
+    ready pawn: it only returns to its recorded home slot (those pairs come first)."""
+    out = _return_pair(main_army, buffer_army, target_lv, homes)
+    used = {w for w, _ in out}
     ready: dict[int, list[str]] = {}
     for p in sorted(buffer_army.get("pawns") or [], key=lambda p: (-_lv(p), str(p["uid"]))):
-        if _lv(p) >= target_lv:
+        if _lv(p) >= target_lv and not _is_hero(p):
             ready.setdefault(int(p["id"]), []).append(str(p["uid"]))
-    out = []
     for p in sorted(main_army.get("pawns") or [], key=lambda p: (_lv(p), str(p["uid"]))):
         pool = ready.get(int(p["id"]))
-        if _lv(p) < target_lv and pool and not _is_hero(p):
+        if _lv(p) < target_lv and pool and str(p["uid"]) not in used:
             out.append((str(p["uid"]), pool.pop(0)))
     return out
 
 
-def pick_target(group_armies, buffer_army, target_lv: int) -> str | None:
+def pick_target(group_armies, buffer_army, target_lv: int, homes=None) -> str | None:
     """The main army the buffer improves most (most pairs, then lowest total lv)."""
     best = None
     for a in group_armies:
-        n = len(swap_pairs(a, buffer_army, target_lv))
+        n = len(swap_pairs(a, buffer_army, target_lv, homes))
         if n:
             key = (-n, sum(_lv(p) for p in a.get("pawns") or []), str(a["uid"]))
             if best is None or key < best[0]:
@@ -252,7 +283,7 @@ def own_target(group_armies, designated, target_lv: int, order=None) -> dict | N
     best = None
     for a in group_armies or []:
         n = sum(1 for p in a.get("pawns") or []
-                if _lv(p) < target_lv and not _is_hero(p) and (not des or int(p["id"]) in des))
+                if _lv(p) < target_lv and (not des or int(p["id"]) in des))
         if not n:
             continue
         key = (-n, order.get(str(a.get("uid")), 10**6), str(a.get("uid")))
@@ -269,10 +300,12 @@ def reshape(buffer_army, target_army, spares_at_city, target_lv: int) -> list[tu
     IMP buffer takes one hunter to serve an 8 IMP + 1 hunter army."""
     need: dict[int, int] = {}
     for p in target_army.get("pawns") or []:
-        if _lv(p) < target_lv and not _is_hero(p):
+        if _lv(p) < target_lv:
             need[int(p["id"])] = need.get(int(p["id"]), 0) + 1
     have: dict[int, list[dict]] = {}
     for p in buffer_army.get("pawns") or []:
+        if _is_hero(p):      # a hero being levelled here is never traded away
+            continue
         have.setdefault(int(p["id"]), []).append(p)
     surplus: list[dict] = []
     for t, ps in have.items():

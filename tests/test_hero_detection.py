@@ -24,12 +24,42 @@ def test_dashboard_view_keeps_the_hero_flag():
     assert [bool(p.get("hero")) for p in rows[0]["pawns"]] == [True, False]
 
 
-def test_buffer_leveling_never_picks_the_hero_as_the_weak_pawn():
-    main = {"uid": "M", "pawns": [{"uid": "a", "id": 3201, "lv": 3}, dict(HERO),
-                                  {"uid": "c", "id": 3201, "lv": 2}]}
+def _hero(lv=1, uid="H"):
+    return {"uid": uid, "id": 3201, "lv": lv, "portrayal": {"id": 320103, "level": 2}}
+
+
+def test_a_weak_hero_swaps_out_like_any_weak_pawn_and_is_remembered():
+    main = {"uid": "M", "pawns": [{"uid": "a", "id": 3201, "lv": 3}, _hero(1), {"uid": "c", "id": 3201, "lv": 2}]}
     buf = {"uid": "B", "pawns": [{"uid": "r1", "id": 3201, "lv": 3}, {"uid": "r2", "id": 3201, "lv": 3}]}
-    assert bp.swap_pairs(main, buf, 3) == [("c", "r1")]          # the hero keeps its slot
-    assert bp.demand([main], 3) == {3201: [{"uid": "c", "army_uid": "M", "lv": 2}]}
-    assert bp.own_target([main], [3201], 3) is main              # still shaped for the real weak pawn
-    only_hero = {"uid": "N", "pawns": [dict(HERO)]}
-    assert bp.own_target([only_hero], [3201], 3) is None         # nothing to level but the hero
+    assert bp.swap_pairs(main, buf, 3) == [("H", "r1"), ("c", "r2")]      # weakest first: the hero
+    assert bp.home_of_swap(main, "H", "r1") == {"army": "M", "partner": "r1", "slot": 1}
+
+
+def test_a_levelled_hero_only_goes_home_to_its_own_slot():
+    homes = {"H": {"army": "M", "partner": "r1", "slot": 1}}
+    main = {"uid": "M", "pawns": [{"uid": "a", "id": 3201, "lv": 3}, {"uid": "r1", "id": 3201, "lv": 3},
+                                  {"uid": "c", "id": 3201, "lv": 2}]}
+    buf = {"uid": "B", "pawns": [_hero(3), {"uid": "r2", "id": 3201, "lv": 3}]}
+    # the hero returns into the slot r1 holds, FIRST; the other ready pawn serves the other weak one
+    assert bp.swap_pairs(main, buf, 3, homes) == [("r1", "H"), ("c", "r2")]
+    assert bp.pick_target([main], buf, 3, homes) == "M"
+    # another army never receives the hero: the ready pool excludes it
+    other = {"uid": "N", "pawns": [{"uid": "w", "id": 3201, "lv": 1}]}
+    assert bp.swap_pairs(other, buf, 3, homes) == [("w", "r2")]
+    # no ready partner and no weak pawn to give: nothing for a hero without a home army
+    assert bp.swap_pairs(other, {"uid": "B", "pawns": [_hero(3)]}, 3, homes) == []
+
+
+def test_home_falls_back_to_the_pawn_now_in_the_old_slot():
+    homes = {"H": {"army": "M", "partner": "gone", "slot": 1}}
+    main = {"uid": "M", "pawns": [{"uid": "a", "id": 3201, "lv": 3}, {"uid": "x", "id": 3201, "lv": 3}]}
+    buf = {"uid": "B", "pawns": [_hero(3)]}
+    assert bp.swap_pairs(main, buf, 3, homes) == [("x", "H")]
+
+
+def test_the_buffer_never_trades_its_hero_away_in_reshape():
+    target = {"uid": "T", "pawns": [{"uid": "t", "id": 3305, "lv": 1}]}
+    buf = {"uid": "B", "pawns": [_hero(1), {"uid": "q", "id": 3201, "lv": 1}]}
+    spare = {"uid": "S", "pawns": [{"uid": "s", "id": 3305, "lv": 3}]}
+    trades = bp.reshape(buf, target, [spare], 3)
+    assert all(out != "H" for out, _s, _i in trades)
