@@ -21,6 +21,8 @@ RULE_HOOKS = {
 
 
 def wire_claims(rules, claims: ArmyClaims, composer=None) -> None:
+    rules = list(rules)
+    occupy = next((r for r in rules if getattr(r, "name", "") == "occupy_cell"), None)
     for rule in rules:
         hook = RULE_HOOKS.get(getattr(rule, "name", ""))
         if hook is not None:
@@ -29,8 +31,15 @@ def wire_claims(rules, claims: ArmyClaims, composer=None) -> None:
         if getattr(rule, "name", "") == "heal_routing":
             # a dig WAITS for its group to heal ("dig_heal_wait") and relies on HealRouting to
             # send it: the dig group is not held away from healing (the player's chat still is)
-            rule.locked_source = lambda: (
-                claims.blocked_for("heal") - (claims.held_by("dig") - claims.held_by("pawn_moves")))
+            # ... but only once the dig says so: while the sim still calls the next cell clean
+            # (after swapping wounded for healthy pawns) the dig fights on, wounds and all
+            def _heal_locked(o=occupy):
+                blocked = claims.blocked_for("heal")
+                wanted = getattr(o, "dig_heal_wanted", None)
+                if wanted is not None and not wanted():
+                    return blocked
+                return blocked - (claims.held_by("dig") - claims.held_by("pawn_moves"))
+            rule.locked_source = _heal_locked
         if getattr(rule, "name", "") == "buffer_leveling":
             # armies ONLY a dig holds stay swap targets while idle at the city (the dig lasts
             # hours; chat / composer holds always win)

@@ -111,3 +111,16 @@ def test_a_refused_swap_falls_back_to_healing_and_is_not_retried_at_once():
     assert r._balance is None
     assert r._dig_select(CANDS, _plans_for(order), _predict, CELL) is None   # heal path now
     assert "dig_heal_wait" in [k for k, _ in r.events]
+
+
+def test_the_dig_asks_for_a_heal_trip_only_when_it_cannot_go_on():
+    # live 2026-10-16: HealRouting sent any scratched dig army home (~30 min a cell); the
+    # dig must say when a trip is really needed (balance first, then 'heal wait')
+    r = _rule()
+    assert r.dig_heal_wanted() is False
+    assert r._dig_select(CANDS, _plans_for([_p("a", 30), _p("b", 40)]), _predict, CELL) is None
+    assert r.dig_heal_wanted() is True                       # no healthy partner -> heal
+    ok = r._dig_select(CANDS, _plans_for([_p("a", 100), _p("b", 100)]), _predict, CELL)
+    assert ok is not None and r.dig_heal_wanted() is False   # fit again -> dig on
+    assert r._dig_select(CANDS, _plans_for([_p("a", 30), _p("b", 40)]), _predict, CELL) is None
+    assert r.dig_heal_wanted(ttl=-1) is False                # a stale request expires

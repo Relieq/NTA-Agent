@@ -410,6 +410,7 @@ class OccupyCell:
     locked_source: object = None   # callable -> army-uid set the ArmyComposer is arranging
     lessons_source: object = None  # callable -> active lessons (Inc 3 contextual recall)
     dig_source: object = None      # callable -> the dig's next cell or None (DigService)
+    _heal_wanted_at: float = 0.0   # when the dig last said its group must go heal (0 = no)
     ally_frontier_max: int = 40    # cells touching ally land probed per sweep (one request each)
     dig_hard_sink: object = None   # callable(cell): the dig group can't win it now
     dig_live_source: object = None  # callable -> bool: a dig is on (reserve its group)
@@ -750,14 +751,25 @@ class OccupyCell:
                 # before a trip home: swap the pawns that lost the most hp with healthy
                 # same-type ones (the player's way) — keep digging if the sim then calls it clean
                 if self._balance_try(plans, predict, cell, max_loss):
+                    self._heal_wanted_at = 0.0
                     return "balance"
+                import time as _time
+                self._heal_wanted_at = _time.time()
                 if self.on_event:
                     self.on_event("dig_heal_wait", {"cell": cell, "xy": [cell % 600, cell // 600]})
                 return None
             if self.dig_hard_sink is not None:
                 self.dig_hard_sink(cell)
             return None
+        self._heal_wanted_at = 0.0   # healthy enough to dig on: no trip home
         return plan
+
+    def dig_heal_wanted(self, ttl: float = 300.0) -> bool:
+        """True while the dig has said its group can't take the next cell until it heals.
+        Only then may HealRouting send dig-group armies home — a wound the sim still
+        calls clean must not cost the dig a ~30 min trip (live 2026-10-16)."""
+        import time as _time
+        return bool(self._heal_wanted_at) and _time.time() - self._heal_wanted_at < ttl
 
     def _balance_try(self, plans, predict, cell: int, max_loss: float) -> bool:
         """Find the fewest wounded<->healthy pawn swaps after which the group wins ``cell``
