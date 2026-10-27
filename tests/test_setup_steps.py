@@ -165,6 +165,31 @@ def test_ldplayer14_adb_is_a_candidate():
     assert any("LDPlayer14" in str(p) for p in config._ADB_CANDIDATES)
 
 
+def test_adb_is_found_where_the_registry_says_ldplayer_is_installed(tmp_path, monkeypatch):
+    # 2026-10-27: LDPlayer 14 installed to "C:\Download Apps\LDPlayer" — none of the fixed paths
+    from nta_agent import config
+    (tmp_path / "adb.exe").write_bytes(b"")
+    monkeypatch.setattr(config.user_settings, "get", lambda k, d=None: None)
+    monkeypatch.setattr(config, "_ADB_CANDIDATES", [tmp_path / "missing" / "adb.exe"])
+    monkeypatch.setattr(config, "_registry_install_dirs", lambda: [str(tmp_path) + "\\"])
+    assert config._find_adb() == str(tmp_path / "adb.exe")
+
+
+def test_a_saved_adb_path_that_no_longer_exists_falls_back_to_detection(tmp_path, monkeypatch):
+    # moving to a new machine: settings.json still says D:\LDPlayer\LDPlayer9\adb.exe (no D:)
+    from nta_agent import config
+    (tmp_path / "adb.exe").write_bytes(b"")
+    monkeypatch.setattr(config.user_settings, "get",
+                        lambda k, d=None: str(tmp_path / "gone" / "adb.exe") if k == "adb_path" else None)
+    monkeypatch.setattr(config, "_ADB_CANDIDATES", [tmp_path / "adb.exe"])
+    assert config._find_adb() == str(tmp_path / "adb.exe")
+
+
+def test_registry_lookup_never_raises_without_winreg_keys(monkeypatch):
+    from nta_agent import config
+    assert isinstance(config._registry_install_dirs(), list)
+
+
 def test_settings_refuses_a_bare_port_as_serial():
     from nta_agent.dashboard.server import update_settings
     r = update_settings({"adb_serial": "5555"})

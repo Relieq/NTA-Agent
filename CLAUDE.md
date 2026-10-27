@@ -36,13 +36,14 @@ API-migration break the vision path for a feature.
 
 ## Environment (LDPlayer since 2026-09-10 — re-verify before relying on)
 
-- **Emulator: LDPlayer 9** (v9.5.31.0, Android 9, x86_64), NOT BlueStacks. Switched from
-  BlueStacks because LDPlayer's 1-click root is far easier (root confirmed: `su -c id` → uid=0).
-  BlueStacks is kept only as a cold fallback. See memory `nta-agent-lab-setup`.
-- **ADB binary: `D:\LDPlayer\LDPlayer9\adb.exe`** (device `emulator-5554`, also `127.0.0.1:5555`).
-  Do NOT use `C:\Program Files\BlueStacks_nxt\HD-Adb.exe` — its adb client (v36) mismatches
-  LDPlayer's adb server (v41) and spams "server version mismatch" + restarts the daemon every call.
-  LDPlayer CLI: `D:\LDPlayer\LDPlayer9\ldconsole.exe` (`modify --resolution/--root/...`).
+- **Emulator: LDPlayer 14** (since the move to this machine, 2026-10-26; the old machine ran
+  LDPlayer 9 v9.5.31.0, Android 9, x86_64), NOT BlueStacks. LDPlayer because its 1-click root is
+  far easier. BlueStacks is kept only as a cold fallback. See memory `nta-agent-lab-setup`.
+- **ADB binary: `C:\Download Apps\LDPlayer\adb.exe`** (LDPlayer 14 install dir, recorded in the
+  registry `HKCU\Software\XuanZhi\LDPlayer14\InstallDir` — `nta_agent/config.py` finds it there);
+  device `emulator-5554`, also `127.0.0.1:5555`. Do NOT use `C:\Program Files\BlueStacks_nxt\HD-Adb.exe`
+  — its adb client (v36) mismatches LDPlayer's adb server (v41) and restarts the daemon every call.
+  LDPlayer CLI: `C:\Download Apps\LDPlayer\ldconsole.exe` (`list2`, `modify --resolution/--root/...`).
 - Game `twgame.global.acers` **v4.4.4** on LDPlayer (newer than the old v4.4.0 BlueStacks build),
   defaults to **English** (`__slg_lang__=en`); engine is **Cocos2d-x JavaScript**
   (`org.cocos2dx.javascript.AppActivity`) — logic/protocol in a JS bundle inside `base.apk/assets`
@@ -62,7 +63,7 @@ API-migration break the vision path for a feature.
 Common ADB probes (quote the path — it contains a space; do NOT prefix `MSYS_NO_PATHCONV` unless a
 `/sdcard/...` arg gets mangled, in which case use a `//sdcard/...` double-slash for device paths):
 ```bash
-ADB="/d/LDPlayer/LDPlayer9/adb.exe"
+ADB="/c/Download Apps/LDPlayer/adb.exe"
 "$ADB" devices
 "$ADB" shell wm size
 # exec-out screencap can corrupt the PNG on Windows; pull via an on-device file instead:
