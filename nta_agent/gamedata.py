@@ -186,6 +186,42 @@ def find_xxtea_key(apk: Path) -> str | None:
     return None
 
 
+def _probe(apk: Path) -> bytes | None:
+    try:
+        with zipfile.ZipFile(apk) as z:
+            return z.read(PROBE_ENTRY) if PROBE_ENTRY in z.namelist() else None
+    except (OSError, zipfile.BadZipFile):
+        return None
+
+
+def resolve_key(apk: Path, *, saved: str | None = None, device=None) -> tuple[str | None, str | None]:
+    """The APK's XXTEA key and where it came from: the saved one while it still decrypts
+    this APK (``"saved"``), else the APK's own native library (``"apk"``), else — game 4.5.x
+    builds it at runtime — read from the running game over root ADB (``"device"``, via
+    ``device(probe) -> key``). ``(None, None)`` when none works."""
+    probe = _probe(apk)
+
+    def works(key: str | None) -> bool:
+        if not key:
+            return False
+        if probe is None:  # nothing to check against: trust it, the decrypt step will tell
+            return True
+        return _looks_like_js(decrypt_bytes(probe, key.encode()[:16]))
+    if works(saved):
+        return saved, "saved"
+    found = find_xxtea_key(apk)
+    if found:
+        return found, "apk"
+    if device is not None and probe is not None:
+        try:
+            k = device(probe)
+        except Exception:  # no adb / emulator off / no root: just no key from there
+            k = None
+        if works(k):
+            return k, "device"
+    return None, None
+
+
 # -------------------------------------------------------- config tables ---- #
 _B64 = "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/"
 _VAL = {c: i for i, c in enumerate(_B64)}
