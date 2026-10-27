@@ -228,15 +228,35 @@ def _backup(t: Targets, old_version: str) -> Path | None:
     return dest
 
 
+KEY_MISSING = ("không tìm được khoá giải mã: APK không chứa sẵn khoá (game 4.5+) và không đọc "
+               "được từ LDPlayer — mở LDPlayer (bật root) có cài game cùng phiên bản rồi thử lại")
+
+
+def resolve_and_save_key(apk: Path, device=None) -> tuple[str | None, str]:
+    """The APK's key (saved -> APK -> the running game over root ADB); a key read from the
+    game is remembered so the next update needs no emulator (an APK key is found again)."""
+    from nta_agent import gamedata, settings
+    if device is None:
+        from nta_agent.io.keydump import device_reader
+        device = device_reader()
+    saved = settings.get("xxtea_key")
+    key, src = gamedata.resolve_key(apk, saved=saved, device=device)
+    if not key:
+        return None, KEY_MISSING
+    if src == "device" and key != saved:
+        settings.set_values({"xxtea_key": key})
+    return key, src or ""
+
+
 def extract_gamedata(apk: Path, t: Targets, apk_md5: str = "") -> dict:
     """Run the extraction pipeline on ``apk`` into a staging dir; only a COMPLETE result
     replaces the current data (after a backup), and other files in the config dir (e.g. the
     committed ``manifest.json``) are left alone. Records ``meta.json``."""
-    from nta_agent import gamedata, settings
+    from nta_agent import gamedata
     info = apk_info(apk)
-    key = settings.get("xxtea_key") or gamedata.find_xxtea_key(apk)
+    key, err = resolve_and_save_key(apk)
     if not key:
-        return {"ok": False, "detail": "không tìm được khoá giải mã trong APK"}
+        return {"ok": False, "detail": err}
     stage = t.meta.parent / "staging"
     shutil.rmtree(stage, ignore_errors=True)
     stage.mkdir(parents=True, exist_ok=True)

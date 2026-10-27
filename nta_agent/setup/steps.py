@@ -147,9 +147,10 @@ def _gamedata(get_dm) -> dict:
     apk.parent.mkdir(parents=True, exist_ok=True)
     try:
         dm.pull(remote.strip(), str(apk), timeout=300)
-        key = settings.get("xxtea_key") or gamedata.find_xxtea_key(apk)
+        from nta_agent.gameupdate import resolve_and_save_key
+        key, err = resolve_and_save_key(apk)
         if not key:
-            return {"ok": False, "detail": "không tìm được khoá giải mã trong APK"}
+            return {"ok": False, "detail": err}
         try:
             msgs = gamedata.build_schema(apk, paths.schema_path(), key.encode())
         except (ValueError, KeyError) as e:
