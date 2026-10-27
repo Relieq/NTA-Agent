@@ -9,12 +9,12 @@ from __future__ import annotations
 
 # The game client version reported in the login handshake, and pinned by the
 # config manifest. Keep in sync with the extracted config tables.
-GAME_VERSION = "4.4.8"
+GAME_VERSION = "4.5.2"
 
 # Android app versions (versionName) that BUNDLE the game scripts of GAME_VERSION. The
 # handshake sends the scripts' version, not the app's: app 4.4.7 ships 4.4.8 scripts
 # (its hot-update manifest says 4.4.8) and the server refused 4.4.7 with ecode 500060.
-GAME_APK_VERSIONS = ("4.4.7",)
+GAME_APK_VERSIONS = ("4.5.0",)
 
 
 def _vkey(v: str) -> tuple:

@@ -25,7 +25,7 @@ def test_build_upgrade_main_hall_lv1():
     up = gc.build_upgrade(2001, 1)  # main hall -> lv1
     assert up is not None
     assert up.cost == {"timber": 178, "stone": 178}
-    assert up.time == 60
+    assert up.time == 20   # 4.5.2 cut it from 60 s
 
 
 @pytest.mark.skipif(not _HAS_CONFIG, reason="config tables not extracted")
