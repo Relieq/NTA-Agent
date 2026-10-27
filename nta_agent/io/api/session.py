@@ -36,6 +36,16 @@ class TokenChainBroken(RuntimeError):
     """
 
 
+class NoMatchError(RuntimeError):
+    """Logged in, but the account is in no match (no playSid/allotPlaySid): the season
+    ended or the match it applied to has not opened yet. Carries the still-connected
+    ``session`` and the lobby replies (``HD_GetRoomStateInfos`` / ``HD_GetTeamInfo``)."""
+
+    def __init__(self, session, rooms: dict, team: dict):
+        super().__init__("no game server assigned (allotPlaySid/playSid empty)")
+        self.session, self.rooms, self.team = session, rooms or {}, team or {}
+
+
 @dataclass
 class PushRecord:
     ts: float
@@ -195,7 +205,13 @@ class GameSession:
                     room_type = int(stt.get("roomType", 0) or 0)
                     break
         if not sid:
-            raise RuntimeError("no game server assigned (allotPlaySid/playSid empty)")
+            # between matches (the season ended; the one applied to opens later): hand the
+            # lobby picture to the caller, who waits instead of crashing
+            try:
+                team = self.client.request("lobby/HD_GetTeamInfo", {})
+            except Exception:
+                team = {}
+            raise NoMatchError(self, rooms, team)
 
         self.client.request("lobby/HD_SelectGameServer", {"sid": int(sid)})
         entry = self.client.request("game/HD_Entry", {

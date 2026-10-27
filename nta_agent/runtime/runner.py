@@ -54,7 +54,9 @@ def build_session(cfg: RuntimeConfig) -> GameSession:
 def run(cfg: RuntimeConfig, *, ticks: int = 0, session=None, engine=None) -> None:
     log = EventLog(cfg.event_log_path)
     if session is None:
-        session = build_session(cfg)
+        # between matches the account has no server: wait for the one it applied to
+        from nta_agent.runtime.lobby import wait_for_match
+        session = wait_for_match(cfg, build_session, on_event=log.append)
         log.append("started", {"host": cfg.host})
     from nta_agent.execution.profile import load_profile
     profile = load_profile(cfg.profile_path)  # shared by the rules and the brain
