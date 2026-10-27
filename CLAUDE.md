@@ -44,6 +44,9 @@ API-migration break the vision path for a feature.
   device `emulator-5554`, also `127.0.0.1:5555`. Do NOT use `C:\Program Files\BlueStacks_nxt\HD-Adb.exe`
   — its adb client (v36) mismatches LDPlayer's adb server (v41) and restarts the daemon every call.
   LDPlayer CLI: `C:\Download Apps\LDPlayer\ldconsole.exe` (`list2`, `modify --resolution/--root/...`).
+  Instance 0 is Android 14 x86_64, rooted. LDPlayer 14 has no UI switch for ADB debugging: with the
+  instance stopped, set `"basicSettings.adbDebug": 1` in `vms\config\leidian0.config`. In Git Bash,
+  `adb push` to `/data/...` needs `MSYS_NO_PATHCONV=1`.
 - Game `twgame.global.acers` **v4.4.4** on LDPlayer (newer than the old v4.4.0 BlueStacks build),
   defaults to **English** (`__slg_lang__=en`); engine is **Cocos2d-x JavaScript**
   (`org.cocos2dx.javascript.AppActivity`) — logic/protocol in a JS bundle inside `base.apk/assets`
