@@ -119,6 +119,14 @@ class RuntimeConfig:
         return self.log_dir / "pending_renames.json"   # renames waiting for an idle army
 
     @property
+    def lobby_path(self) -> Path:
+        return self.log_dir / "lobby.json"            # agent -> dashboard: waiting for a match
+
+    @property
+    def lobby_request_path(self) -> Path:
+        return self.log_dir / "lobby_request.json"    # dashboard -> agent: apply to a match
+
+    @property
     def dig_request_path(self) -> Path:
         return self.log_dir / "dig_request.json"      # dashboard -> agent (request/confirm/cancel)
 

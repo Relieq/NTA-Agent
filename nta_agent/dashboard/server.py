@@ -668,6 +668,44 @@ def read_free_rewards(cfg) -> dict:
             "last": d.get("last") or {}, "today": d.get("today") or {}}
 
 
+def read_lobby(cfg) -> dict:
+    """lobby.json (agent -> dashboard): waiting for a match / not applied / in game, plus a
+    still-pending apply click."""
+    try:
+        out = json.loads(Path(cfg.lobby_path).read_text(encoding="utf-8"))
+    except (OSError, ValueError):
+        out = {"state": "unknown"}
+    try:
+        req = json.loads(Path(cfg.lobby_request_path).read_text(encoding="utf-8"))
+    except (OSError, ValueError):
+        req = {}
+    applied = out.get("apply") or {}
+    if req.get("op") == "apply" and req.get("at", 0) > applied.get("at", 0):
+        out["apply_pending"] = req.get("room_type")
+    return out
+
+
+def lobby_command(cfg, body: dict) -> dict:
+    """Apply to a new match of ``room_type`` — the player's click; the waiting agent sends it."""
+    import time as _time
+    try:
+        rt = int(body.get("room_type"))
+    except (TypeError, ValueError):
+        return {"ok": False, "error": "chế độ trận không hợp lệ"}
+    if rt not in (0, 1, 2):
+        return {"ok": False, "error": "chế độ trận không hợp lệ"}
+    cur = read_lobby(cfg)
+    if cur.get("state") != "not_applied":
+        return {"ok": False, "error": "agent không ở trạng thái chờ đăng ký trận"}
+    if rt not in (cur.get("can_play") or []):
+        return {"ok": False, "error": "máy chủ không mở chế độ này cho tài khoản"}
+    p = Path(cfg.lobby_request_path)
+    p.parent.mkdir(parents=True, exist_ok=True)
+    p.write_text(json.dumps({"seq": _time.time_ns(), "op": "apply", "room_type": rt,
+                             "at": _time.time()}), encoding="utf-8")
+    return {"ok": True}
+
+
 DIG_CARD_TTL_S = 30 * 60  # a finished (done / cancelled) dig card stays this long, then it is gone
 
 
@@ -1295,6 +1333,9 @@ class Handler(BaseHTTPRequestHandler):
             self._json(200, read_territory_view(cfg))
         elif parsed.path == "/api/forts":
             self._json(200, read_forts_view(cfg))
+        elif parsed.path == "/api/lobby":
+            self._json(200, {**read_lobby(cfg),
+                             "agent_running": bool(self.server.supervisor.status().get("pid"))})
         elif parsed.path == "/api/dig":
             self._json(200, read_dig(cfg))
         elif parsed.path == "/api/free-rewards":
@@ -1356,6 +1397,13 @@ class Handler(BaseHTTPRequestHandler):
                 self._json(404, {"ok": False, "error": "unknown agent action"})
                 return
             self._json(200, fn())
+            return
+        if parsed.path == "/api/lobby/apply":
+            body = self._body()
+            if body is None:
+                return
+            r = lobby_command(cfg, body)
+            self._json(200 if r["ok"] else 400, r)
             return
         if parsed.path == "/api/gameupdate/apply":
             if self._body() is None:   # read the request first: answering with it unread resets the connection on Windows
