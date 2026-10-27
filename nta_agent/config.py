@@ -32,12 +32,37 @@ DEFAULT_SCREEN_W = 1600
 DEFAULT_SCREEN_H = 900
 
 
+def _registry_install_dirs() -> list[str]:
+    """LDPlayer install dirs its installer records (HKCU/HKLM Software\\XuanZhi\\LDPlayer*
+    InstallDir) — it may live anywhere, e.g. "C:\\Download Apps\\LDPlayer"."""
+    try:
+        import winreg
+    except ImportError:
+        return []
+    out: list[str] = []
+    for hive in (winreg.HKEY_CURRENT_USER, winreg.HKEY_LOCAL_MACHINE):
+        for name in ("LDPlayer14", "LDPlayer9", "LDPlayer"):
+            try:
+                with winreg.OpenKey(hive, rf"Software\XuanZhi\{name}") as k:
+                    d = str(winreg.QueryValueEx(k, "InstallDir")[0] or "")
+            except OSError:
+                continue
+            if d and d not in out:
+                out.append(d)
+    return out
+
+
 def _find_adb() -> str:
     """Locate an adb binary: NTA_ADB_PATH → LDPlayer/BlueStacks → adb on PATH."""
     override = user_settings.get("adb_path")  # env NTA_ADB_PATH > settings.json
-    if override:
+    # a saved path that no longer exists (copied from another machine) falls back to detection
+    if override and (Path(override).exists() or shutil.which(override)):
         return override
     for cand in _ADB_CANDIDATES:
+        if cand.exists():
+            return str(cand)
+    for d in _registry_install_dirs():
+        cand = Path(d) / "adb.exe"
         if cand.exists():
             return str(cand)
     on_path = shutil.which("adb")

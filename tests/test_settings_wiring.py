@@ -28,11 +28,13 @@ def test_distinct_id_from_settings_and_optional_for_dashboard():
     assert cfg.distinct_id == "abc" and cfg.brain_max_calls == 7
 
 
-def test_adb_settings_used():
+def test_adb_settings_used(tmp_path):
     from nta_agent import config
-    settings.set_values({"adb_path": r"X:\adb.exe", "adb_serial": "emulator-5556"})
+    adb = tmp_path / "adb.exe"
+    adb.write_bytes(b"")   # a saved path is used only while it exists
+    settings.set_values({"adb_path": str(adb), "adb_serial": "emulator-5556"})
     s = config.Settings.detect()
-    assert s.adb_path == r"X:\adb.exe" and s.serial == "emulator-5556"
+    assert s.adb_path == str(adb) and s.serial == "emulator-5556"
 
 
 def test_chat_retries_without_temperature_when_model_rejects_it(monkeypatch):
